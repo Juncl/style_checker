@@ -39,21 +39,25 @@ export function parseArkui(arkuiJson) {
   const canvasHeightVp = canvasHeightPx / resolution
 
   const nodes = []
-  traverseTree(content, resolution, canvasWidthVp, canvasHeightVp, nodes)
+  traverseTree(content, resolution, canvasWidthVp, canvasHeightVp, nodes, true)
 
   return { canvasWidthVp, canvasHeightVp, resolution, nodes }
 }
 
-function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result) {
+function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result, inheritedVisible = true) {
   const type = node['$type'] || ''
   const attrs = node['$attrs'] || {}
+  const nodeVisible = inheritedVisible &&
+    attrs.visibility !== 'Visibility.None' &&
+    attrs.visibility !== 'Visibility.Hidden' &&
+    !hasZeroOpacity(attrs.opacity)
 
   if (!FRAMEWORK_TYPES.has(type) && type !== 'root' && !SPAN_TYPES.has(type)) {
     const rectRaw = parseArkuiRect(node['$rect'])
     if (!rectRaw) {
       // 递归子节点再跳过本节点
       for (const child of (node['$children'] || [])) {
-        traverseTree(child, resolution, canvasWidthVp, canvasHeightVp, result)
+        traverseTree(child, resolution, canvasWidthVp, canvasHeightVp, result, nodeVisible)
       }
       return
     }
@@ -61,13 +65,9 @@ function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result) {
     const vpRect = toVpRect(rectRaw, resolution)
 
     // 过滤不可见 / 零尺寸节点
-    const visible = attrs.visibility !== 'Visibility.None' &&
-      attrs.visibility !== 'Visibility.Hidden' &&
-      attrs.opacity !== 0 &&
-      attrs.opacity !== '0'
     const hasSize = vpRect.w > 0 && vpRect.h > 0
 
-    if (visible && hasSize) {
+    if (nodeVisible && hasSize && isContentfulVisualNode(type, attrs)) {
       const unified = buildUnifiedNode(node, type, attrs, vpRect, canvasWidthVp, canvasHeightVp, resolution)
       unified.paintIndex = result.length
       result.push(unified)
@@ -75,7 +75,7 @@ function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result) {
   }
 
   for (const child of (node['$children'] || [])) {
-    traverseTree(child, resolution, canvasWidthVp, canvasHeightVp, result)
+    traverseTree(child, resolution, canvasWidthVp, canvasHeightVp, result, nodeVisible)
   }
 }
 
@@ -115,7 +115,13 @@ function getNodeCategory(type, attrs) {
   if (TEXT_TYPES.has(type)) return 'text'
   if (CONTAINER_TYPES.has(type)) return 'container'
   if (type === 'Image' || type === 'SymbolGlyph') return 'image'
+  if (type === 'Circle' || type === 'Ellipse' || type === 'Rect') return 'shape'
   return 'other'
+}
+
+function isContentfulVisualNode(type, attrs) {
+  if (!TEXT_TYPES.has(type)) return true
+  return String(attrs.content || attrs.label || '').trim().length > 0
 }
 
 function extractArkuiStyle(type, attrs, resolution) {
@@ -127,7 +133,10 @@ function extractArkuiStyle(type, attrs, resolution) {
   }
 
   // 背景色（非透明才记录）
-  const bgColor = attrs.backgroundColor
+  const shapeFill = type === 'Circle' || type === 'Ellipse' || type === 'Rect'
+    ? attrs.fill || attrs.foregroundColor
+    : null
+  const bgColor = shapeFill || attrs.backgroundColor
   if (bgColor && !isTransparent(bgColor)) {
     s.backgroundColor = normalizeArkuiColor(bgColor)
   }
@@ -274,4 +283,10 @@ function parseActualFontSize(value, resolution) {
   if (!Number.isFinite(val) || val <= 0) return null
   const unit = m[2] || 'vp'
   return unit === 'px' ? val / resolution : val
+}
+
+function hasZeroOpacity(value) {
+  if (value === undefined || value === null || value === '') return false
+  const opacity = Number(value)
+  return Number.isFinite(opacity) && opacity <= 0
 }

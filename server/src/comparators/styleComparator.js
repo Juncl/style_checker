@@ -40,6 +40,7 @@ export function compareStyles(pair) {
     iou:         pair.iou ?? null,
     topologyScore: pair.topologyScore ?? null,
     regionScore: pair.regionScore ?? null,
+    visualScore: pair.visualScore ?? null,
   }
 
   // ── 文字节点属性 ──────────────────────────────────────────────────────────
@@ -59,10 +60,8 @@ export function compareStyles(pair) {
 
   // ── 通用属性（文字 + 容器都有）────────────────────────────────────────────
   diffOpacity(diffs, ctx, ds.opacity, as_.opacity)
-  diffColor(diffs, ctx, 'backgroundColor', ds.backgroundColor, as_.backgroundColor, '背景色')
-  if (!isArkuiCircleNode(an)) {
-    diffBorderRadius(diffs, ctx, ds.borderRadius, as_.borderRadius)
-  }
+  diffColor(diffs, ctx, 'backgroundColor', comparableBackground(ds.backgroundColor), comparableBackground(as_.backgroundColor), '背景色')
+  diffBorderRadius(diffs, ctx, dn, an, ds.borderRadius, as_.borderRadius)
   diffPadding(diffs, ctx, ds.padding, as_.padding)
   diffBlur(diffs, ctx, ds.backdropBlur, as_.backdropBlur)
   diffShadow(diffs, ctx, ds.shadow, as_.shadow)
@@ -82,11 +81,10 @@ export function compareStyles(pair) {
     const dw = dn.rect.w, dh = dn.rect.h
     const aw = an.rect.w, ah = an.rect.h
     if (Math.abs(dw - aw) > 2 || Math.abs(dh - ah) > 2) {
-      const sev = (Math.abs(dw - aw) > 8 || Math.abs(dh - ah) > 8) ? 'error' : 'warning'
       diffs.push(makeDiff(ctx, 'icon.size',
         `${dw.toFixed(0)}×${dh.toFixed(0)}dp`,
         `${aw.toFixed(0)}×${ah.toFixed(0)}vp`,
-        sev, '图标尺寸不匹配'))
+        'info', '图标尺寸不匹配'))
     }
     if (as_.iconContent) {
       diffs.push(makeDiff(ctx, 'icon.content', dn.name, as_.iconContent, 'info',
@@ -95,10 +93,6 @@ export function compareStyles(pair) {
   }
 
   return diffs
-}
-
-function isArkuiCircleNode(node) {
-  return /^circle$/i.test(String(node?.name || ''))
 }
 
 /**
@@ -180,19 +174,29 @@ function diffOpacity(diffs, ctx, dv, av) {
   }
 }
 
-function diffBorderRadius(diffs, ctx, dv, av) {
+function diffBorderRadius(diffs, ctx, designNode, arkuiNode, dv, av) {
   if (!dv && !av) return
   if (!dv || !av) {
     if (dv && !av) {
       const r = Object.values(dv).find(v => v > 0)
-      if (r) diffs.push(makeDiff(ctx, 'borderRadius', formatRadius(dv), '0', 'error', '圆角：实现缺失'))
+      if (!r) return
+      if (isVisuallyFullRound(designNode, dv) && isRoundShapeNode(arkuiNode)) return
+      const layerLikeSeverity = mayUseLayerImplementedRadius(ctx, designNode, arkuiNode) ? 'info' : 'warning'
+      const description = layerLikeSeverity === 'info'
+        ? '圆角：实现可能由裁剪、图片或独立图层完成，未在当前节点暴露 borderRadius'
+        : '圆角：当前节点未暴露实现值'
+      diffs.push(makeDiff(ctx, 'borderRadius', formatRadius(dv), '0', layerLikeSeverity, description))
     }
     return
   }
   const keys = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft']
-  const mismatched = keys.filter(k => Math.abs((dv[k] || 0) - (av[k] || 0)) > TOLERANCE.borderRadius)
+  const dEffective = effectiveRadius(dv, designNode.rect)
+  const aEffective = effectiveRadius(av, arkuiNode.rect)
+  if (isVisuallyFullRound(designNode, dv) && isVisuallyFullRound(arkuiNode, av)) return
+
+  const mismatched = keys.filter(k => Math.abs((dEffective[k] || 0) - (aEffective[k] || 0)) > TOLERANCE.borderRadius)
   if (mismatched.length > 0) {
-    diffs.push(makeDiff(ctx, 'borderRadius', formatRadius(dv), formatRadius(av), 'error',
+    diffs.push(makeDiff(ctx, 'borderRadius', formatRadius(dv), formatRadius(av), 'warning',
       `圆角不匹配（${mismatched.join(', ')}）`))
   }
 }
@@ -319,7 +323,74 @@ function makeDiff(ctx, property, designValue, arkuiValue, severity, description)
     iou:         ctx.iou,
     topologyScore: ctx.topologyScore,
     regionScore: ctx.regionScore,
+    visualScore: ctx.visualScore,
   }
+}
+
+function comparableBackground(color) {
+  if (!color || isTransparentColor(color) || isPureWhiteColor(color)) return null
+  return color
+}
+
+function isTransparentColor(color) {
+  const c = parseColor(color)
+  return !!c && c.a === 0
+}
+
+function isPureWhiteColor(color) {
+  const c = parseColor(color)
+  return !!c && c.r === 255 && c.g === 255 && c.b === 255
+}
+
+function parseColor(color) {
+  if (!color || typeof color !== 'string') return null
+  const h = color.replace('#', '').trim()
+  if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(h)) return null
+  if (h.length === 8) {
+    return {
+      a: parseInt(h.slice(0, 2), 16),
+      r: parseInt(h.slice(2, 4), 16),
+      g: parseInt(h.slice(4, 6), 16),
+      b: parseInt(h.slice(6, 8), 16),
+    }
+  }
+  return {
+    a: 255,
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  }
+}
+
+function isRoundShapeNode(node) {
+  return /^(circle|ellipse)$/i.test(String(node?.name || '')) || node?.type === 'shape'
+}
+
+function mayUseLayerImplementedRadius(ctx, designNode, arkuiNode) {
+  if (ctx.visualScore != null && ctx.visualScore >= 0.55) return true
+  if (['image', 'shape', 'other'].includes(designNode?.type) || ['image', 'shape', 'other'].includes(arkuiNode?.type)) return true
+  return ['image-geometry', 'shape-geometry', 'other-geometry', 'gradient-iou'].includes(ctx.matchType)
+}
+
+function isVisuallyFullRound(node, radius) {
+  if (!radius || !node?.rect) return false
+  const cap = maxRenderableRadius(node.rect)
+  if (cap <= 0) return false
+  return Object.values(effectiveRadius(radius, node.rect)).every(v => Math.abs(v - cap) <= TOLERANCE.borderRadius)
+}
+
+function effectiveRadius(radius, rect) {
+  const cap = maxRenderableRadius(rect)
+  return {
+    topLeft: Math.min(radius.topLeft || 0, cap),
+    topRight: Math.min(radius.topRight || 0, cap),
+    bottomRight: Math.min(radius.bottomRight || 0, cap),
+    bottomLeft: Math.min(radius.bottomLeft || 0, cap),
+  }
+}
+
+function maxRenderableRadius(rect) {
+  return Math.max(0, Math.min(rect?.w || 0, rect?.h || 0) / 2)
 }
 
 function formatRadius(r) {

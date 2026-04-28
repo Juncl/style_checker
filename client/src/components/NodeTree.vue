@@ -39,13 +39,13 @@
           {
             matched:   node.matched,
             unmatched: !node.matched,
-            selected:  selectedDesignId === node.id,
+            selected:  selectedNodeId === node.id,
             locked:    lockedIds.has(node.id),
           }
         ]"
         :style="{ paddingLeft: `${8 + node.depth * 14}px` }"
         :title="!node.matched ? '未匹配（无对应 ArkUI 节点）' : lockedIds.has(node.id) ? '已锁定（图片侧不可点击，树中仍可选中）' : ''"
-        @click="node.matched && onNodeClick(node)"
+        @click="onNodeClick(node)"
       >
         <!-- 缩进 -->
         <span class="depth-indent" v-if="node.depth > 0">
@@ -67,7 +67,7 @@
         <span class="node-actions" @click.stop>
           <!-- 锁定按钮（仅匹配节点） -->
           <button
-            v-if="node.matched"
+            v-if="lockable && node.matched"
             :class="['lock-btn', { active: lockedIds.has(node.id) }]"
             :title="lockedIds.has(node.id) ? '解除锁定' : '锁定（图片侧不可点击）'"
             @click.stop="$emit('toggle-lock', node.id)"
@@ -95,13 +95,16 @@ import { ref, computed, watch, nextTick } from 'vue'
 const props = defineProps({
   nodes:          { type: Array,  default: () => [] },
   selectedDesignId: { type: String, default: null },
+  selectedId:     { type: String, default: null },
   lockedIds:      { type: Object, default: () => new Set() }, // Set<string>
+  lockable:       { type: Boolean, default: true },
 })
 const emit = defineEmits(['select', 'toggle-lock'])
 
 const search      = ref('')
 const matchedOnly = ref(false)
 const listRef     = ref(null)
+const selectedNodeId = computed(() => props.selectedId || props.selectedDesignId)
 
 function comparePaths(a, b) {
   const len = Math.min(a.length, b.length)
@@ -143,7 +146,7 @@ function onNodeClick(node) {
   emit('select', node.id)
 }
 
-watch(() => props.selectedDesignId, async (id) => {
+watch(selectedNodeId, async (id) => {
   if (!id || !listRef.value) return
   await nextTick()
   const el = listRef.value.querySelector('.tree-node.selected')
@@ -242,9 +245,10 @@ watch(() => props.selectedDesignId, async (id) => {
 .tree-node.matched.locked:hover .lock-btn { opacity: 1; }
 
 .tree-node.unmatched {
-  cursor: default;
-  color: #c0c4cc;
+  cursor: pointer;
+  color: #86909c;
 }
+.tree-node.unmatched:hover { background: #f7f9fc; }
 
 /* 锁定状态始终显示锁定按钮 */
 .tree-node.locked .lock-btn { opacity: 1 !important; }
@@ -264,7 +268,7 @@ watch(() => props.selectedDesignId, async (id) => {
   font-weight: 700;
   flex-shrink: 0;
 }
-.type-chip.text      { background: #ecf5ff; color: #409eff; }
+.type-chip.text      { background: #eef4ff; color: #0a59f7; }
 .type-chip.container { background: #f0f0ff; color: #8b5cf6; }
 .type-chip.image     { background: #f0fff4; color: #22c55e; }
 .type-chip.other     { background: #f5f5f5; color: #909399; }

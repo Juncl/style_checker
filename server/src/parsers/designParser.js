@@ -22,6 +22,12 @@ const CONTAINER_TYPES = new Set(['FRAME', 'GROUP'])
  */
 export function parseDesign(designJson) {
   const nodes = designJson.data || []
+  const booleanOperationPaths = nodes
+    .filter(n => n.type === 'BOOLEAN_OPERATION' && Array.isArray(n.path))
+    .map(n => n.path)
+  const zeroOpacityPaths = nodes
+    .filter(n => hasZeroOpacity(n.style?.opacity) && Array.isArray(n.path))
+    .map(n => n.path)
 
   // 根节点（path=[0]）提供画布尺寸
   const rootNode = nodes.find(n => n.path.length === 1)
@@ -33,6 +39,9 @@ export function parseDesign(designJson) {
   for (let paintIndex = 0; paintIndex < nodes.length; paintIndex++) {
     const node = nodes[paintIndex]
     if (!VISUAL_TYPES.has(node.type)) continue
+    if (node.type === TEXT_TYPE && !hasTextContent(node.content)) continue
+    if (isDescendantOfAnyPath(node.path, booleanOperationPaths)) continue
+    if (hasZeroOpacity(node.style?.opacity) || isSelfOrDescendantOfAnyPath(node.path, zeroOpacityPaths)) continue
 
     const rect = node.rect || {}
     const style = node.style || {}
@@ -262,4 +271,37 @@ function unionRect(rects) {
 
 function pathKey(path) {
   return Array.isArray(path) ? path.join('/') : ''
+}
+
+function isDescendantOfAnyPath(path, ancestorPaths) {
+  if (!Array.isArray(path)) return false
+  return ancestorPaths.some(ancestor => isDescendantPath(path, ancestor))
+}
+
+function isSelfOrDescendantOfAnyPath(path, ancestorPaths) {
+  if (!Array.isArray(path)) return false
+  return ancestorPaths.some(ancestor => isSamePath(path, ancestor) || isDescendantPath(path, ancestor))
+}
+
+function isDescendantPath(path, ancestor) {
+  if (!Array.isArray(ancestor) || path.length <= ancestor.length) return false
+  for (let i = 0; i < ancestor.length; i++) {
+    if (path[i] !== ancestor[i]) return false
+  }
+  return true
+}
+
+function isSamePath(path, other) {
+  return Array.isArray(other) && path.length === other.length &&
+    path.every((part, idx) => part === other[idx])
+}
+
+function hasZeroOpacity(value) {
+  if (value === undefined || value === null || value === '') return false
+  const opacity = Number(value)
+  return Number.isFinite(opacity) && opacity <= 0
+}
+
+function hasTextContent(value) {
+  return String(value || '').trim().length > 0
 }

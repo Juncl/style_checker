@@ -56,16 +56,16 @@
 
           <!-- 第二行：值对比 -->
           <div class="diff-values">
-            <div class="val-block design">
-              <span class="val-label">设计</span>
-              <ColorDot v-if="isColorProp(d.property)" :hex="extractHex(d.designValue)" />
-              <span class="val-text">{{ displayValue(d.property, d.designValue) }}</span>
-            </div>
-            <el-icon class="arrow"><ArrowRight /></el-icon>
             <div class="val-block arkui">
               <span class="val-label">开发</span>
               <ColorDot v-if="isColorProp(d.property)" :hex="extractHex(d.arkuiValue)" />
               <span class="val-text">{{ displayValue(d.property, d.arkuiValue) }}</span>
+            </div>
+            <el-icon class="arrow"><ArrowRight /></el-icon>
+            <div class="val-block design">
+              <span class="val-label">设计</span>
+              <ColorDot v-if="isColorProp(d.property)" :hex="extractHex(d.designValue)" />
+              <span class="val-text">{{ displayValue(d.property, d.designValue) }}</span>
             </div>
           </div>
 
@@ -236,7 +236,7 @@ function confidenceLabel(confidence) {
   color: #737373;
   transition: all .15s;
 }
-.sev-tab.active.error   { border-color: #cf0a2c; color: #cf0a2c; background: #fff1f3; }
+.sev-tab.active.error   { border-color: #d93026; color: #d93026; background: #fff3f2; }
 .sev-tab.active.warning { border-color: #b7791f; color: #9a5b00; background: #fff8e8; }
 .sev-tab.active.info    { border-color: #8a8a8a; color: #4d4d4d; background: #f5f5f5; }
 
@@ -272,7 +272,7 @@ function confidenceLabel(confidence) {
   transition: all .15s;
 }
 .diff-item:hover { border-color: #d8d8d8; background: #fafafa; }
-.diff-item.selected { border-color: #cf0a2c; background: #fff7f8; box-shadow: 0 0 0 2px rgba(207,10,44,.10); }
+.diff-item.selected { border-color: #0a59f7; background: #f3f7ff; box-shadow: 0 0 0 2px rgba(10,89,247,.10); }
 
 /* 左侧色条 */
 .sev-strip {
@@ -280,7 +280,7 @@ function confidenceLabel(confidence) {
   border-radius: 4px 0 0 4px;
   flex-shrink: 0;
 }
-.sev-strip.error   { background: #cf0a2c; }
+.sev-strip.error   { background: #d93026; }
 .sev-strip.warning { background: #b7791f; }
 .sev-strip.info    { background: #8a8a8a; }
 
@@ -297,7 +297,7 @@ function confidenceLabel(confidence) {
   text-transform: uppercase;
   flex-shrink: 0;
 }
-.sev-badge.error   { background: #fff1f3; color: #cf0a2c; }
+.sev-badge.error   { background: #fff3f2; color: #d93026; }
 .sev-badge.warning { background: #fff8e8; color: #9a5b00; }
 .sev-badge.info    { background: #f5f5f5; color: #737373; }
 
@@ -305,7 +305,7 @@ function confidenceLabel(confidence) {
   font-size: 11px;
   font-family: monospace;
   background: #f5f5f5;
-  color: #cf0a2c;
+  color: #0a59f7;
   padding: 1px 5px;
   border-radius: 3px;
   flex-shrink: 0;
@@ -359,8 +359,8 @@ function confidenceLabel(confidence) {
   border-radius: 5px;
   background: #fafafa;
 }
-.val-block.design { border-color: #e4e7ed; background: #fbfbfc; }
-.val-block.arkui  { border-color: #f0c4cb; background: #fff8f9; }
+.val-block.design { border-color: #dce6f7; background: #f8fbff; }
+.val-block.arkui  { border-color: #e4e7ed; background: #fbfbfc; }
 
 .val-label {
   flex-shrink: 0;
@@ -370,15 +370,15 @@ function confidenceLabel(confidence) {
   border-radius: 3px;
   font-weight: 700;
 }
-.val-block.design .val-label { color: #606266; background: #eef0f3; }
-.val-block.arkui  .val-label { color: #cf0a2c; background: #fff1f3; }
+.val-block.arkui  .val-label { color: #4e5969; background: #eef0f3; }
+.val-block.design .val-label { color: #0a59f7; background: #eef4ff; }
 
 .val-text {
   word-break: break-all;
   line-height: 1.4;
 }
-.val-block.design .val-text { color: #303133; }
-.val-block.arkui  .val-text { color: #cf0a2c; }
+.val-block.arkui  .val-text { color: #303133; }
+.val-block.design .val-text { color: #0a59f7; }
 
 .arrow { flex-shrink: 0; color: #c0c4cc; font-size: 12px; margin-top: 1px; }
 

@@ -194,7 +194,7 @@
             @click="rightTab = 'tree'"
           >
             节点树
-            <span class="rtab-badge neutral">{{ result.allDesignNodes?.length ?? 0 }}</span>
+            <span class="rtab-badge neutral">{{ treeNodes.length }}</span>
           </button>
         </div>
 
@@ -207,11 +207,26 @@
         />
 
         <!-- 节点树 -->
+        <div v-show="rightTab === 'tree'" class="tree-source-switch">
+          <button
+            :class="{ active: treeSide === 'design' }"
+            @click="treeSide = 'design'"
+          >
+            设计 <span>{{ designNodes.length }}</span>
+          </button>
+          <button
+            :class="{ active: treeSide === 'arkui' }"
+            @click="treeSide = 'arkui'"
+          >
+            开发 <span>{{ allArkuiNodes.length }}</span>
+          </button>
+        </div>
         <NodeTree
           v-show="rightTab === 'tree'"
-          :nodes="result.allDesignNodes ?? []"
-          :selected-design-id="selectedPair?.design?.id || null"
-          :locked-ids="lockedNodeIds"
+          :nodes="treeNodes"
+          :selected-id="treeSelectedId"
+          :locked-ids="treeSide === 'design' ? lockedNodeIds : emptyLockedIds"
+          :lockable="treeSide === 'design'"
           @select="onTreeNodeSelect"
           @toggle-lock="onToggleLock"
         />
@@ -228,6 +243,7 @@ import SummaryCard from './components/SummaryCard.vue'
 import DiffReport  from './components/DiffReport.vue'
 import ImagePanel  from './components/ImagePanel.vue'
 import NodeTree    from './components/NodeTree.vue'
+import './styles/app.css'
 
 const cases        = ref([])
 const selectedCase = ref('')
@@ -236,15 +252,24 @@ const result       = ref(null)
 const activeDiff   = ref(null)
 const selectedPair   = ref(null)
 const rightTab       = ref('diff')
+const treeSide       = ref('design')
 const lockedNodeIds  = ref(new Set())   // 图片侧锁定的设计节点 id 集合
 const isDragOver     = ref(false)
 const pickerRef    = ref(null)
 
 // 双图所有节点；实机侧是主走查入口，设计侧用于高亮匹配目标和节点树。
 const designNodes = computed(() => result.value?.allDesignNodes ?? [])
+const allArkuiNodes = computed(() => result.value?.allArkuiNodes ?? [])
 const arkuiNodes  = computed(() =>
-  (result.value?.allArkuiNodes ?? result.value?.pairs?.map(p => p.arkui) ?? [])
+  (allArkuiNodes.value.length ? allArkuiNodes.value : result.value?.pairs?.map(p => p.arkui) ?? [])
     .filter(isInteractiveImageNode)
+)
+const emptyLockedIds = new Set()
+const treeNodes = computed(() => treeSide.value === 'design' ? designNodes.value : allArkuiNodes.value)
+const treeSelectedId = computed(() =>
+  treeSide.value === 'design'
+    ? selectedPair.value?.design?.id || null
+    : selectedPair.value?.arkui?.id || null
 )
 
 const selectedDesignDiffs = computed(() =>
@@ -387,7 +412,8 @@ function nodeDiffsFor(key, nodeId) {
 }
 
 function onTreeNodeSelect(nodeId) {
-  onDesignNodeClick(nodeId)
+  if (treeSide.value === 'design') onDesignNodeClick(nodeId)
+  else onArkuiNodeClick(nodeId)
 }
 
 function onToggleLock(nodeId) {
@@ -404,6 +430,7 @@ async function selectCase(id) {
   selectedCase.value  = id
   activeDiff.value    = null
   selectedPair.value  = null
+  treeSide.value      = 'design'
   lockedNodeIds.value = new Set()
   loading.value       = true
   result.value        = null
@@ -417,6 +444,7 @@ async function runUpload() {
   selectedCase.value  = ''
   activeDiff.value    = null
   selectedPair.value  = null
+  treeSide.value      = 'design'
   lockedNodeIds.value = new Set()
   loading.value       = true
   result.value        = null
@@ -449,254 +477,3 @@ function confidenceTagType(confidence) {
   return 'primary'
 }
 </script>
-
-<style>
-*, *::before, *::after { box-sizing: border-box; }
-:root {
-  --hw-red: #cf0a2c;
-  --hw-red-soft: #fff1f3;
-  --hw-text: #1f1f1f;
-  --hw-subtext: #666;
-  --hw-muted: #999;
-  --hw-border: #e5e5e5;
-  --hw-bg: #f7f7f7;
-  --hw-panel: #fff;
-}
-body {
-  margin: 0;
-  font-family: 'HarmonyOS Sans', 'PingFang SC', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  background: var(--hw-bg);
-  color: var(--hw-text);
-}
-
-.app-layout {
-  --el-color-primary: var(--hw-red);
-  --el-color-primary-light-9: var(--hw-red-soft);
-  --el-border-radius-base: 8px;
-}
-
-.app-layout { display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: var(--hw-bg); }
-
-/* ── 顶部导航 ── */
-.app-header {
-  display: flex; align-items: center; justify-content: space-between;
-  height: 52px; padding: 0 18px;
-  background: var(--hw-panel); border-bottom: 1px solid var(--hw-border); flex-shrink: 0;
-}
-.header-left  { display: flex; align-items: center; gap: 8px; }
-.logo         { font-size: 18px; color: var(--hw-red); }
-.title        { font-size: 15px; font-weight: 700; color: var(--hw-text); letter-spacing: 0; }
-
-/* ── 主体三列 ── */
-.app-body {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}
-
-/* ── 左侧边栏 ── */
-.sidebar {
-  width: 240px;
-  flex-shrink: 0;
-  overflow-y: auto;
-  padding: 10px 8px;
-  background: var(--hw-panel);
-  border-right: 1px solid var(--hw-border);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.side-card { border-color: var(--hw-border); border-radius: 8px; }
-.side-card :deep(.el-card__header) { padding: 8px 12px; border-bottom-color: #f0f0f0; }
-.side-card :deep(.el-card__body)   { padding: 10px 12px; }
-
-.card-title { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: var(--hw-text); }
-
-.case-grid { display: flex; flex-wrap: wrap; gap: 5px; }
-
-.hint { font-size: 12px; color: var(--hw-muted); }
-
-.info-rows { display: flex; flex-direction: column; gap: 6px; }
-.info-row  { display: flex; justify-content: space-between; font-size: 12px; color: var(--hw-subtext); }
-.info-row b { color: var(--hw-text); }
-
-/* ── 上传拖拽区 ── */
-.drop-zone {
-  border: 1px dashed #d8d8d8;
-  border-radius: 8px;
-  padding: 14px 8px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  transition: border-color .2s, background .2s;
-  background: #fafafa;
-}
-.drop-zone:hover, .drop-zone.drag-over {
-  border-color: var(--hw-red);
-  background: var(--hw-red-soft);
-}
-.drop-hint { font-size: 12px; color: var(--hw-subtext); font-weight: 500; }
-.drop-sub  { font-size: 11px; color: var(--hw-muted); }
-
-/* 文件槽状态列表 */
-.file-slots {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.file-slots li {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  min-width: 0;
-}
-.slot-icon {
-  width: 14px;
-  text-align: center;
-  font-size: 12px;
-  flex-shrink: 0;
-}
-.slot-icon.ok    { color: #1f8f45; }
-.slot-icon.empty { color: #d8d8d8; }
-.slot-label {
-  color: var(--hw-subtext);
-  flex-shrink: 0;
-  width: 72px;
-}
-.slot-label.required::after { content: ' *'; color: var(--hw-red); }
-.slot-filename {
-  color: var(--hw-red);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.slot-missing { color: var(--hw-muted); }
-
-/* ── 中间主区 ── */
-.center-panel {
-  flex: 1;
-  min-width: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  background: var(--hw-bg);
-  min-height: 0;
-}
-
-.center-placeholder {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  flex: 1; gap: 12px; color: var(--hw-muted); font-size: 14px;
-}
-.center-placeholder p { margin: 0; }
-
-.spin { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg) } }
-
-/* 高亮提示条 */
-.highlight-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  background: #fff8e8;
-  border-bottom: 1px solid #f4dfb8;
-  font-size: 12px;
-  color: var(--hw-subtext);
-  flex-shrink: 0;
-}
-.highlight-bar code { font-size: 11px; background: #f5f5f5; padding: 1px 4px; border-radius: 3px; color: var(--hw-red); }
-.node-bar { background: var(--hw-red-soft); border-bottom-color: #f0c4cb; }
-.fade-enter-active, .fade-leave-active { transition: opacity .2s; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
-
-/* 双图并排 */
-.image-row {
-  display: flex;
-  gap: 20px;
-  padding: 20px;
-  align-items: flex-start;
-  flex: 1;
-  min-height: min-content;
-}
-
-@media (max-width: 1180px) {
-  .app-body { overflow: auto; }
-  .center-panel { overflow: visible; }
-  .image-row {
-    flex-direction: column;
-  }
-}
-
-/* ── 右侧差异面板 ── */
-.right-panel {
-  width: 360px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--hw-panel);
-  border-left: 1px solid var(--hw-border);
-  overflow: hidden;
-}
-
-.right-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 12px;
-  border-bottom: 1px solid #f0f0f0;
-  flex-shrink: 0;
-}
-.right-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--hw-text);
-  margin-right: auto;
-}
-
-/* ── 右侧标签页 ── */
-.right-tabs {
-  display: flex;
-  border-bottom: 1px solid var(--hw-border);
-  flex-shrink: 0;
-}
-
-.rtab {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 8px 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--hw-muted);
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: color .15s, border-color .15s;
-}
-.rtab:hover  { color: #a64b5b; background: #faf5f6; }
-.rtab.active { color: #a64b5b; border-bottom-color: #d98a98; background: #fff8f9; }
-
-.rtab-badge {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 0 4px;
-  border-radius: 8px;
-  line-height: 15px;
-  min-width: 15px;
-  text-align: center;
-}
-.rtab-badge.error   { background: #fff3f5; color: #b84b5f; }
-.rtab-badge.warning { background: #fff9ef; color: #a8752b; }
-.rtab-badge.neutral { background: #f5f5f5; color: var(--hw-muted); }
-</style>
