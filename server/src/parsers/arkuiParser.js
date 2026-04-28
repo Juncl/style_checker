@@ -1,0 +1,277 @@
+/**
+ * ArkUI JSON 解析器
+ * 将鸿蒙 ArkUI 组件树转换为统一中间表示 UnifiedNode[]
+ */
+
+import { normalizeArkuiColor, isTransparent } from '../utils/colorUtils.js'
+import {
+  parseVp,
+  normalizeArkuiFontWeight,
+  normalizeTextAlign,
+  parseBorderRadius,
+  parsePadding,
+  parseArkuiRect,
+  toVpRect,
+} from '../utils/unitUtils.js'
+
+// 映射到 'text' 类型的 ArkUI 组件
+const TEXT_TYPES = new Set(['Text', 'Span', 'Button', 'Search', 'SearchField'])
+
+// 映射到 'container' 类型的布局组件
+const CONTAINER_TYPES = new Set(['Row', 'Column', 'Flex', 'Stack', 'RelativeContainer', 'GridRow', 'GridCol', 'Scroll', 'List', 'ListItem', 'Tabs', 'TabContent', 'Swiper'])
+
+// 过滤掉的纯框架节点
+const FRAMEWORK_TYPES = new Set(['root', 'JsView', 'Navigation', 'NavBar', 'NavigationContent', 'Divider', 'ScrollBar', 'NavBarContent', 'NavigationMenu', '__Common__', 'TitleBar', 'ToolBar', 'TabBar', 'BackButton'])
+
+// Span 节点无独立布局 rect（继承父 Text），跳过节点但仍遍历子节点
+const SPAN_TYPES = new Set(['Span'])
+
+/**
+ * 从 arkui.json 提取视觉节点
+ * @returns {{ canvasWidthVp: number, resolution: number, nodes: UnifiedNode[] }}
+ */
+export function parseArkui(arkuiJson) {
+  const content = arkuiJson.content || {}
+  const resolution = parseFloat(content['$resolution']) || 3.5
+  const canvasWidthPx  = parseFloat(content['width'])  || 1316
+  const canvasHeightPx = parseFloat(content['height']) || 2832
+  const canvasWidthVp  = canvasWidthPx / resolution
+  const canvasHeightVp = canvasHeightPx / resolution
+
+  const nodes = []
+  traverseTree(content, resolution, canvasWidthVp, canvasHeightVp, nodes)
+
+  return { canvasWidthVp, canvasHeightVp, resolution, nodes }
+}
+
+function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result) {
+  const type = node['$type'] || ''
+  const attrs = node['$attrs'] || {}
+
+  if (!FRAMEWORK_TYPES.has(type) && type !== 'root' && !SPAN_TYPES.has(type)) {
+    const rectRaw = parseArkuiRect(node['$rect'])
+    if (!rectRaw) {
+      // 递归子节点再跳过本节点
+      for (const child of (node['$children'] || [])) {
+        traverseTree(child, resolution, canvasWidthVp, canvasHeightVp, result)
+      }
+      return
+    }
+
+    const vpRect = toVpRect(rectRaw, resolution)
+
+    // 过滤不可见 / 零尺寸节点
+    const visible = attrs.visibility !== 'Visibility.None' &&
+      attrs.visibility !== 'Visibility.Hidden' &&
+      attrs.opacity !== 0 &&
+      attrs.opacity !== '0'
+    const hasSize = vpRect.w > 0 && vpRect.h > 0
+
+    if (visible && hasSize) {
+      const unified = buildUnifiedNode(node, type, attrs, vpRect, canvasWidthVp, canvasHeightVp, resolution)
+      unified.paintIndex = result.length
+      result.push(unified)
+    }
+  }
+
+  for (const child of (node['$children'] || [])) {
+    traverseTree(child, resolution, canvasWidthVp, canvasHeightVp, result)
+  }
+}
+
+function buildUnifiedNode(node, type, attrs, vpRect, canvasWidthVp, canvasHeightVp, resolution) {
+  const nodeType = getNodeCategory(type, attrs)
+
+  const unified = {
+    id:     String(node['$ID'] ?? Math.random()),
+    source: 'arkui',
+    type:   nodeType,
+    name:   type,
+    paintIndex: null,
+    rect: {
+      x: vpRect.x,
+      y: vpRect.y,
+      w: vpRect.w,
+      h: vpRect.h,
+    },
+    normRect: {
+      x: vpRect.x / canvasWidthVp,
+      y: vpRect.y / canvasHeightVp,
+      w: vpRect.w / canvasWidthVp,
+      h: vpRect.h / canvasHeightVp,
+    },
+    visible: true,
+    style: extractArkuiStyle(type, attrs, resolution),
+  }
+
+  // 文字内容
+  const content = attrs.content || attrs.label || ''
+  if (content) unified.textContent = content
+
+  return unified
+}
+
+function getNodeCategory(type, attrs) {
+  if (TEXT_TYPES.has(type)) return 'text'
+  if (CONTAINER_TYPES.has(type)) return 'container'
+  if (type === 'Image' || type === 'SymbolGlyph') return 'image'
+  return 'other'
+}
+
+function extractArkuiStyle(type, attrs, resolution) {
+  const s = {}
+
+  // 不透明度
+  if (attrs.opacity !== undefined && attrs.opacity !== null) {
+    s.opacity = parseFloat(attrs.opacity)
+  }
+
+  // 背景色（非透明才记录）
+  const bgColor = attrs.backgroundColor
+  if (bgColor && !isTransparent(bgColor)) {
+    s.backgroundColor = normalizeArkuiColor(bgColor)
+  }
+
+  // 圆角
+  if (attrs.borderRadius && typeof attrs.borderRadius === 'object') {
+    const br = parseBorderRadius(attrs.borderRadius)
+    if (br && Object.values(br).some(v => v > 0)) {
+      s.borderRadius = br
+    }
+  }
+
+  // 描边
+  const borderWidth = parseVp(attrs.borderWidth)
+  if (borderWidth && borderWidth > 0) {
+    s.border = {
+      width: borderWidth,
+      color: normalizeArkuiColor(attrs.borderColor),
+      style: attrs.borderStyle || 'BorderStyle.Solid',
+    }
+  }
+
+  // 背景模糊
+  const backdropBlur = parseFloat(attrs.backdropBlur)
+  if (!isNaN(backdropBlur) && backdropBlur > 0) {
+    s.backdropBlur = backdropBlur
+  }
+
+  // 前景模糊
+  const blur = parseFloat(attrs.blur)
+  if (!isNaN(blur) && blur > 0) {
+    s.blur = blur
+  }
+
+  // 投影
+  if (attrs.shadow && typeof attrs.shadow === 'object') {
+    const sh = attrs.shadow
+    const radius = parseFloat(sh.radius)
+    if (!isNaN(radius) && radius > 0) {
+      s.shadow = {
+        radius:  radius,
+        color:   normalizeArkuiColor(sh.color),
+        offsetX: parseFloat(sh.offsetX) || 0,
+        offsetY: parseFloat(sh.offsetY) || 0,
+      }
+    }
+  }
+
+  // 内边距
+  const padding = parsePadding(attrs.padding)
+  if (padding && Object.values(padding).some(v => v > 0)) {
+    s.padding = padding
+  }
+
+  // 外边距
+  const margin = parsePadding(attrs.margin)
+  if (margin && Object.values(margin).some(v => v !== 0)) {
+    s.margin = margin
+  }
+
+  // 子元素间距 (Row / Column / Flex)
+  if (['Row', 'Column', 'Flex'].includes(type) && attrs.space !== undefined) {
+    const space = parseVp(attrs.space)
+    if (space !== null && space > 0) s.itemSpacing = space
+  }
+
+  // 渐变背景
+  if (attrs.linearGradient && Array.isArray(attrs.linearGradient.colors) && attrs.linearGradient.colors.length > 0) {
+    const lg = attrs.linearGradient
+    s.gradient = {
+      type: 'linear',
+      direction: lg.direction || '',
+      stops: Array.isArray(lg.colors) ? lg.colors.map(c => ({
+        color:    normalizeArkuiColor(Array.isArray(c) ? c[0] : c.color),
+        position: parseFloat(Array.isArray(c) ? c[1] : c.position) || 0,
+      })) : [],
+    }
+  } else if (attrs.sweepGradient && Array.isArray(attrs.sweepGradient.colors) && attrs.sweepGradient.colors.length > 0) {
+    const sg = attrs.sweepGradient
+    s.gradient = {
+      type: 'angular',
+      direction: '',
+      stops: Array.isArray(sg.colors) ? sg.colors.map(c => ({
+        color:    normalizeArkuiColor(Array.isArray(c) ? c[0] : c.color),
+        position: parseFloat(Array.isArray(c) ? c[1] : c.position) || 0,
+      })) : [],
+    }
+  } else if (attrs.radialGradient && Array.isArray(attrs.radialGradient.colors) && attrs.radialGradient.colors.length > 0) {
+    const rg = attrs.radialGradient
+    s.gradient = {
+      type: 'radial',
+      direction: '',
+      stops: Array.isArray(rg.colors) ? rg.colors.map(c => ({
+        color:    normalizeArkuiColor(Array.isArray(c) ? c[0] : c.color),
+        position: parseFloat(Array.isArray(c) ? c[1] : c.position) || 0,
+      })) : [],
+    }
+  }
+
+  // 图标内容 (SymbolGlyph)
+  if (type === 'SymbolGlyph' && attrs.content) {
+    s.iconContent = attrs.content
+    if (attrs.fontSrc) s.iconFontSrc = attrs.fontSrc
+  }
+
+  // ===== 文字相关 =====
+  if (TEXT_TYPES.has(type)) {
+    const declaredFontSize = parseVp(attrs.fontSize)
+
+    const fw = normalizeArkuiFontWeight(attrs.fontWeight)
+    if (fw !== null) s.fontWeight = fw
+
+    const fc = attrs.fontColor
+    if (fc) s.fontColor = normalizeArkuiColor(fc)
+
+    if (attrs.fontFamily) s.fontFamily = attrs.fontFamily
+
+    const lh = parseVp(attrs.lineHeight)
+    if (lh !== null && lh > 0) s.lineHeight = lh
+
+    const ls = parseVp(attrs.letterSpacing)
+    if (ls !== null) s.letterSpacing = ls
+
+    if (attrs.textAlign) s.textAlign = normalizeTextAlign(attrs.textAlign)
+
+    const actualFontSize = parseActualFontSize(attrs.actualFontSize, resolution)
+    if (actualFontSize !== null) {
+      s.actualFontSize = actualFontSize
+      s.fontSize = actualFontSize
+      if (declaredFontSize !== null) s.declaredFontSize = declaredFontSize
+    } else if (declaredFontSize !== null) {
+      s.fontSize = declaredFontSize
+    }
+  }
+
+  return s
+}
+
+function parseActualFontSize(value, resolution) {
+  if (value === undefined || value === null || value === '') return null
+  const m = String(value).match(/^(-?[\d.]+)(fp|vp|px)?$/)
+  if (!m) return null
+  const val = parseFloat(m[1])
+  if (!Number.isFinite(val) || val <= 0) return null
+  const unit = m[2] || 'vp'
+  return unit === 'px' ? val / resolution : val
+}
