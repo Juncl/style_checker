@@ -19,6 +19,8 @@ import {
   textSemanticSimilarity,
   passesTextSemanticGate,
   normalizeText,
+  textFieldType,
+  numericTextCompatible,
 } from './textSemantics.js'
 import {
   annotateDesignIconFragments,
@@ -38,6 +40,7 @@ import {
   annotatePairsWithRegions,
   formatRegionForOutput,
 } from './regionContext.js'
+import { matchAlignedTextRows, matchDynamicTextSlots } from './dynamicTextSlots.js'
 
 /**
  * 节点匹配器
@@ -155,6 +158,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     if (dn.type !== 'text') continue
     const content = (dn.textContent || '').trim()
     if (!content) continue
+    if (isWeakPixelDuplicate(dn, designNodes, content)) continue
 
     const candidates = (arkuiTextMap.get(content) || []).filter(n => !usedArkui.has(n.id))
     if (candidates.length === 0) continue
@@ -198,7 +202,35 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
 
   regionContext = buildRegionContext(designRegions, arkuiRegions, strongAnchors, visualFeatures)
 
-  // ── Pass 2: 匹配区域内文本节点全局最优匹配，处理重复列表/卡片里的文本串位 ──────
+  // ── Pass 2: 动态时间/星期槽位匹配（mock 与真实数据不同，但序列位置一致）──────
+  const dynamicSlotPairs = matchDynamicTextSlots(
+    designNodes,
+    arkuiNodes,
+    usedArkui,
+    matchedDesignIds,
+    regionContext
+  )
+  for (const pair of dynamicSlotPairs) {
+    pairs.push(pair)
+    usedArkui.add(pair.arkui.id)
+    matchedDesignIds.add(pair.design.id)
+  }
+
+  const rowSlotPairs = matchAlignedTextRows(
+    designNodes,
+    arkuiNodes,
+    usedArkui,
+    matchedDesignIds,
+    regionContext
+  )
+  for (const pair of rowSlotPairs) {
+    pairs.push(pair)
+    usedArkui.add(pair.arkui.id)
+    matchedDesignIds.add(pair.design.id)
+    if (pair.topologyScore >= 0.86) topologyAnchors.push(pair)
+  }
+
+  // ── Pass 3: 匹配区域内文本节点全局最优匹配，处理重复列表/卡片里的文本串位 ──────
   const regionTextPairs = matchRegionTextOptimal(
     designNodes,
     arkuiNodes,
@@ -213,7 +245,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     if (isTrustedTopologyAnchor(pair, null, pair.topologyScore)) topologyAnchors.push(pair)
   }
 
-  // ── Pass 2.5: 文本语义角色匹配（动态标题/副标题内容不同，但组件槽位一致）──────
+  // ── Pass 3.5: 文本语义角色匹配（动态标题/副标题内容不同，但组件槽位一致）────
   for (const dn of designNodes) {
     if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id) || dn.type !== 'text' || !hasUsableText(dn)) continue
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
@@ -231,7 +263,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     }
   }
 
-  // ── Pass 3: 强锚点周边拓扑匹配（用局部相对位置匹配 mock 文本、图标、形状）──────
+  // ── Pass 4: 强锚点周边拓扑匹配（用局部相对位置匹配 mock 文本、图标、形状）──────
   if (topologyAnchors.length > 0) {
     const topologyPairs = matchByAnchorTopology(
       designNodes,
@@ -248,7 +280,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     }
   }
 
-  // ── Pass 4: 文本节点位置回退匹配（处理 mock 数据与真实数据不一致）──────────────
+  // ── Pass 5: 文本节点位置回退匹配（处理 mock 数据与真实数据不一致）──────────────
   for (const dn of designNodes) {
     if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id) || dn.type !== 'text' || !hasUsableText(dn)) continue
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
@@ -311,7 +343,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
 
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n => {
       if (usedArkui.has(n.id)) return false
-      if (dn.type === 'image') return n.type === 'image' || n.type === 'other'
+      if (dn.type === 'image') return n.type === 'image' || n.type === 'other' || n.type === 'shape'
       return n.type !== 'text'
     })
     const best = bestVisualIoUMatch(dn.normRect, candidates, dn, regionContext)
@@ -333,7 +365,10 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
       !usedArkui.has(n.id) &&
       isCompatibleType(dn, n) &&
       (!(dn.type === 'text' && n.type === 'text') ||
-        passesTextSemanticGate(dn.textContent, n.textContent, textSemanticSimilarity(dn.textContent, n.textContent)))
+        passesTextSemanticGate(dn.textContent, n.textContent, textSemanticSimilarity(dn.textContent, n.textContent))) &&
+      (!(dn.type === 'text' && n.type === 'text') ||
+        !isWeakVisibleTextNode(dn) && !isWeakVisibleTextNode(n) ||
+        isWeakRescueTextAllowed(dn, n))
     )
     const best = bestIoUMatch(dn.normRect, candidates, dn, regionContext)
     if (best && best.iou > 0.25) {
@@ -384,6 +419,34 @@ function isTrustedTopologyAnchor(pair, dist, score) {
   return dist == null || dist < 0.12
 }
 
+function isWeakPixelDuplicate(node, nodes, content) {
+  const ratio = node.pixelVisibility?.visiblePixelRatio
+  if (ratio == null || ratio >= 0.08) return false
+  return nodes.some(other =>
+    other.id !== node.id &&
+    other.type === 'text' &&
+    normalizeText(other.textContent) === normalizeText(content) &&
+    (other.pixelVisibility?.visiblePixelRatio ?? 0) >= 0.10
+  )
+}
+
+function isWeakVisibleTextNode(node) {
+  const visibility = node?.pixelVisibility || {}
+  return (visibility.visiblePixelRatio ?? 1) < 0.10 && (visibility.textStrokeScore ?? 0) < 0.08
+}
+
+function isWeakRescueTextAllowed(dn, an) {
+  const semantic = textSemanticSimilarity(dn.textContent, an.textContent)
+  const typeA = textFieldType(normalizeText(dn.textContent))
+  const typeB = textFieldType(normalizeText(an.textContent))
+  if (typeA !== typeB) return false
+  if (typeA !== 'label') {
+    if (typeA === 'number') return numericTextCompatible(dn.textContent, an.textContent)
+    return normalizeText(dn.textContent) === normalizeText(an.textContent)
+  }
+  return semantic >= 0.55
+}
+
 function selectOneToOnePairs(pairs) {
   const selected = []
   const usedDesign = new Set()
@@ -416,6 +479,8 @@ function matchTypePriority(matchType) {
     'region-text-optimal': 34,
     'text-role': 30,
     'anchor-topology': 24,
+    'dynamic-text-slot': 22,
+    'text-row-slot': 21,
     'text-position': 20,
     'container-iou': 18,
     'gradient-iou': 16,

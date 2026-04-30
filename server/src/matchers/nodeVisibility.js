@@ -41,12 +41,14 @@ export function isAcceptablePair(pair) {
   const hRatio = sizeRatio(design.normRect.h, arkui.normRect.h)
   const minRatio = Math.min(wRatio, hRatio)
   const centerDist = centerDistance(design.normRect, arkui.normRect)
+  const aspectRatioScore = nonTextAspectRatioScore(design.normRect, arkui.normRect)
 
   // Tiny icons/dots must not match large rows/cards.
   if (Math.min(design.rect.w, design.rect.h) <= 8 && minRatio < 0.35) return false
 
   // Weak non-text matches with extreme size drift are usually wrapper/neighbor mistakes.
   if (minRatio < 0.22) return false
+  if (['image', 'shape', 'other'].includes(design.type) && ['image', 'shape', 'other'].includes(arkui.type) && aspectRatioScore < 0.45) return false
 
   // ArkUI SymbolGlyph is a complete icon. Avoid matching it to a small path inside
   // a decomposed design icon.
@@ -120,6 +122,7 @@ export function annotateVisualOcclusion(nodes) {
     }
     node.visualOccluded = false
     node.visualOcclusionReason = null
+    if (node.type === 'text' && node.pixelVisibility?.samples) continue
     if (!isVisualVisibilityCandidate(node)) continue
 
     const blockers = []
@@ -134,6 +137,51 @@ export function annotateVisualOcclusion(nodes) {
     if (visibleRatio < 0.15) {
       node.visualOccluded = true
       node.visualOcclusionReason = visibleRatio <= 0 ? 'outside-or-covered' : 'mostly-hidden'
+    }
+  }
+}
+
+// 后绘制且足够不透明的图层，如果把前面的节点整块盖住，前面的节点和子节点都应视为不可匹配。
+export function annotateCoverageOcclusion(nodes) {
+  if (!nodes.some(n => n?.rect && Number.isFinite(n.rect.x))) return
+
+  const sorted = [...nodes]
+    .filter(n => n.visible !== false && n.rect && Number.isFinite(n.paintIndex))
+    .sort((a, b) => (a.paintIndex ?? 0) - (b.paintIndex ?? 0))
+
+  const coveredPaths = []
+
+  for (let i = 0; i < sorted.length; i++) {
+    const node = sorted[i]
+    if (node.visualOccluded) continue
+    if (!isCoverageCandidate(node)) continue
+
+    for (let j = i + 1; j < sorted.length; j++) {
+      const later = sorted[j]
+      if (!isOpaqueCoverNode(later)) continue
+      if (!sameParentPath(node.path, later.path)) continue
+      if (rectIntersectionArea(node.normRect, later.normRect) <= 0) continue
+      if (
+        rectContainsRect(later.normRect, node.normRect) ||
+        approximateCoveredRatio(node.normRect, [later.normRect]) >= 0.95
+      ) {
+        node.visualOccluded = true
+        node.visualOcclusionReason = 'covered-by-later-node'
+        coveredPaths.push(Array.isArray(node.path) ? [...node.path] : null)
+        break
+      }
+    }
+  }
+
+  if (!coveredPaths.length) return
+
+  for (const node of sorted) {
+    if (node.visualOccluded) continue
+    const path = node.path
+    if (!Array.isArray(path) || path.length === 0) continue
+    if (coveredPaths.some(prefix => prefix && isPathPrefix(prefix, path))) {
+      node.visualOccluded = true
+      node.visualOcclusionReason = 'covered-by-opaque-ancestor'
     }
   }
 }
@@ -195,14 +243,68 @@ export function hasVisualDecoration(node) {
 }
 
 export function isMatchableNode(node) {
-  return !!(node?.visible && !node.visualOccluded && !node.iconFragment && node.rect?.w > 4 && node.rect?.h > 4)
+  return !!(node?.visible && !isBlankNode(node) && !isHiddenByFramework(node) && !node.visualOccluded && !node.iconFragment && node.rect?.w > 4 && node.rect?.h > 4)
+}
+
+function isHiddenByFramework(node) {
+  if (!node.hiddenFrameworkAncestor) return false
+  if (node.pixelInvisible) return true
+  return (node.pixelVisibility?.visiblePixelRatio ?? 0) < 0.08
+}
+
+function isCoverageCandidate(node) {
+  if (!node?.rect || !node?.normRect) return false
+  if (node.type === 'text') return hasUsableText(node)
+  return node.type === 'container' || node.type === 'shape' || node.type === 'image' || node.type === 'other'
+}
+
+function isOpaqueCoverNode(node) {
+  if (!node?.visible || node.visualOccluded || !node.rect || !node.normRect) return false
+  if (node.type === 'text') return false
+  const s = node.style || {}
+  const opacity = s.opacity == null ? 1 : s.opacity
+  if (opacity < 0.96) return false
+  return !!(s.backgroundColor || s.gradient || node.type === 'image' || node.type === 'shape')
+}
+
+function rectContainsRect(container, rect) {
+  return rect.x >= container.x &&
+    rect.y >= container.y &&
+    rect.x + rect.w <= container.x + container.w &&
+    rect.y + rect.h <= container.y + container.h
+}
+
+function sameParentPath(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length < 2 || b.length < 2) return false
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length - 1; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
+function isBlankNode(node) {
+  const type = String(node?.type || node?.name || '').trim().toLowerCase()
+  return type === 'blank'
 }
 
 export function isCompatibleType(designNode, arkuiNode) {
   if (designNode.type === 'text') return arkuiNode.type === 'text'
   if (designNode.type === arkuiNode.type) return true
-  if (designNode.type === 'image') return arkuiNode.type === 'other'
+  if (designNode.type === 'image') return arkuiNode.type === 'other' || arkuiNode.type === 'shape'
   if (designNode.type === 'shape') return arkuiNode.type === 'container' || arkuiNode.type === 'other'
   if (designNode.type === 'other') return arkuiNode.type !== 'text'
   return false
+}
+
+function nonTextAspectRatioScore(a, b) {
+  const ar = aspectRatio(a)
+  const br = aspectRatio(b)
+  return sizeRatio(ar, br)
+}
+
+function aspectRatio(rect) {
+  const w = Math.max(1e-6, rect?.w || 0)
+  const h = Math.max(1e-6, rect?.h || 0)
+  return Math.max(w / h, h / w)
 }

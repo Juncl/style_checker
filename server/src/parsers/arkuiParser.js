@@ -39,25 +39,39 @@ export function parseArkui(arkuiJson) {
   const canvasHeightVp = canvasHeightPx / resolution
 
   const nodes = []
-  traverseTree(content, resolution, canvasWidthVp, canvasHeightVp, nodes, true)
+  traverseTree(content, resolution, canvasWidthVp, canvasHeightVp, nodes, true, [0], false)
 
   return { canvasWidthVp, canvasHeightVp, resolution, nodes }
 }
 
-function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result, inheritedVisible = true) {
+function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result, inheritedVisible = true, path = [0], hiddenFrameworkAncestor = false) {
   const type = node['$type'] || ''
   const attrs = node['$attrs'] || {}
-  const nodeVisible = inheritedVisible &&
+  const frameworkNode = FRAMEWORK_TYPES.has(type) || type === 'root'
+  const ownVisible =
     attrs.visibility !== 'Visibility.None' &&
     attrs.visibility !== 'Visibility.Hidden' &&
     !hasZeroOpacity(attrs.opacity)
+  const nodeVisible = inheritedVisible && ownVisible
+  const childInheritedVisible = inheritedVisible && (frameworkNode ? true : ownVisible)
+  const childHiddenFrameworkAncestor = hiddenFrameworkAncestor || (frameworkNode && !ownVisible)
+
+  // Blank 只是布局占位，不参与可视化节点、选择和匹配。
+  if (type === 'Blank') {
+    for (let i = 0; i < (node['$children'] || []).length; i++) {
+      const child = node['$children'][i]
+      traverseTree(child, resolution, canvasWidthVp, canvasHeightVp, result, childInheritedVisible, [...path, i], childHiddenFrameworkAncestor)
+    }
+    return
+  }
 
   if (!FRAMEWORK_TYPES.has(type) && type !== 'root' && !SPAN_TYPES.has(type)) {
     const rectRaw = parseArkuiRect(node['$rect'])
     if (!rectRaw) {
       // 递归子节点再跳过本节点
-      for (const child of (node['$children'] || [])) {
-        traverseTree(child, resolution, canvasWidthVp, canvasHeightVp, result, nodeVisible)
+      const children = node['$children'] || []
+      for (let i = 0; i < children.length; i++) {
+        traverseTree(children[i], resolution, canvasWidthVp, canvasHeightVp, result, childInheritedVisible, [...path, i], childHiddenFrameworkAncestor)
       }
       return
     }
@@ -69,13 +83,16 @@ function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result, i
 
     if (nodeVisible && hasSize && isContentfulVisualNode(type, attrs)) {
       const unified = buildUnifiedNode(node, type, attrs, vpRect, canvasWidthVp, canvasHeightVp, resolution)
+      unified.path = path
+      unified.hiddenFrameworkAncestor = hiddenFrameworkAncestor
       unified.paintIndex = result.length
       result.push(unified)
     }
   }
 
-  for (const child of (node['$children'] || [])) {
-    traverseTree(child, resolution, canvasWidthVp, canvasHeightVp, result, nodeVisible)
+  for (let i = 0; i < (node['$children'] || []).length; i++) {
+    const child = node['$children'][i]
+    traverseTree(child, resolution, canvasWidthVp, canvasHeightVp, result, childInheritedVisible, [...path, i], childHiddenFrameworkAncestor)
   }
 }
 

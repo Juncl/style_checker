@@ -15,6 +15,7 @@ import { parseDesign } from '../parsers/designParser.js'
 import { parseArkui }  from '../parsers/arkuiParser.js'
 import { matchNodes }  from '../matchers/nodeMatcher.js'
 import { compareAll }  from '../comparators/styleComparator.js'
+import { compareSpatialRelations } from '../comparators/spatialComparator.js'
 import {
   annotatePixelVisibility,
   componentVisualDiff,
@@ -140,6 +141,12 @@ function runCheck(designJson, arkuiJson, caseId, assets = {}) {
       h: arkuiResult.canvasHeightVp,
     }, { source: 'arkui' })
     : { checked: 0, hidden: 0 }
+  const designPixelVisibility = assets.designImageBuffer
+    ? annotatePixelVisibility(designResult.nodes, assets.designImageBuffer, {
+      w: designResult.canvasWidth,
+      h: designResult.canvasHeight,
+    }, { source: 'design' })
+    : { checked: 0, hidden: 0 }
 
   // 2. 匹配
   const {
@@ -168,7 +175,8 @@ function runCheck(designJson, arkuiJson, caseId, assets = {}) {
     pairs.map(p => [`${p.design.id}::${p.arkui.id}`, { designRect: p.design.rect, arkuiRect: p.arkui.rect }])
   )
   const visualDiffs = buildComponentVisualDiffs(pairs, designResult, arkuiResult, assets)
-  const diffs = [...compareAll(pairs), ...visualDiffs].map(d => ({
+  const spatialDiffs = compareSpatialRelations(pairs)
+  const diffs = [...compareAll(pairs), ...spatialDiffs, ...visualDiffs].map(d => ({
     ...d,
     ...( rectByPairKey.get(`${d.designNodeId}::${d.arkuiNodeId}`) || {} ),
   }))
@@ -205,6 +213,8 @@ function runCheck(designJson, arkuiJson, caseId, assets = {}) {
       lowConfidencePairs,
       pixelVisibilityChecked: pixelVisibility.checked,
       pixelInvisibleNodes: pixelVisibility.hidden,
+      designPixelVisibilityChecked: designPixelVisibility.checked,
+      designPixelInvisibleNodes: designPixelVisibility.hidden,
       errorCount,
       warningCount,
       infoCount,
@@ -224,6 +234,7 @@ function runCheck(designJson, arkuiJson, caseId, assets = {}) {
         type: n.type,
         textContent: n.textContent || null,
         path: n.path,
+        paintIndex: n.paintIndex ?? null,
         rect: n.rect,
         style: n.style,
         visible: n.visible !== false,
@@ -241,6 +252,7 @@ function runCheck(designJson, arkuiJson, caseId, assets = {}) {
         type: n.type,
         textContent: n.textContent || null,
         path: n.path,
+        paintIndex: n.paintIndex ?? null,
         rect: n.rect,
         style: n.style,
         visible: n.visible !== false,

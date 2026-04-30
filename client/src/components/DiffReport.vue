@@ -51,6 +51,9 @@
               {{ confidenceLabel(d.confidence) }}
             </span>
             <span class="match-tag">{{ d.matchType }}</span>
+            <span v-if="d.relatedDesignName" class="relation-tag">
+              {{ d.designName }} ↔ {{ d.relatedDesignName }}
+            </span>
             <span v-if="d.textContent" class="text-snippet">「{{ truncate(d.textContent, 12) }}」</span>
           </div>
 
@@ -318,6 +321,16 @@ function confidenceLabel(confidence) {
   border: 1px solid #ebeef5;
   border-radius: 3px;
   padding: 0 4px;
+  flex-shrink: 0;
+}
+
+.relation-tag {
+  font-size: 10px;
+  color: #8a5c00;
+  background: #fff7ea;
+  border: 1px solid #f0d8aa;
+  border-radius: 3px;
+  padding: 0 5px;
   flex-shrink: 0;
 }
 

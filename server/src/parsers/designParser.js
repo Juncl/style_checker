@@ -33,6 +33,9 @@ export function parseDesign(designJson) {
   const rootNode = nodes.find(n => n.path.length === 1)
   const canvasWidth  = rootNode?.rect?.w || 360
   const canvasHeight = rootNode?.rect?.h || 792
+  const semanticAssetPaths = nodes
+    .filter(n => shouldCollapseSemanticAsset(n, nodes, canvasWidth, canvasHeight))
+    .map(n => n.path)
 
   const unified = []
 
@@ -40,6 +43,7 @@ export function parseDesign(designJson) {
     const node = nodes[paintIndex]
     if (!VISUAL_TYPES.has(node.type)) continue
     if (node.type === TEXT_TYPE && !hasTextContent(node.content)) continue
+    if (isDescendantOfAnyPath(node.path, semanticAssetPaths)) continue
     if (isDescendantOfAnyPath(node.path, booleanOperationPaths)) continue
     if (hasZeroOpacity(node.style?.opacity) || isSelfOrDescendantOfAnyPath(node.path, zeroOpacityPaths)) continue
 
@@ -47,10 +51,11 @@ export function parseDesign(designJson) {
     const style = node.style || {}
     const layout = node.layout || {}
 
+    const semanticAsset = shouldCollapseSemanticAsset(node, nodes, canvasWidth, canvasHeight)
     const unifiedNode = {
       id:     node.guid,
       source: 'design',
-      type:   mapNodeType(node.type, style),
+      type:   semanticAsset ? 'image' : mapNodeType(node.type, style),
       name:   node.name || '',
       path:   node.path,
       paintIndex,
@@ -69,6 +74,11 @@ export function parseDesign(designJson) {
       },
       visible: node.state?.visible !== false,
       style: extractDesignStyle(node.type, style, layout),
+    }
+
+    if (semanticAsset) {
+      unifiedNode.semanticAsset = true
+      unifiedNode.style.semanticAsset = assetKind(node)
     }
 
     // 仅 TEXT 节点有文字内容
@@ -304,4 +314,50 @@ function hasZeroOpacity(value) {
 
 function hasTextContent(value) {
   return String(value || '').trim().length > 0
+}
+
+function shouldCollapseSemanticAsset(node, allNodes, canvasWidth, canvasHeight) {
+  if (!isSemanticAssetRoot(node)) return false
+  if (hasTextDescendant(node, allNodes)) return false
+  if (isLargeIllustrationContainer(node, allNodes, canvasWidth, canvasHeight)) return false
+  return true
+}
+
+function isSemanticAssetRoot(node) {
+  if (!node || !Array.isArray(node.path)) return false
+  if (!['FRAME', 'GROUP', 'VECTOR', 'BOOLEAN_OPERATION'].includes(node.type)) return false
+  const name = String(node.name || '').trim()
+  if (!name) return false
+  if (/^#?illustration\b/i.test(name) || /插画|illustration/i.test(name)) return true
+  if (!/(^|[/_\s-])icon([/_\s-]|$)|(^|[/_\s-])ic_|图标/i.test(name)) return false
+  const rect = node.rect || {}
+  return isIconSized({ w: rect.w ?? 0, h: rect.h ?? 0 })
+}
+
+function assetKind(node) {
+  const name = String(node?.name || '')
+  return /插画|illustration/i.test(name) ? 'illustration' : 'icon'
+}
+
+function isLargeIllustrationContainer(node, allNodes, canvasWidth, canvasHeight) {
+  const name = String(node?.name || '')
+  if (!/(^#?illustration\b|插画|illustration)/i.test(name)) return false
+  const rect = node.rect || {}
+  const canvasArea = Math.max(1, canvasWidth * canvasHeight)
+  const areaRatio = ((rect.w || 0) * (rect.h || 0)) / canvasArea
+  if (areaRatio < 0.55) return false
+  const textDescendants = allNodes.filter(n =>
+    n.type === TEXT_TYPE &&
+    hasTextContent(n.content) &&
+    isDescendantPath(n.path, node.path)
+  )
+  return textDescendants.length >= 3
+}
+
+function hasTextDescendant(node, allNodes) {
+  return allNodes.some(n =>
+    n.type === TEXT_TYPE &&
+    hasTextContent(n.content) &&
+    isDescendantPath(n.path, node.path)
+  )
 }

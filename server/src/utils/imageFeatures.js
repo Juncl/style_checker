@@ -96,13 +96,14 @@ export function visualSimilarity(a, b) {
   const density = a.edgeDensity != null && b.edgeDensity != null
     ? 1 - Math.min(1, Math.abs(a.edgeDensity - b.edgeDensity) / 0.35)
     : 0.5
-  return color * 0.30 + edge * 0.26 + hash * 0.20 + brightness * 0.08 + mask * 0.10 + density * 0.06
+  const aspect = a.aspectRatio != null && b.aspectRatio != null ? 1 - Math.min(1, Math.abs(Math.log((a.aspectRatio || 1) / (b.aspectRatio || 1))) / 1.5) : 0.5
+  const centroid = centroidSimilarity(a.foregroundCentroid, b.foregroundCentroid)
+  return color * 0.26 + edge * 0.24 + hash * 0.18 + brightness * 0.07 + mask * 0.09 + density * 0.07 + aspect * 0.04 + centroid * 0.05
 }
 
 export function cropSimilarity(a, b) {
   return visualSimilarity(a, b)
 }
-
 export function componentVisualDiff(a, b) {
   if (!a || !b) return null
   const similarity = visualSimilarity(a, b)
@@ -194,6 +195,8 @@ function computeFeaturesForImageBox(image, box) {
   let foreground = 0
   let edgePixels = 0
   let samples = 0
+  let fgX = 0
+  let fgY = 0
   const stepX = Math.max(1, Math.floor((box.x2 - box.x1) / 80))
   const stepY = Math.max(1, Math.floor((box.y2 - box.y1) / 80))
 
@@ -207,7 +210,12 @@ function computeFeaturesForImageBox(image, box) {
       colorHist[bin] += 1
       lumaSum += v
       samples += 1
-      if (colorDistance(c, bg) > 26 || Math.abs(v - luma(bg.r, bg.g, bg.b)) > 14 || edge > 18) foreground += 1
+      const isForeground = colorDistance(c, bg) > 26 || Math.abs(v - luma(bg.r, bg.g, bg.b)) > 14 || edge > 18
+      if (isForeground) {
+        foreground += 1
+        fgX += x
+        fgY += y
+      }
       if (edge > 18) edgePixels += 1
       row.push(v)
     }
@@ -225,10 +233,8 @@ function computeFeaturesForImageBox(image, box) {
       edgeHist[bin] += mag
     }
   }
-
   normalize(colorHist)
   normalize(edgeHist)
-
   return {
     colorHist,
     edgeHist,
@@ -236,9 +242,11 @@ function computeFeaturesForImageBox(image, box) {
     meanLuma: samples ? lumaSum / samples : 0,
     foregroundRatio: samples ? foreground / samples : 0,
     edgeDensity: samples ? edgePixels / samples : 0,
+    textStrokeScore: samples ? edgePixels / samples : 0,
+    aspectRatio: (box.x2 - box.x1) / Math.max(1, box.y2 - box.y1),
+    foregroundCentroid: foreground ? { x: (fgX / foreground - box.x1) / Math.max(1, box.x2 - box.x1), y: (fgY / foreground - box.y1) / Math.max(1, box.y2 - box.y1) } : null,
   }
 }
-
 function segmentImageByHorizontalEnergy(image) {
   const rows = []
   const stepX = Math.max(1, Math.floor(image.width / 120))
@@ -315,6 +323,9 @@ function percentile(values, p) {
   const idx = clamp(Math.floor((sorted.length - 1) * p), 0, sorted.length - 1)
   return sorted[idx]
 }
+function centroidSimilarity(a, b) {
+  return !a || !b ? 0.5 : 1 - Math.min(1, Math.hypot(a.x - b.x, a.y - b.y) / 0.8)
+}
 
 function rectToImageBox(image, canvas, rect) {
   const scaleX = image.width / canvas.w
@@ -325,7 +336,6 @@ function rectToImageBox(image, canvas, rect) {
   const y2 = clamp(Math.ceil((rect.y + rect.h) * scaleY), y1 + 1, image.height)
   return { x1, y1, x2, y2 }
 }
-
 function sampleBox(image, box) {
   let r = 0, g = 0, b = 0, samples = 0
   const stepX = Math.max(1, Math.floor((box.x2 - box.x1) / 16))

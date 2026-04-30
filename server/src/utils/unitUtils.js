@@ -47,7 +47,8 @@ export function normalizeArkuiFontWeight(fw) {
 
 /** Design fontWeight 数值（可能为 0）→ 标准数值 */
 export function normalizeDesignFontWeight(fw) {
-  if (!fw || fw === 0) return 400  // 0 视为默认
+  // 0 在设计导出里表示未显式给出字重，不能等同于 Regular(400)。
+  if (fw === 0 || fw === null || fw === undefined || fw === '') return null
   return fw
 }
 

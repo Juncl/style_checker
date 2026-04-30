@@ -61,7 +61,7 @@ export function passesTextSemanticGate(a, b, semantic) {
   }
 
   // Short stable Chinese labels should not be matched purely by position/topology.
-  if (hasCjk(ta) && hasCjk(tb) && Math.min(ta.length, tb.length) <= 4) return semantic >= 0.28
+  if (hasCjk(ta) && hasCjk(tb) && Math.min(ta.length, tb.length) <= 4) return semantic >= 0.24
   return semantic >= 0.22
 }
 
@@ -152,7 +152,8 @@ export function normalizeFontWeight(value) {
 }
 
 export function textFieldType(text) {
-  if (/^\d{1,2}:\d{2}$/.test(text)) return 'time'
+  if (/^(现在|上午|中午|下午|晚上)?\s*\d{1,2}:\d{2}$/.test(text) || text === '现在') return 'time'
+  if (/^(周|星期)[一二三四五六日天]$/.test(text)) return 'weekday'
   if (isDurationText(text)) return 'duration'
   if (/^-?\d+(\.\d+)?%$/.test(text)) return 'percent'
   if (/^-?\d+(\.\d+)?°$/.test(text)) return 'temperature'
@@ -185,7 +186,7 @@ export function isShortCjkLabel(text) {
     hasCjk(t) &&
     !hasNumericSignal(t) &&
     t.length >= 2 &&
-    t.length <= 4
+    t.length <= 2
 }
 
 export function isNearSameLineSlot(a, b, maxX = 0.10, maxY = 0.045) {

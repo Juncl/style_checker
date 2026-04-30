@@ -120,9 +120,9 @@
           <transition name="fade">
             <div v-if="activeDiff && !selectedPair" class="highlight-bar">
               <el-icon><Location /></el-icon>
-              正在高亮：<b>{{ activeDiff.textContent || activeDiff.designName }}</b>
+              正在高亮：<b>{{ activeDiff.relatedDesignName ? `${activeDiff.designName} ↔ ${activeDiff.relatedDesignName}` : (activeDiff.textContent || activeDiff.designName) }}</b>
               的 <code>{{ activeDiff.property }}</code>
-              <el-tag size="small" effect="plain" :type="confidenceTagType(activeDiff.confidence)">
+              <el-tag v-if="activeDiff.confidence" size="small" effect="plain" :type="confidenceTagType(activeDiff.confidence)">
                 {{ confidenceText(activeDiff.confidence) }}
               </el-tag>
               <el-button link size="small" @click="activeDiff = null">✕ 取消</el-button>
@@ -152,6 +152,7 @@
               label="实机截图"
               :src="arkuiImgSrc"
               :highlight="!selectedPair && activeDiff?.arkuiRect || null"
+              :highlight-pair="!selectedPair && activeDiff?.relationRects?.arkui ? { rects: activeDiff.relationRects.arkui, axis: activeDiff.relationRects.axis } : null"
               :canvas-w="result.canvas.arkui.w"
               :canvas-h="result.canvas.arkui.h"
               :nodes="arkuiNodes"
@@ -164,6 +165,7 @@
               label="设计稿"
               :src="designImgSrc"
               :highlight="!selectedPair && activeDiff?.designRect || null"
+              :highlight-pair="!selectedPair && activeDiff?.relationRects?.design ? { rects: activeDiff.relationRects.design, axis: activeDiff.relationRects.axis } : null"
               :canvas-w="result.canvas.design.w"
               :canvas-h="result.canvas.design.h"
               :nodes="designNodes"
@@ -262,10 +264,11 @@ const designNodes = computed(() => result.value?.allDesignNodes ?? [])
 const allArkuiNodes = computed(() => result.value?.allArkuiNodes ?? [])
 const arkuiNodes  = computed(() =>
   (allArkuiNodes.value.length ? allArkuiNodes.value : result.value?.pairs?.map(p => p.arkui) ?? [])
-    .filter(isInteractiveImageNode)
+    .filter(node => !isBlankLikeNode(node) && isInteractiveImageNode(node))
 )
 const emptyLockedIds = new Set()
-const treeNodes = computed(() => treeSide.value === 'design' ? designNodes.value : allArkuiNodes.value)
+const treeNodes = computed(() => (treeSide.value === 'design' ? designNodes.value : allArkuiNodes.value)
+  .filter(node => !isBlankLikeNode(node)))
 const treeSelectedId = computed(() =>
   treeSide.value === 'design'
     ? selectedPair.value?.design?.id || null
@@ -373,11 +376,13 @@ onMounted(async () => {
 })
 
 function onDesignNodeClick(nodeId) {
-  const pair = result.value?.pairs?.find(p => p.design.id === nodeId)
+  const node = resolveSelectableNode(designNodes.value, nodeId)
+  if (!isSelectableNode(node)) return
+  const pair = result.value?.pairs?.find(p => p.design.id === (node?.id || nodeId))
   if (pair) {
     selectedPair.value = pair
   } else {
-    const designNode = result.value?.allDesignNodes?.find(n => n.id === nodeId)
+    const designNode = node || result.value?.allDesignNodes?.find(n => n.id === nodeId)
     if (designNode) {
       selectedPair.value = { matchType: 'unmatched', design: designNode, arkui: null }
     }
@@ -386,11 +391,13 @@ function onDesignNodeClick(nodeId) {
 }
 
 function onArkuiNodeClick(nodeId) {
-  const pair = result.value?.pairs?.find(p => p.arkui.id === nodeId)
+  const node = resolveSelectableNode(allArkuiNodes.value, nodeId)
+  if (!isSelectableNode(node)) return
+  const pair = result.value?.pairs?.find(p => p.arkui.id === (node?.id || nodeId))
   if (pair) {
     selectedPair.value = pair
   } else {
-    const arkuiNode = result.value?.allArkuiNodes?.find(n => n.id === nodeId)
+    const arkuiNode = node || result.value?.allArkuiNodes?.find(n => n.id === nodeId)
     if (arkuiNode) {
       selectedPair.value = { matchType: 'unmatched-dev', design: null, arkui: arkuiNode }
     }
@@ -400,11 +407,20 @@ function onArkuiNodeClick(nodeId) {
 
 function isInteractiveImageNode(node) {
   return node &&
+    !isBlankLikeNode(node) &&
     node.visible !== false &&
     !node.visualOccluded &&
     node.rect &&
     node.rect.w > 4 &&
     node.rect.h > 4
+}
+
+function isSelectableNode(node) {
+  return !!(node && node.visible !== false && !node.visualOccluded && node.rect?.w > 4 && node.rect?.h > 4)
+}
+
+function isBlankLikeNode(node) {
+  return String(node?.type || node?.name || '').trim().toLowerCase() === 'blank'
 }
 
 function nodeDiffsFor(key, nodeId) {
@@ -414,6 +430,44 @@ function nodeDiffsFor(key, nodeId) {
 function onTreeNodeSelect(nodeId) {
   if (treeSide.value === 'design') onDesignNodeClick(nodeId)
   else onArkuiNodeClick(nodeId)
+}
+
+function resolveSelectableNode(nodes, nodeId) {
+  const node = nodes.find(n => n.id === nodeId)
+  if (!node) return null
+  if (node.type === 'text' || !node.textContent) return node
+
+  const targetText = normalizeLooseText(node.textContent)
+  if (!targetText) return node
+
+  const descendants = nodes.filter(n =>
+    n.type === 'text' &&
+    normalizeLooseText(n.textContent) === targetText &&
+    isPathPrefix(node.path, n.path) &&
+    n.visible !== false &&
+    !n.visualOccluded
+  )
+
+  if (!descendants.length) return node
+  return descendants.sort((a, b) => {
+    const da = (a.path?.length ?? 0) - (node.path?.length ?? 0)
+    const db = (b.path?.length ?? 0) - (node.path?.length ?? 0)
+    if (da !== db) return db - da
+    return (a.rect.w * a.rect.h) - (b.rect.w * b.rect.h)
+  })[0]
+}
+
+function normalizeLooseText(text) {
+  return String(text || '').replace(/\s+/g, '').trim()
+}
+
+function isPathPrefix(prefix, path) {
+  if (!Array.isArray(prefix) || !Array.isArray(path)) return false
+  if (prefix.length >= path.length) return false
+  for (let i = 0; i < prefix.length; i++) {
+    if (prefix[i] !== path[i]) return false
+  }
+  return true
 }
 
 function onToggleLock(nodeId) {

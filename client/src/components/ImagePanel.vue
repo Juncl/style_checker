@@ -57,6 +57,7 @@ const props = defineProps({
   src:          { type: String,  default: '' },
   label:        { type: String,  default: '' },
   highlight:    { type: Object,  default: null },
+  highlightPair:{ type: Object,  default: null },
   canvasW:      { type: Number,  default: 360 },
   canvasH:      { type: Number,  default: 792 },
   nodes:        { type: Array,   default: () => [] },
@@ -103,6 +104,7 @@ onUnmounted(() => {
 function onImgLoad() { nextTick(() => { draw(); updateInspectorPos() }) }
 
 watch(() => props.highlight,     () => nextTick(draw))
+watch(() => props.highlightPair, () => nextTick(draw))
 watch(() => props.selectedId,    () => nextTick(draw))
 watch(() => [props.canvasW, props.canvasH], () => nextTick(draw))
 watch(() => props.inspectorNode?.id, () => {
@@ -246,7 +248,10 @@ function draw() {
 
   // diff 高亮（橙色）
   const hr = props.highlight
-  if (hr && props.canvasW && props.canvasH) {
+  const hp = props.highlightPair
+  if (hp && props.canvasW && props.canvasH) {
+    drawRelationHighlight(ctx, hp, sx, sy)
+  } else if (hr && props.canvasW && props.canvasH) {
     drawNodeRect(ctx, hr, sx, sy, 'rgba(255,80,0,0.15)', '#ff5000', 2, [])
     const hx = hr.x * sx, hy = hr.y * sy
     ctx.fillStyle = '#ff5000'
@@ -266,6 +271,56 @@ function drawNodeRect(ctx, rect, sx, sy, fill, stroke, lineWidth, dash) {
   ctx.setLineDash(dash)
   ctx.strokeRect(x, y, w, h)
   ctx.setLineDash([])
+}
+
+function drawRelationHighlight(ctx, relation, sx, sy) {
+  const rects = Array.isArray(relation?.rects) ? relation.rects.filter(Boolean) : []
+  if (!rects.length) return
+  for (const rect of rects) {
+    drawNodeRect(ctx, rect, sx, sy, 'rgba(255,176,0,0.10)', '#ff9800', 2, [4, 3])
+  }
+  if (rects.length < 2) return
+
+  const [a, b] = rects
+  const axis = relation.axis
+  const band = axis === 'vertical'
+    ? verticalGapBand(a, b)
+    : axis === 'horizontal'
+      ? horizontalGapBand(a, b)
+      : null
+  if (!band) return
+
+  ctx.fillStyle = 'rgba(255,176,0,0.18)'
+  ctx.strokeStyle = 'rgba(255,140,0,0.85)'
+  ctx.lineWidth = 1.5
+  ctx.setLineDash([5, 4])
+  ctx.fillRect(band.x * sx, band.y * sy, band.w * sx, band.h * sy)
+  ctx.strokeRect(band.x * sx, band.y * sy, band.w * sx, band.h * sy)
+  ctx.setLineDash([])
+}
+
+function horizontalGapBand(a, b) {
+  const left = a.x + a.w <= b.x ? a : b
+  const right = left === a ? b : a
+  const x1 = left.x + left.w
+  const x2 = right.x
+  const y1 = Math.max(left.y, right.y)
+  const y2 = Math.min(left.y + left.h, right.y + right.h)
+  const y = y2 > y1 ? y1 : Math.min(left.y, right.y)
+  const h = y2 > y1 ? (y2 - y1) : Math.max(left.h, right.h)
+  return { x: x1, y, w: Math.max(0, x2 - x1), h }
+}
+
+function verticalGapBand(a, b) {
+  const top = a.y + a.h <= b.y ? a : b
+  const bottom = top === a ? b : a
+  const y1 = top.y + top.h
+  const y2 = bottom.y
+  const x1 = Math.max(top.x, bottom.x)
+  const x2 = Math.min(top.x + top.w, bottom.x + bottom.w)
+  const x = x2 > x1 ? x1 : Math.min(top.x, bottom.x)
+  const w = x2 > x1 ? (x2 - x1) : Math.max(top.w, bottom.w)
+  return { x, y: y1, w, h: Math.max(0, y2 - y1) }
 }
 
 // ── Inspector 定位 ──────────────────────────────────────────────────────────
@@ -477,4 +532,3 @@ function toCssColor(color) {
   return color
 }
 </script>
-

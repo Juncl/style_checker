@@ -9,11 +9,15 @@ import {
   isShortCjkLabelPair,
   isShortCjkLabel,
   isStrongTitleSlotMatch,
+  normalizeText,
   passesTextSemanticGate,
+  numericTextCompatible,
+  textFieldType,
   textRoleMatchScore,
   textSemanticSimilarity,
   textStyleSimilarity,
 } from './textSemantics.js'
+import { hasSameTextAttributeFingerprint } from './textFingerprints.js'
 import { isCompatibleType, isMatchableNode } from './nodeVisibility.js'
 import { candidatePool, regionAffinity } from './regionContext.js'
 
@@ -44,7 +48,8 @@ export function bestExactTextCandidate(targetNode, candidates) {
     const xScore = Math.max(0, 1 - xDistance(targetNode.normRect, cur.normRect) / 0.35)
     const styleScore = textStyleSimilarity(targetNode, cur)
     const sizeScore = sizeRatio(targetNode.normRect.h, cur.normRect.h)
-    const score = yScore * 0.40 + xScore * 0.30 + styleScore * 0.20 + sizeScore * 0.10
+    const pixelScore = cur.pixelVisibility?.samples ? Math.min(1, cur.pixelVisibility.visiblePixelRatio / 0.14) : 0.70
+    const score = yScore * 0.32 + xScore * 0.24 + styleScore * 0.18 + sizeScore * 0.08 + pixelScore * 0.18
     if (score > bestScore) {
       bestScore = score
       best = cur
@@ -145,19 +150,27 @@ export function maxWeightTextMatching(designTexts, arkuiTexts, regionScore) {
   const arkuiOrder = orderIndexMap(arkuiTexts)
 
   for (let di = 0; di < designTexts.length; di++) {
-    const dn = designTexts[di]
+      const dn = designTexts[di]
     for (let ai = 0; ai < arkuiTexts.length; ai++) {
       const an = arkuiTexts[ai]
       const semantic = textSemanticSimilarity(dn.textContent, an.textContent)
       const roleScore = textRoleMatchScore(dn, an)
-      if (!passesTextSemanticGate(dn.textContent, an.textContent, semantic) && roleScore < 0.85) continue
+      if (isWeakVisibleTextNode(dn) || isWeakVisibleTextNode(an)) {
+        if (!weakVisibleTextCompatible(dn, an, semantic, roleScore)) continue
+      }
+      const fingerprintMatch = hasSameTextAttributeFingerprint(dn, an)
+      const fingerprintGeometryOk = fingerprintMatch &&
+        Math.abs(centerY(dn.normRect) - centerY(an.normRect)) <= 0.03 &&
+        Math.abs(rectCenter(dn.normRect).x - rectCenter(an.normRect).x) <= 0.06 &&
+        sizeRatio(dn.normRect.h, an.normRect.h) >= 0.65
+      if (!passesTextSemanticGate(dn.textContent, an.textContent, semantic) && roleScore < 0.85 && !fingerprintGeometryOk) continue
       if (isAmbiguousUnitText(dn.textContent) && Math.abs(centerY(dn.normRect) - centerY(an.normRect)) > 0.04) continue
       if (isAmbiguousShortNumberText(dn.textContent) && !isNearSameLineSlot(dn, an, 0.10, 0.045)) continue
 
       const geom = localTextGeometryScore(dn.normRect, an.normRect)
       const style = textStyleSimilarity(dn, an)
       const order = 1 - Math.min(1, Math.abs(designOrder.get(dn.id) - arkuiOrder.get(an.id)) / Math.max(designTexts.length, arkuiTexts.length, 1))
-      const semanticOrRole = Math.max(semantic, roleScore * 0.72)
+      const semanticOrRole = Math.max(semantic, roleScore * 0.72, fingerprintGeometryOk ? 0.66 : 0)
       const score = semanticOrRole * 0.38 + style * 0.24 + geom * 0.22 + order * 0.10 + regionScore * 0.06
       if (score >= 0.45) {
         edges.push({ design: dn, arkui: an, score, di, ai })
@@ -186,6 +199,28 @@ export function maxWeightTextMatching(designTexts, arkuiTexts, regionScore) {
     matches.push(edge)
   }
   return matches
+}
+
+function isWeakVisibleTextNode(node) {
+  const visibility = node?.pixelVisibility || {}
+  return (visibility.visiblePixelRatio ?? 1) < 0.10 && (visibility.textStrokeScore ?? 0) < 0.08
+}
+
+function weakVisibleTextCompatible(dn, an, semantic, roleScore) {
+  const ta = normalizeText(dn.textContent)
+  const tb = normalizeText(an.textContent)
+  const typeA = textFieldType(ta)
+  const typeB = textFieldType(tb)
+  if (typeA !== typeB) return false
+  const centerDist = centerDistance(dn.normRect, an.normRect)
+  const xDist = xDistance(dn.normRect, an.normRect)
+  const yDist = yDistance(dn.normRect, an.normRect)
+  if (centerDist > 0.16 || xDist > 0.12 || yDist > 0.12) return false
+  if (typeA !== 'label') {
+    if (typeA === 'number') return numericTextCompatible(ta, tb)
+    return ta === tb
+  }
+  return semantic >= 0.82 || roleScore >= 0.85
 }
 
 export function exactAssignmentForSmallGroups(designTexts, arkuiTexts, edgeScore) {

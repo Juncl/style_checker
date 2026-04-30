@@ -107,17 +107,23 @@ const listRef     = ref(null)
 const selectedNodeId = computed(() => props.selectedId || props.selectedDesignId)
 
 function comparePaths(a, b) {
-  const len = Math.min(a.length, b.length)
+  const pa = normalizePath(a)
+  const pb = normalizePath(b)
+  const len = Math.min(pa.length, pb.length)
   for (let i = 0; i < len; i++) {
-    if (a[i] !== b[i]) return a[i] - b[i]
+    if (pa[i] !== pb[i]) return pa[i] - pb[i]
   }
-  return a.length - b.length
+  return pa.length - pb.length
+}
+
+function normalizePath(path) {
+  return Array.isArray(path) ? path : []
 }
 
 const sortedNodes = computed(() =>
   [...props.nodes]
-    .sort((a, b) => comparePaths(a.path, b.path))
-    .map(n => ({ ...n, depth: Math.max(0, n.path.length - 1) }))
+    .sort((a, b) => comparePaths(a.path, b.path) || (a.paintIndex ?? 0) - (b.paintIndex ?? 0))
+    .map(n => ({ ...n, depth: Math.max(0, normalizePath(n.path).length - 1) }))
 )
 
 const totalCount  = computed(() => props.nodes.length)
@@ -129,7 +135,7 @@ const displayNodes = computed(() => {
   let list = sortedNodes.value
   if (matchedOnly.value) list = list.filter(n => n.matched)
   if (q) list = list.filter(n =>
-    n.name.toLowerCase().includes(q) ||
+    String(n.name || '').toLowerCase().includes(q) ||
     (n.textContent || '').toLowerCase().includes(q)
   )
   return list
