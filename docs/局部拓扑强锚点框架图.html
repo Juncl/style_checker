@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>局部拓扑强锚点匹配框架图</title>
+  <style>
+    :root {
+      --bg: #f6f8fc;
+      --panel: #ffffff;
+      --ink: #162033;
+      --muted: #607089;
+      --line: #cdd8e6;
+      --accent: #2f6fed;
+      --accent-2: #18a06a;
+      --warn: #d68b00;
+      --shadow: 0 10px 28px rgba(22, 32, 51, 0.08);
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, #fafcff 0%, var(--bg) 100%);
+    }
+
+    .wrap {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 32px 24px 40px;
+    }
+
+    .header {
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+      max-width: 980px;
+    }
+
+    .diagram {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 18px;
+      align-items: stretch;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(205, 216, 230, 0.9);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .node {
+      position: relative;
+      min-height: 170px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px 14px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .node::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -18px;
+      width: 18px;
+      height: 2px;
+      background: var(--line);
+      transform: translateY(-50%);
+    }
+
+    .node:last-child::after { display: none; }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: fit-content;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      line-height: 1;
+      font-weight: 600;
+      letter-spacing: 0;
+      color: #fff;
+      background: var(--accent);
+    }
+
+    .tag.green { background: var(--accent-2); }
+    .tag.orange { background: var(--warn); }
+
+    .title {
+      margin: 12px 0 8px;
+      font-size: 17px;
+      line-height: 1.35;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .desc {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .meta {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px dashed #d9e2ee;
+      color: #425166;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .wide {
+      grid-column: span 2;
+    }
+
+    .flow {
+      margin-top: 24px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      line-height: 1.3;
+    }
+
+    .list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+
+    .list li {
+      position: relative;
+      padding-left: 18px;
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.65em;
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--accent);
+      transform: translateY(-50%);
+    }
+
+    .legend {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .arrow-row {
+      display: none;
+    }
+
+    @media (max-width: 1200px) {
+      .diagram {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .wide {
+        grid-column: span 1;
+      }
+      .node::after { display: none; }
+      .flow {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .wrap { padding: 20px 14px 28px; }
+      h1 { font-size: 22px; }
+      .diagram {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        padding: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="header">
+      <h1>局部拓扑强锚点匹配框架图</h1>
+      <p class="subtitle">
+        这张图展示的是当前节点匹配里“强锚点 + 周边节点”的工作方式：先拿到高置信锚点，再基于区域上下文和相对位置关系去推断周边节点，最后通过一对一全局收口输出稳定配对结果。
+      </p>
+    </header>
+
+    <section class="diagram" aria-label="局部拓扑强锚点匹配流程">
+      <article class="node wide">
+        <span class="tag">输入</span>
+        <div>
+          <div class="title">设计侧节点 / 开发侧节点</div>
+          <p class="desc">包含文本、样式、坐标、层级路径、绘制顺序、可见性与视觉特征。</p>
+        </div>
+        <div class="meta">目标：把两侧节点整理成统一结构，作为后续匹配的基础输入。</div>
+      </article>
+
+      <article class="node">
+        <span class="tag orange">预处理</span>
+        <div>
+          <div class="title">过滤与归一化</div>
+          <p class="desc">过滤空文本、透明节点、Blank、弱可见节点；同时完成文本归一化和坐标标准化。</p>
+        </div>
+        <div class="meta">对应规则：可见性优先，先排除不该参与比较的节点。</div>
+      </article>
+
+      <article class="node">
+        <span class="tag green">锚点生成</span>
+        <div>
+          <div class="title">Pass 1 高置信文本匹配</div>
+          <p class="desc">通过同文本、样式相似、位置接近等条件，先找出少量强锚点。</p>
+        </div>
+        <div class="meta">输出：strongAnchors / topologyAnchors。</div>
+      </article>
+
+      <article class="node">
+        <span class="tag">区域上下文</span>
+        <div>
+          <div class="title">区域切分与配对</div>
+          <p class="desc">先把页面切成局部区域，再通过区域中心、文本集合、装饰密度和视觉特征建立区域映射。</p>
+        </div>
+        <div class="meta">作用：缩小搜索空间，让拓扑只在局部块内推断。</div>
+      </article>
+
+      <article class="node">
+        <span class="tag orange">周边锚点</span>
+        <div>
+          <div class="title">nearbyAnchors</div>
+          <p class="desc">为待匹配节点选取附近锚点；短中文标签可保留多个邻近锚点，普通节点只保留最近稳定锚点。</p>
+        </div>
+        <div class="meta">作用：给每个节点提供局部参照系。</div>
+      </article>
+
+      <article class="node">
+        <span class="tag green">拓扑打分</span>
+        <div>
+          <div class="title">相对关系 + 语义 + 区域亲和力</div>
+          <p class="desc">比较“相对锚点的 dx / dy / w / h”，再结合文本语义、角色、尺寸比例、IoU 与区域得分。</p>
+        </div>
+        <div class="meta">核心：topologyMatchScore。</div>
+      </article>
+
+      <article class="node">
+        <span class="tag">候选收窄</span>
+        <div>
+          <div class="title">candidatePool</div>
+          <p class="desc">优先使用同区域候选，局部区域内先完成配对，再回退到全局候选。</p>
+        </div>
+        <div class="meta">作用：减少跨区域串位与远距离误配。</div>
+      </article>
+
+      <article class="node wide">
+        <span class="tag orange">全局收口</span>
+        <div>
+          <div class="title">一对一冲突消解</div>
+          <p class="desc">把所有局部推断结果按置信度、锚点权重、拓扑分和类型优先级排序，最终只保留一对一配对。</p>
+        </div>
+        <div class="meta">输出：最终 pairs、unmatchedDesign、unmatchedArkui。</div>
+      </article>
+    </section>
+
+    <section class="flow" aria-label="补充说明">
+      <div class="panel">
+        <h2>强锚点的来源</h2>
+        <ul class="list">
+          <li>同文本精确匹配</li>
+          <li>样式相似且位置接近</li>
+          <li>不是弱可见文本，也不是高风险短数字</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h2>周边节点的推断依据</h2>
+        <ul class="list">
+          <li>相对锚点位置关系</li>
+          <li>局部区域上下文</li>
+          <li>文本语义、角色、样式与尺寸</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h2>最终收口原则</h2>
+        <ul class="list">
+          <li>全局一对一，不允许多对一</li>
+          <li>高置信优先，低置信让位</li>
+          <li>局部正确，不代表全局可直接接受</li>
+        </ul>
+      </div>
+    </section>
+
+    <p class="legend">
+      这是一张静态框架图，适合放在 docs 里配合文字说明一起看。后面如果要更像产品图，也可以再把它改成可缩放的 SVG 或交互式页面。
+    </p>
+  </div>
+</body>
+</html>

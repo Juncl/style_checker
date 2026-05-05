@@ -4,7 +4,7 @@
     <header class="app-header">
       <div class="header-left">
         <span class="logo">🔍</span>
-        <span class="title">HarmonyOS 设计还原检查</span>
+        <span class="title">Octo UI 一致性检查</span>
       </div>
       <div class="header-right">
         <el-tag v-if="result" :type="scoreTagType" size="large" effect="dark">

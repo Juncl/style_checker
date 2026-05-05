@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>节点匹配权重机制框架图</title>
+  <style>
+    :root {
+      --bg: #f5f8fc;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #5f6d82;
+      --line: #ced8e6;
+      --accent: #2f6fed;
+      --accent-2: #18a36f;
+      --accent-3: #d68b00;
+      --accent-4: #9b59b6;
+      --shadow: 0 12px 30px rgba(23, 32, 51, 0.08);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, #fbfdff 0%, var(--bg) 100%);
+    }
+
+    .wrap {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 32px 24px 40px;
+    }
+
+    .header {
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 26px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+      max-width: 1020px;
+    }
+
+    .stage {
+      background: rgba(255,255,255,0.72);
+      border: 1px solid rgba(206, 216, 230, 0.9);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+      overflow: hidden;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.15fr 1.35fr 1.25fr 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .column {
+      display: grid;
+      gap: 14px;
+    }
+
+    .column-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #354257;
+      letter-spacing: 0;
+      margin: 0 0 2px;
+    }
+
+    .card {
+      position: relative;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px 14px 13px;
+      min-height: 92px;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.9) inset;
+    }
+
+    .card::after {
+      content: "";
+      position: absolute;
+      right: -16px;
+      top: 50%;
+      width: 16px;
+      height: 2px;
+      background: var(--line);
+      transform: translateY(-50%);
+    }
+
+    .card:last-child::after { display: none; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1;
+      width: fit-content;
+    }
+
+    .pill.blue { background: var(--accent); }
+    .pill.green { background: var(--accent-2); }
+    .pill.orange { background: var(--accent-3); }
+    .pill.purple { background: var(--accent-4); }
+
+    .title {
+      margin: 10px 0 6px;
+      font-size: 16px;
+      line-height: 1.35;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .desc {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    .weight-list {
+      margin: 10px 0 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 8px;
+    }
+
+    .weight-list li {
+      position: relative;
+      padding-left: 16px;
+      color: var(--ink);
+      font-size: 12.5px;
+      line-height: 1.55;
+    }
+
+    .weight-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.7em;
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--accent);
+      transform: translateY(-50%);
+    }
+
+    .stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .branch {
+      display: grid;
+      gap: 10px;
+    }
+
+    .branch-title {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .summary {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 16px;
+    }
+
+    .wide-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .wide-card h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      line-height: 1.35;
+    }
+
+    .steps {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+
+    .steps li {
+      position: relative;
+      padding-left: 18px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--ink);
+    }
+
+    .steps li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.68em;
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--accent-2);
+      transform: translateY(-50%);
+    }
+
+    .legend {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+      margin-top: 16px;
+    }
+
+    @media (max-width: 1320px) {
+      .grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      .summary {
+        grid-template-columns: 1fr;
+      }
+      .card::after { display: none; }
+    }
+
+    @media (max-width: 780px) {
+      .wrap { padding: 18px 14px 28px; }
+      h1 { font-size: 22px; }
+      .grid { grid-template-columns: 1fr; }
+      .summary { gap: 12px; }
+      .stage { padding: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="header">
+      <h1>节点匹配权重机制框架图</h1>
+      <p class="subtitle">
+        这张图把节点匹配里的权重机制拆成三层：先用硬门槛过滤不该进来的节点，再用多维软权重给候选打分，最后通过全局排序和一对一收口确定最终 pair。
+      </p>
+    </header>
+
+    <section class="stage" aria-label="节点匹配权重机制">
+      <div class="grid">
+        <div class="column">
+          <p class="column-title">1. 硬门槛 / 候选过滤</p>
+          <div class="card">
+            <span class="pill orange">过滤</span>
+            <div class="title">不可比节点先剔除</div>
+            <p class="desc">空文本、透明节点、Blank、弱可见节点、明显遮挡节点先排除，不进入后续打分。</p>
+          </div>
+          <div class="card">
+            <span class="pill orange">语义门槛</span>
+            <div class="title">类型不对直接拦截</div>
+            <p class="desc">时间、星期、数字、单位、标题等文本类型先分类，类型不一致就不会进入宽松救援。</p>
+          </div>
+          <div class="card">
+            <span class="pill orange">可见性</span>
+            <div class="title">弱可见文本收紧</div>
+            <p class="desc">低像素可见度文本不能靠语义硬救，需要更近的位置关系和更强的类型一致性。</p>
+          </div>
+        </div>
+
+        <div class="column">
+          <p class="column-title">2. 候选打分 / 软权重</p>
+          <div class="card">
+            <span class="pill blue">文本精确</span>
+            <div class="title">同文本候选优先</div>
+            <ul class="weight-list">
+              <li>纵向位置接近度</li>
+              <li>横向位置接近度</li>
+              <li>样式相似度</li>
+              <li>尺寸 / 高度比例</li>
+              <li>像素可见性</li>
+            </ul>
+          </div>
+          <div class="card">
+            <span class="pill blue">动态槽位</span>
+            <div class="title">时间 / 星期 / 数值槽位</div>
+            <p class="desc">用位置、顺序、样式、区域亲和力一起打分，解决 Mock 文案和真实数据不一致的问题。</p>
+          </div>
+          <div class="card">
+            <span class="pill blue">区域文本</span>
+            <div class="title">区域内最优分配</div>
+            <p class="desc">先在同一区域里做局部最优，再回到全局，避免列表、卡片里的文本互相串位。</p>
+          </div>
+        </div>
+
+        <div class="column">
+          <p class="column-title">3. 局部结构 / 拓扑增强</p>
+          <div class="card">
+            <span class="pill green">强锚点</span>
+            <div class="title">先建立局部坐标系</div>
+            <p class="desc">先用高置信文本命中形成 strongAnchors / topologyAnchors，再围绕这些锚点推断周边节点。</p>
+          </div>
+          <div class="card">
+            <span class="pill green">拓扑分数</span>
+            <div class="title">相对关系优先</div>
+            <ul class="weight-list">
+              <li>相对锚点 dx / dy</li>
+              <li>宽高比例</li>
+              <li>文本样式</li>
+              <li>语义 / 角色</li>
+              <li>IoU + 区域亲和力</li>
+            </ul>
+          </div>
+          <div class="card">
+            <span class="pill green">周边推断</span>
+            <div class="title">候选池只看局部</div>
+            <p class="desc">candidatePool 先优先局部区域候选，再回落到全局，减少跨区域误配和远距离串位。</p>
+          </div>
+        </div>
+
+        <div class="column">
+          <p class="column-title">4. 全局收口 / 最终排序</p>
+          <div class="card">
+            <span class="pill purple">优先级</span>
+            <div class="title">matchType 排序</div>
+            <p class="desc">text-content、region-text-optimal、text-role、anchor-topology、dynamic-text-slot 等类型各自有权重优先级。</p>
+          </div>
+          <div class="card">
+            <span class="pill purple">置信度</span>
+            <div class="title">高置信先保留</div>
+            <p class="desc">高 / 中 / 低置信度会影响最终取舍，低置信 pair 不能抢占高置信结果。</p>
+          </div>
+          <div class="card">
+            <span class="pill purple">一对一</span>
+            <div class="title">全局冲突消解</div>
+            <p class="desc">最终只保留一对一配对，避免多个开发节点同时匹配同一个设计节点。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="summary">
+      <div class="wide-card">
+        <h2>权重机制的核心流程</h2>
+        <ol class="steps">
+          <li>先过滤掉不可见、空文本、Blank、弱可见和遮挡节点。</li>
+          <li>再用文本精确、动态槽位、区域最优、语义角色等规则打软分。</li>
+          <li>随后用强锚点建立局部拓扑坐标系，推断周边节点关系。</li>
+          <li>最后按置信度、类型优先级、拓扑分、IoU 和视觉分做全局收口。</li>
+        </ol>
+      </div>
+
+      <div class="wide-card">
+        <h2>权重层级一句话</h2>
+        <p class="desc" style="margin: 0;">
+          先有硬门槛决定“能不能进池子”，再有软权重决定“谁更像”，最后靠全局排序决定“谁留下”。
+        </p>
+      </div>
+    </section>
+
+    <p class="legend">
+      这是一张静态框架图，适合直接放进 docs 目录，和“节点匹配准确度提升举措.md”配套阅读。
+    </p>
+  </div>
+</body>
+</html>
