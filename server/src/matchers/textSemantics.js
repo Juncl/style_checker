@@ -3,7 +3,11 @@ import { setJaccard } from './regionContext.js'
 
 // Text gates protect the matcher from pairing unrelated labels that merely share a slot.
 export function normalizeText(text) {
-  return String(text || '').trim().toLowerCase()
+  const raw = String(text || '').trim().toLowerCase()
+  if (!raw) return ''
+  // CJK / numeric labels often differ only by formatting spaces, so treat them as the same token stream.
+  if (hasCjk(raw) || /[\d°%/]/.test(raw)) return raw.replace(/\s+/g, '')
+  return raw.replace(/\s+/g, ' ')
 }
 
 export function textStyleSimilarity(dn, an) {

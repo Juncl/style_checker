@@ -1,17 +1,27 @@
 <template>
   <div class="diff-panel">
-    <!-- 顶部筛选栏 -->
     <div class="diff-toolbar">
-      <div class="severity-tabs">
+      <div class="issue-tabs">
         <button
-          v-for="s in SEVERITIES"
-          :key="s.key"
-          :class="['sev-tab', s.key, { active: visibleSet.has(s.key) }]"
-          @click="toggleSeverity(s.key)"
+          v-for="group in issueGroups"
+          :key="group.key"
+          :class="['issue-tab', { active: activeIssue === group.key }]"
+          @click="selectIssue(group.key)"
         >
-          {{ s.label }}
-          <span class="badge">{{ counts[s.key] }}</span>
+          {{ group.label }}
+          <span class="badge">{{ issueCounts[group.key] || 0 }}</span>
         </button>
+      </div>
+      <div class="toolbar-row">
+        <div class="severity-summary">
+          <span v-for="s in severitySummary" :key="s.key" :class="['severity-chip', s.key]">
+            {{ s.label }} {{ s.count }}
+          </span>
+        </div>
+        <label class="confidence-toggle">
+          <span>低置信</span>
+          <el-switch v-model="showLowConfidence" size="small" />
+        </label>
       </div>
       <el-input
         v-model="search"
@@ -24,7 +34,6 @@
       </el-input>
     </div>
 
-    <!-- 差异列表 -->
     <div class="diff-list" ref="listRef">
       <template v-if="filteredDiffs.length === 0">
         <div class="empty-state">
@@ -39,13 +48,9 @@
         :class="['diff-item', d.severity, { selected: selectedIdx === idx }]"
         @click="selectItem(d, idx)"
       >
-        <!-- 左侧色条 -->
-        <div :class="['sev-strip', d.severity]" />
-
         <div class="diff-body">
-          <!-- 第一行：节点标识 -->
           <div class="diff-meta">
-            <span :class="['sev-badge', d.severity]">{{ d.severity }}</span>
+            <span class="issue-badge">{{ issueLabel(d.property) }}</span>
             <span class="prop-tag">{{ d.property }}</span>
             <span :class="['confidence-badge', d.confidence || 'medium']">
               {{ confidenceLabel(d.confidence) }}
@@ -57,7 +62,6 @@
             <span v-if="d.textContent" class="text-snippet">「{{ truncate(d.textContent, 12) }}」</span>
           </div>
 
-          <!-- 第二行：值对比 -->
           <div class="diff-values">
             <div class="val-block arkui">
               <span class="val-label">开发</span>
@@ -72,12 +76,10 @@
             </div>
           </div>
 
-          <!-- 第三行：描述 -->
           <div class="diff-desc">{{ d.description }}</div>
         </div>
       </div>
 
-      <!-- 未匹配区块 -->
       <template v-if="unmatched.length > 0">
         <div v-show="false">
           <div class="section-divider">
@@ -101,7 +103,6 @@
 <script setup>
 import { ref, computed, defineComponent, h } from 'vue'
 
-// ── ColorDot 内联子组件 ───────────────────────────────────────────────────────
 const ColorDot = defineComponent({
   props: { hex: String },
   setup(props) {
@@ -121,7 +122,6 @@ const ColorDot = defineComponent({
       : null
   },
 })
-// ─────────────────────────────────────────────────────────────────────────────
 
 const props = defineProps({
   diffs:     { type: Array, default: () => [] },
@@ -129,37 +129,63 @@ const props = defineProps({
 })
 const emit = defineEmits(['select'])
 
-const SEVERITIES = [
-  { key: 'error',   label: 'Error' },
-  { key: 'warning', label: 'Warning' },
-  { key: 'info',    label: 'Info' },
+const ISSUE_GROUPS = [
+  { key: 'all', label: '全部' },
+  { key: 'font', label: '字体' }, { key: 'fontWeight', label: '字重' }, { key: 'color', label: '颜色' },
+  { key: 'borderRadius', label: '圆角' }, { key: 'shadow', label: '阴影' }, { key: 'backdropBlur', label: '模糊' },
+  { key: 'opacity', label: '不透明度' }, { key: 'padding', label: '内边距' }, { key: 'border', label: '描边' },
+  { key: 'spacing', label: '间距' }, { key: 'gradient', label: '渐变' }, { key: 'icon', label: '图标' },
+  { key: 'visual', label: '视觉' }, { key: 'fontSize.scale', label: '字体缩放' }, { key: 'other', label: '其它' },
 ]
 
-const visibleSet  = ref(new Set(['error', 'warning']))
+const activeIssue = ref('all')
+const showLowConfidence = ref(false)
 const search      = ref('')
 const selectedIdx = ref(-1)
 const listRef     = ref(null)
 
-const counts = computed(() => ({
-  error:   props.diffs.filter(d => d.severity === 'error').length,
-  warning: props.diffs.filter(d => d.severity === 'warning').length,
-  info:    props.diffs.filter(d => d.severity === 'info').length,
-}))
-
+const visibleDiffs = computed(() =>
+  showLowConfidence.value ? props.diffs : props.diffs.filter(d => d.confidence !== 'low')
+)
+const IGNORED_ISSUE_PROPS = new Set(['textAlign'])
+const issueGroups = computed(() =>
+  ISSUE_GROUPS.filter(group => group.key === 'all' || (issueCounts.value[group.key] || 0) > 0)
+)
+const issueCounts = computed(() => {
+  const counts = { all: visibleDiffs.value.length }
+  for (const d of visibleDiffs.value) {
+    const key = issueKey(d.property)
+    if (key === '__ignored__') continue
+    counts[key] = (counts[key] || 0) + 1
+  }
+  return counts
+})
+const severitySummary = computed(() => [
+  { key: 'error', label: 'Error', count: visibleDiffs.value.filter(d => d.severity === 'error').length },
+  { key: 'warning', label: 'Warning', count: visibleDiffs.value.filter(d => d.severity === 'warning').length },
+  { key: 'info', label: 'Info', count: visibleDiffs.value.filter(d => d.severity === 'info').length },
+])
 const filteredDiffs = computed(() => {
   const q = search.value.trim().toLowerCase()
-  let list = props.diffs.filter(d => visibleSet.value.has(d.severity))
+  let list = activeIssue.value === 'all'
+    ? visibleDiffs.value
+    : visibleDiffs.value.filter(d => issueKey(d.property) === activeIssue.value)
   if (q) {
     list = list.filter(d =>
       d.property.toLowerCase().includes(q) ||
+      issueLabel(d.property).includes(q) ||
       (d.textContent || '').includes(q) ||
       d.description.toLowerCase().includes(q)
     )
   }
-  const order = { error: 0, warning: 1, info: 2 }
-  return list.slice().sort((a, b) => order[a.severity] - order[b.severity])
+  const sevOrder = { error: 0, warning: 1, info: 2 }
+  const issueOrder = Object.fromEntries(ISSUE_GROUPS.map((g, idx) => [g.key, idx]))
+  return list.slice().sort((a, b) => {
+    const issueDelta = (issueOrder[issueKey(a.property)] ?? 99) - (issueOrder[issueKey(b.property)] ?? 99)
+    if (activeIssue.value === 'all' && issueDelta !== 0) return issueDelta
+    return (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9)
+  })
 })
-
 const filteredUnmatched = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return props.unmatched
@@ -169,15 +195,11 @@ const filteredUnmatched = computed(() => {
     (n.type || '').toLowerCase().includes(q)
   )
 })
-
-function toggleSeverity(key) {
-  const s = new Set(visibleSet.value)
-  s.has(key) ? s.delete(key) : s.add(key)
-  visibleSet.value = s
+function selectIssue(key) {
+  activeIssue.value = key
   selectedIdx.value = -1
   emit('select', null)
 }
-
 function selectItem(d, idx) {
   if (selectedIdx.value === idx) {
     selectedIdx.value = -1
@@ -202,6 +224,30 @@ function confidenceLabel(confidence) {
   if (confidence === 'low') return '低'
   return '中'
 }
+function issueKey(property = '') {
+  const p = String(property)
+  if (p === 'fontSize.scale') return 'fontSize.scale'
+  if (IGNORED_ISSUE_PROPS.has(p)) return '__ignored__'
+  if (['fontSize', 'fontFamily', 'lineHeight', 'letterSpacing'].includes(p)) return 'font'
+  if (p === 'fontWeight') return 'fontWeight'
+  if (p === 'backgroundColor' || p === 'fontColor' || p.includes('Color') || p.endsWith('.color')) return 'color'
+  if (p === 'borderRadius') return 'borderRadius'
+  if (p === 'shadow' || p.startsWith('shadow.')) return 'shadow'
+  if (p === 'backdropBlur') return 'backdropBlur'
+  if (p === 'opacity') return 'opacity'
+  if (p === 'padding') return 'padding'
+  if (p === 'border' || p.startsWith('border.')) return 'border'
+  if (p === 'itemSpacing' || p.startsWith('spacing.')) return 'spacing'
+  if (p === 'gradient') return 'gradient'
+  if (p.startsWith('icon.')) return 'icon'
+  if (p.startsWith('visual.')) return 'visual'
+  return 'other'
+}
+function issueLabel(property) {
+  const key = issueKey(property)
+  if (key === '__ignored__') return '对齐'
+  return ISSUE_GROUPS.find(g => g.key === key)?.label || '其它'
+}
 </script>
 
 <style scoped>
@@ -212,7 +258,6 @@ function confidenceLabel(confidence) {
   min-height: 0;
 }
 
-/* ── 顶部工具栏 ── */
 .diff-toolbar {
   padding: 10px 12px 8px;
   border-bottom: 1px solid #e5e5e5;
@@ -223,9 +268,13 @@ function confidenceLabel(confidence) {
   background: #fff;
 }
 
-.severity-tabs { display: flex; gap: 6px; }
+.issue-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
 
-.sev-tab {
+.issue-tab {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -239,24 +288,60 @@ function confidenceLabel(confidence) {
   color: #737373;
   transition: all .15s;
 }
-.sev-tab.active.error   { border-color: #d93026; color: #d93026; background: #fff3f2; }
-.sev-tab.active.warning { border-color: #b7791f; color: #9a5b00; background: #fff8e8; }
-.sev-tab.active.info    { border-color: #8a8a8a; color: #4d4d4d; background: #f5f5f5; }
+.issue-tab.active {
+  border-color: #0a59f7;
+  color: #0a59f7;
+  background: #f3f7ff;
+}
 
 .badge {
-  background: currentColor;
-  color: #fff;
+  background: #fff;
+  color: currentColor;
+  border: 1px solid currentColor;
   border-radius: 8px;
   padding: 0 5px;
   font-size: 10px;
   line-height: 16px;
   min-width: 16px;
   text-align: center;
+  font-weight: 700;
+}
+
+.severity-summary {
+  display: none;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+}
+.severity-chip {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 2px 7px;
+}
+.severity-chip.error   { background: #fff3f2; color: #d93026; }
+.severity-chip.warning { background: #fff8e8; color: #9a5b00; }
+.severity-chip.info    { background: #f5f5f5; color: #737373; }
+
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.confidence-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #5f6d82;
 }
 
 .search-input { font-size: 12px; }
 
-/* ── 列表区 ── */
 .diff-list {
   flex: 1;
   overflow-y: auto;
@@ -277,32 +362,9 @@ function confidenceLabel(confidence) {
 .diff-item:hover { border-color: #d8d8d8; background: #fafafa; }
 .diff-item.selected { border-color: #0a59f7; background: #f3f7ff; box-shadow: 0 0 0 2px rgba(10,89,247,.10); }
 
-/* 左侧色条 */
-.sev-strip {
-  width: 4px;
-  border-radius: 4px 0 0 4px;
-  flex-shrink: 0;
-}
-.sev-strip.error   { background: #d93026; }
-.sev-strip.warning { background: #b7791f; }
-.sev-strip.info    { background: #8a8a8a; }
-
 .diff-body { padding: 8px 10px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 
-/* 第一行：meta */
 .diff-meta { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-
-.sev-badge {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 1px 5px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  flex-shrink: 0;
-}
-.sev-badge.error   { background: #fff3f2; color: #d93026; }
-.sev-badge.warning { background: #fff8e8; color: #9a5b00; }
-.sev-badge.info    { background: #f5f5f5; color: #737373; }
 
 .prop-tag {
   font-size: 11px;
@@ -311,6 +373,17 @@ function confidenceLabel(confidence) {
   color: #0a59f7;
   padding: 1px 5px;
   border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.issue-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #0a59f7;
+  background: #eef4ff;
+  border: 1px solid #d8e6ff;
+  border-radius: 4px;
+  padding: 1px 5px;
   flex-shrink: 0;
 }
 
@@ -353,7 +426,6 @@ function confidenceLabel(confidence) {
   text-overflow: ellipsis;
 }
 
-/* 第二行：值对比 */
 .diff-values {
   display: flex;
   align-items: flex-start;
@@ -404,10 +476,8 @@ function confidenceLabel(confidence) {
   flex-shrink: 0;
 }
 
-/* 第三行：描述 */
 .diff-desc { font-size: 11px; color: #909399; line-height: 1.4; }
 
-/* 未匹配区块 */
 .section-divider {
   margin: 10px 8px 6px;
   font-size: 11px;
@@ -417,7 +487,6 @@ function confidenceLabel(confidence) {
 }
 .unmatched-chips { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 8px 10px; }
 
-/* 空状态 */
 .empty-state {
   display: flex;
   flex-direction: column;

@@ -3,8 +3,8 @@
     <!-- ── 顶部导航 ────────────────────────────────────────────────── -->
     <header class="app-header">
       <div class="header-left">
-        <span class="logo">🔍</span>
-        <span class="title">Octo UI 一致性检查</span>
+        <img class="logo" src="/logo.svg" alt="Octo UI" />
+        <span class="title">UI 一致性检查</span>
       </div>
       <div class="header-right">
         <el-tag v-if="result" :type="scoreTagType" size="large" effect="dark">

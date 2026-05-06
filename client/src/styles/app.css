@@ -34,7 +34,7 @@ body {
   backdrop-filter: blur(12px);
 }
 .header-left  { display: flex; align-items: center; gap: 8px; }
-.logo         { font-size: 18px; color: var(--hw-blue); }
+.logo         { width: 18px; height: 18px; display: block; flex-shrink: 0; }
 .title        { font-size: 15px; font-weight: 700; color: var(--hw-text); letter-spacing: 0; }
 
 /* ── 主体三列 ── */
@@ -194,6 +194,10 @@ body {
   background: #fbfcff;
   border-left: 1px solid var(--hw-border);
   overflow: hidden;
+}
+
+.header-right {
+  display: none;
 }
 
 .right-header {

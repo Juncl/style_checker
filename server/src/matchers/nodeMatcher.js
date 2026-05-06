@@ -156,7 +156,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   for (const dn of designNodes) {
     if (!isMatchableNode(dn)) continue
     if (dn.type !== 'text') continue
-    const content = (dn.textContent || '').trim()
+    const content = normalizeText(dn.textContent)
     if (!content) continue
     if (isWeakPixelDuplicate(dn, designNodes, content)) continue
 

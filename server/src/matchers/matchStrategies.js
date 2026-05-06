@@ -24,7 +24,7 @@ import { candidatePool, regionAffinity } from './regionContext.js'
 export function buildTextIndex(arkuiTextNodes) {
   const map = new Map()
   for (const n of arkuiTextNodes) {
-    const key = (n.textContent || '').trim()
+    const key = normalizeText(n.textContent)
     if (!key) continue
     if (!map.has(key)) map.set(key, [])
     map.get(key).push(n)
@@ -299,7 +299,9 @@ export function localTextGeometryScore(a, b) {
   const hRatio = sizeRatio(a.h, b.h)
   const xScore = Math.max(0, 1 - dx / 0.28)
   const yScore = Math.max(0, 1 - dy / 0.08)
-  return xScore * 0.30 + yScore * 0.50 + hRatio * 0.20
+  // Text wrappers often carry extra padding or line-height slack; keep size as a soft signal.
+  const softSizeScore = 0.65 + hRatio * 0.35
+  return xScore * 0.34 + yScore * 0.54 + softSizeScore * 0.12
 }
 
 export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArkui, matchedDesignIds, regionContext) {
