@@ -37,7 +37,7 @@
 | 属性 | Design 格式 | ArkUI 格式 |
 |-----|------------|-----------|
 | 颜色 | `#RRGGBBaa`（alpha 在末尾） | `#AARRGGBB`（alpha 在首位） |
-| 字重 | 数值 400/500/700 | 枚举 FontWeight.Normal/Medium/Bold |
+| 字重 | 数值 400/400/500/700 | 枚举 FontWeight.Normal/Regular/Medium/Bold |
 | 圆角 | `[tl, tr, br, bl]` dp 数组 | `{topLeft, topRight, ...}` vp 字符串 |
 | 内边距 | `[top, right, bottom, left]` dp | `"N.00vp"` 或 JSON 字符串 |
 

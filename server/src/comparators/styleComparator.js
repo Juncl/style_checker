@@ -20,6 +20,19 @@ const TOLERANCE = {
   colorDelta:    8,    // 颜色欧氏距离（0-442 范围）
 }
 
+const BACKGROUND_IGNORE_TYPES = new Set([
+  'button',
+  'path',
+  'divider',
+  'progress',
+  'swiperindicator',
+  'icon',
+  'image',
+  'img',
+  'video',
+  'canvas',
+])
+
 /**
  * 比对一对匹配节点的样式
  * @returns {StyleDiff[]}
@@ -45,35 +58,25 @@ export function compareStyles(pair) {
 
   // ── 文字节点属性 ──────────────────────────────────────────────────────────
   if (dn.type === 'text' && an.type === 'text') {
-    diffNumber(diffs, ctx, 'fontSize',      ds.fontSize,    as_.fontSize,    'dp/vp', TOLERANCE.fontSize,     '字号')
+    if (!isTitlebarType(an)) {
+      diffNumber(diffs, ctx, 'fontSize', ds.fontSize, as_.fontSize, 'dp/vp', TOLERANCE.fontSize, '字号')
+    }
     diffFontWeight(diffs, ctx, ds.fontWeight, as_.fontWeight)
     diffColor(diffs, ctx, 'fontColor',       ds.fontColor,   as_.fontColor,   '字色')
     diffFontFamily(diffs, ctx, ds.fontFamily, as_.fontFamily)
-    diffTextAlign(diffs, ctx,  ds.textAlign,  as_.textAlign)
-    if (ds.lineHeight && as_.lineHeight) {
-      diffNumber(diffs, ctx, 'lineHeight', ds.lineHeight, as_.lineHeight, 'vp', TOLERANCE.lineHeight, '行高')
-    }
-    if (ds.letterSpacing !== null && as_.letterSpacing !== null) {
-      diffNumber(diffs, ctx, 'letterSpacing', ds.letterSpacing, as_.letterSpacing, 'px', TOLERANCE.letterSpacing, '字间距')
-    }
+    diffBlur(diffs, ctx, ds.blur, as_.blur, 'blur', '模糊')
+    diffShadow(diffs, ctx, ds.shadow, as_.shadow)
+    diffOpacity(diffs, ctx, ds.opacity, as_.opacity)
   }
 
-  // ── 通用属性（文字 + 容器都有）────────────────────────────────────────────
-  diffOpacity(diffs, ctx, ds.opacity, as_.opacity)
-  diffColor(diffs, ctx, 'backgroundColor', comparableBackground(ds.backgroundColor), comparableBackground(as_.backgroundColor), '背景色')
-  diffBorderRadius(diffs, ctx, dn, an, ds.borderRadius, as_.borderRadius)
-  diffPadding(diffs, ctx, ds.padding, as_.padding)
-  diffBlur(diffs, ctx, ds.backdropBlur, as_.backdropBlur)
-  diffShadow(diffs, ctx, ds.shadow, as_.shadow)
-
-  // ── 新增维度 ──────────────────────────────────────────────────────────────
-  diffBorder(diffs, ctx, ds.border, as_.border)
-  diffItemSpacing(diffs, ctx, ds.itemSpacing, as_.itemSpacing)
-  diffGradient(diffs, ctx, ds.gradient, as_.gradient)
-
-  // 字体缩放（纯 ArkUI 侧检查：实际渲染字号 vs 声明字号）
-  if (an.type === 'text') {
-    diffFontScale(diffs, ctx, as_.declaredFontSize, as_.actualFontSize)
+  // ── 非文本节点属性 ────────────────────────────────────────────────────────
+  if (dn.type !== 'text' && an.type !== 'text') {
+    diffBackgroundColor(diffs, ctx, dn, an, ds.backgroundColor, as_.backgroundColor)
+    diffBorderRadius(diffs, ctx, dn, an, ds.borderRadius, as_.borderRadius)
+    diffBorder(diffs, ctx, ds.border, as_.border)
+    diffOpacity(diffs, ctx, ds.opacity, as_.opacity)
+    diffBlur(diffs, ctx, ds.blur, as_.blur, 'blur', '模糊')
+    diffShadow(diffs, ctx, ds.shadow, as_.shadow)
   }
 
   // 图标/图片尺寸 + 内容校验
@@ -135,10 +138,7 @@ function diffColor(diffs, ctx, prop, dv, av, label) {
   // 两者均透明，不报差异
   if ((!dv || dv === '#00000000') && (!av || av === '#00000000')) return
   if (!dv || !av) {
-    // 一方有颜色一方没有
-    if (dv && !av) {
-      diffs.push(makeDiff(ctx, prop, dv, '—', 'warning', `${label}：实现缺失`))
-    }
+    diffs.push(makeDiff(ctx, prop, dv || '—', av || '—', 'warning', `${label}：一侧缺失`))
     return
   }
   const delta = colorDelta(dv, av)
@@ -168,31 +168,25 @@ function diffTextAlign(diffs, ctx, dv, av) {
 }
 
 function diffOpacity(diffs, ctx, dv, av) {
-  if (dv === null || dv === undefined || av === null || av === undefined) return
-  if (Math.abs(dv - av) > TOLERANCE.opacity) {
-    diffs.push(makeDiff(ctx, 'opacity', String(dv), String(av), 'warning', `透明度偏差`))
+  const d = normalizeOpacityValue(dv)
+  const a = normalizeOpacityValue(av)
+  if (d === null || a === null) return
+  if (d === 0 || a === 0) return
+  if (Math.abs(d - a) > TOLERANCE.opacity) {
+    diffs.push(makeDiff(ctx, 'opacity', String(d), String(a), 'warning', `透明度偏差`))
   }
 }
 
 function diffBorderRadius(diffs, ctx, designNode, arkuiNode, dv, av) {
   if (!dv && !av) return
+  if (isCircleOrEllipseLikeNode(designNode) && isCircleOrEllipseLikeNode(arkuiNode)) return
   if (!dv || !av) {
-    if (dv && !av) {
-      const r = Object.values(dv).find(v => v > 0)
-      if (!r) return
-      if (isVisuallyFullRound(designNode, dv) && isRoundShapeNode(arkuiNode)) return
-      const layerLikeSeverity = mayUseLayerImplementedRadius(ctx, designNode, arkuiNode) ? 'info' : 'warning'
-      const description = layerLikeSeverity === 'info'
-        ? '圆角：实现可能由裁剪、图片或独立图层完成，未在当前节点暴露 borderRadius'
-        : '圆角：当前节点未暴露实现值'
-      diffs.push(makeDiff(ctx, 'borderRadius', formatRadius(dv), '0', layerLikeSeverity, description))
-    }
+    diffs.push(makeDiff(ctx, 'borderRadius', formatRadius(dv), formatRadius(av), 'warning', '圆角：一侧缺失'))
     return
   }
   const keys = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft']
   const dEffective = effectiveRadius(dv, designNode.rect)
   const aEffective = effectiveRadius(av, arkuiNode.rect)
-  if (isVisuallyFullRound(designNode, dv) && isVisuallyFullRound(arkuiNode, av)) return
 
   const mismatched = keys.filter(k => Math.abs((dEffective[k] || 0) - (aEffective[k] || 0)) > TOLERANCE.borderRadius)
   if (mismatched.length > 0) {
@@ -212,12 +206,12 @@ function diffPadding(diffs, ctx, dv, av) {
   }
 }
 
-function diffBlur(diffs, ctx, dv, av) {
+function diffBlur(diffs, ctx, dv, av, prop = 'backdropBlur', label = '背景模糊') {
   if (dv === undefined && av === undefined) return
   if (!dv && !av) return
   const d = dv || 0, a = av || 0
   if (Math.abs(d - a) > TOLERANCE.blur) {
-    diffs.push(makeDiff(ctx, 'backdropBlur', `${d}`, `${a}`, 'warning', `背景模糊偏差 ${(d-a).toFixed(1)}`))
+    diffs.push(makeDiff(ctx, prop, `${d}`, `${a}`, 'warning', `${label}偏差 ${(d-a).toFixed(1)}`))
   }
 }
 
@@ -235,18 +229,42 @@ function diffShadow(diffs, ctx, dv, av) {
 
 function diffBorder(diffs, ctx, dv, av) {
   if (!dv && !av) return
-  if (dv && !av) {
-    diffs.push(makeDiff(ctx, 'border', `${dv.width}dp ${dv.color}`, '—', 'error', '描边：实现缺失'))
+  const dw = dv?.width
+  const aw = av?.width
+  const widthDelta = Math.abs((dw ?? 0) - (aw ?? 0))
+  if (dw == null && aw == null) {
+    // 两边都没有描边宽度，按规则忽略。
+  } else if (dw == null || aw == null) {
+    diffs.push(makeDiff(ctx, 'borderWidth', formatBorderWidth(dv), formatBorderWidth(av), 'warning', '描边宽度：一侧缺失'))
+  } else if (widthDelta > 0.5) {
+    diffs.push(makeDiff(ctx, 'borderWidth', `${dw}dp`, `${aw}vp`,
+      widthDelta > 2 ? 'error' : 'warning',
+      `描边宽度偏差 ${(dw - aw).toFixed(1)}`))
+  }
+  diffColor(diffs, ctx, 'borderColor', dv?.color, av?.color, '描边色')
+}
+
+function diffBackgroundColor(diffs, ctx, designNode, arkuiNode, dv, av) {
+  if (shouldIgnoreBackgroundColorNode(designNode) || shouldIgnoreBackgroundColorNode(arkuiNode)) {
     return
   }
-  if (!dv && av) return  // ArkUI 有默认描边但设计无，忽略
-  const widthDelta = Math.abs(dv.width - av.width)
-  if (widthDelta > 0.5) {
-    diffs.push(makeDiff(ctx, 'border.width', `${dv.width}dp`, `${av.width}vp`,
-      widthDelta > 2 ? 'error' : 'warning',
-      `描边宽度偏差 ${(dv.width - av.width).toFixed(1)}`))
+  const d = comparableBackground(dv)
+  const a = comparableBackground(av)
+  if (!d && !a) return
+  if (!d || !a) {
+    diffs.push(makeDiff(ctx, 'backgroundColor', d || '—', a || '—', 'warning', '背景色：一侧缺失'))
+    return
   }
-  diffColor(diffs, ctx, 'border.color', dv.color, av.color, '描边色')
+  const delta = colorDelta(d, a)
+  if (delta > TOLERANCE.colorDelta) {
+    const severity = delta > 40 ? 'error' : 'warning'
+    diffs.push(makeDiff(ctx, 'backgroundColor',
+      `${d} (${toDisplayColor(d)})`,
+      `${a} (${toDisplayColor(a)})`,
+      severity,
+      `背景色不匹配 ΔE≈${delta.toFixed(0)}`
+    ))
+  }
 }
 
 function diffItemSpacing(diffs, ctx, dv, av) {
@@ -328,18 +346,13 @@ function makeDiff(ctx, property, designValue, arkuiValue, severity, description)
 }
 
 function comparableBackground(color) {
-  if (!color || isTransparentColor(color) || isPureWhiteColor(color)) return null
+  if (!color || isTransparentColor(color)) return null
   return color
 }
 
 function isTransparentColor(color) {
   const c = parseColor(color)
   return !!c && c.a === 0
-}
-
-function isPureWhiteColor(color) {
-  const c = parseColor(color)
-  return !!c && c.r === 255 && c.g === 255 && c.b === 255
 }
 
 function parseColor(color) {
@@ -362,21 +375,23 @@ function parseColor(color) {
   }
 }
 
-function isRoundShapeNode(node) {
-  return /^(circle|ellipse)$/i.test(String(node?.name || '')) || node?.type === 'shape'
+function isCircleOrEllipseLikeNode(node) {
+  const rawType = normalizedNodeType(node)
+  return /^(circle|ellipse)$/i.test(rawType)
 }
 
-function mayUseLayerImplementedRadius(ctx, designNode, arkuiNode) {
-  if (ctx.visualScore != null && ctx.visualScore >= 0.55) return true
-  if (['image', 'shape', 'other'].includes(designNode?.type) || ['image', 'shape', 'other'].includes(arkuiNode?.type)) return true
-  return ['image-geometry', 'shape-geometry', 'other-geometry', 'gradient-iou'].includes(ctx.matchType)
+function isTitlebarType(node) {
+  return normalizedNodeType(node) === 'titlebar'
 }
 
-function isVisuallyFullRound(node, radius) {
-  if (!radius || !node?.rect) return false
-  const cap = maxRenderableRadius(node.rect)
-  if (cap <= 0) return false
-  return Object.values(effectiveRadius(radius, node.rect)).every(v => Math.abs(v - cap) <= TOLERANCE.borderRadius)
+function shouldIgnoreBackgroundColorNode(node) {
+  if (!node) return false
+  const rawType = normalizedNodeType(node)
+  return BACKGROUND_IGNORE_TYPES.has(rawType) || String(node?.type || '').toLowerCase() === 'image'
+}
+
+function normalizedNodeType(node) {
+  return String(node?.rawType || node?.type || '').toLowerCase()
 }
 
 function effectiveRadius(radius, rect) {
@@ -404,8 +419,13 @@ function formatPadding(p) {
   return `T:${p.top} R:${p.right} B:${p.bottom} L:${p.left}`
 }
 
-function formatGradient(g) {
-  if (!g) return '—'
-  const stops = (g.stops || []).map(s => s.color).join(' → ')
-  return `${g.type}(${stops})`
+function formatBorderWidth(border) {
+  if (!border || border.width == null) return '—'
+  return `${border.width}dp`
+}
+
+function normalizeOpacityValue(value) {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
 }

@@ -1,15 +1,37 @@
 import { centerY, rectCenter, sizeRatio, xDistance } from './matchGeometry.js'
 import { makePair } from './matchStrategies.js'
-import { regionAffinity } from './regionContext.js'
-import { hasUsableText, textFieldType, textStyleSimilarity } from './textSemantics.js'
+import { candidatePool, regionAffinity } from './regionContext.js'
+import {
+  hasUsableText,
+  isAmbiguousShortNumberText,
+  isNearSameLineSlot,
+  normalizeText,
+  textFieldType,
+  textStyleSimilarity,
+} from './textSemantics.js'
 import { isMatchableNode } from './nodeVisibility.js'
 
+// Time / weekday are "value slots" whose displayed内容 may change between design
+// mock and runtime data while the layout relationship stays stable.
 const SLOT_TYPES = new Set(['time', 'weekday'])
 
 export function matchDynamicTextSlots(designNodes, arkuiNodes, usedArkui, matchedDesignIds, regionContext) {
   const result = []
   const localUsedArkui = new Set()
   const localMatchedDesign = new Set()
+
+  const numberPairs = matchDynamicNumberSlots(
+    designNodes,
+    arkuiNodes,
+    usedArkui,
+    matchedDesignIds,
+    regionContext
+  )
+  for (const pair of numberPairs) {
+    result.push(pair)
+    localMatchedDesign.add(pair.design.id)
+    localUsedArkui.add(pair.arkui.id)
+  }
 
   for (const slotType of SLOT_TYPES) {
     const designTexts = slotCandidates(designNodes, slotType, matchedDesignIds, localMatchedDesign)
@@ -27,6 +49,35 @@ export function matchDynamicTextSlots(designNodes, arkuiNodes, usedArkui, matche
       localMatchedDesign.add(match.design.id)
       localUsedArkui.add(match.arkui.id)
     }
+  }
+
+  return result
+}
+
+function matchDynamicNumberSlots(designNodes, arkuiNodes, usedArkui, matchedDesignIds, regionContext) {
+  const result = []
+  const localUsedArkui = new Set()
+  const localMatchedDesign = new Set()
+  const designNumbers = slotCandidates(designNodes, 'number', matchedDesignIds, localMatchedDesign)
+  if (!designNumbers.length) return result
+
+  for (const dn of designNumbers) {
+    const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
+      n.type === 'text' &&
+      hasUsableText(n) &&
+      !usedArkui.has(n.id) &&
+      !localUsedArkui.has(n.id) &&
+      textFieldType(String(n.textContent || '').trim().toLowerCase()) === 'number'
+    )
+    const best = bestNumericSlotMatch(dn, candidates, regionContext)
+    if (!best || best.score < 0.70) continue
+    result.push(makePair(dn, best.node, 'dynamic-number-slot', {
+      iou: 0,
+      confidence: best.score > 0.82 ? 'medium' : 'low',
+      topologyScore: best.score,
+    }))
+    localMatchedDesign.add(dn.id)
+    localUsedArkui.add(best.node.id)
   }
 
   return result
@@ -208,9 +259,17 @@ function slotScore(dn, an, designOrder, arkuiOrder, dCount, aCount, regionContex
   const dy = Math.abs(centerY(dn.normRect) - centerY(an.normRect))
   if (dx > 0.24 || dy > 0.22) return 0
 
+  const ta = normalizeText(dn.textContent)
+  const tb = normalizeText(an.textContent)
+  const typeA = textFieldType(ta)
+  const typeB = textFieldType(tb)
+  const numericSlot = typeA === 'number' && typeB === 'number'
+
   const style = textStyleSimilarity(dn, an)
   const hRatio = sizeRatio(dn.normRect.h, an.normRect.h)
   if (style < 0.55 || hRatio < 0.45) return 0
+  if (numericSlot && (isAmbiguousShortNumberText(ta) || isAmbiguousShortNumberText(tb)) &&
+    !isNearSameLineSlot(dn, an, 0.10, 0.045)) return 0
 
   const orderDelta = Math.abs((designOrder.get(dn.id) || 0) - (arkuiOrder.get(an.id) || 0))
   const orderScore = 1 - Math.min(1, orderDelta / Math.max(dCount, aCount, 1))
@@ -218,6 +277,7 @@ function slotScore(dn, an, designOrder, arkuiOrder, dCount, aCount, regionContex
   const yScore = Math.max(0, 1 - dy / 0.22)
   const regionScore = regionAffinity(dn, an, regionContext)
   const lineScore = sameLineGroupScore(dn, an)
+  const semanticScore = 0.72
 
   return xScore * 0.24 +
     yScore * 0.18 +
@@ -225,7 +285,8 @@ function slotScore(dn, an, designOrder, arkuiOrder, dCount, aCount, regionContex
     style * 0.16 +
     hRatio * 0.10 +
     regionScore * 0.04 +
-    lineScore * 0.04
+    lineScore * 0.04 +
+    semanticScore * 0.04
 }
 
 function orderMap(nodes) {
@@ -241,4 +302,42 @@ function readingOrder(a, b) {
 
 function sameLineGroupScore(dn, an) {
   return xDistance(dn.normRect, an.normRect) < 0.18 ? 1 : 0
+}
+
+function bestNumericSlotMatch(targetNode, candidates, regionContext) {
+  let best = null
+  let bestScore = 0
+  for (const node of candidates) {
+    const score = numericSlotScore(targetNode, node, regionContext)
+    if (score > bestScore) {
+      bestScore = score
+      best = node
+    }
+  }
+  return best ? { node: best, score: bestScore } : null
+}
+
+function numericSlotScore(dn, an, regionContext) {
+  const dc = rectCenter(dn.normRect)
+  const ac = rectCenter(an.normRect)
+  const dx = Math.abs(dc.x - ac.x)
+  const dy = Math.abs(centerY(dn.normRect) - centerY(an.normRect))
+  if (dx > 0.20 || dy > 0.16) return 0
+
+  const style = textStyleSimilarity(dn, an)
+  const hRatio = sizeRatio(dn.normRect.h, an.normRect.h)
+  if (style < 0.60 || hRatio < 0.50) return 0
+  if ((isAmbiguousShortNumberText(dn.textContent) || isAmbiguousShortNumberText(an.textContent)) &&
+    !isNearSameLineSlot(dn, an, 0.10, 0.045)) return 0
+
+  const xScore = Math.max(0, 1 - dx / 0.20)
+  const yScore = Math.max(0, 1 - dy / 0.16)
+  const regionScore = regionAffinity(dn, an, regionContext)
+  const lineScore = xDistance(dn.normRect, an.normRect) < 0.18 ? 1 : 0
+  return xScore * 0.34 +
+    yScore * 0.24 +
+    style * 0.22 +
+    hRatio * 0.10 +
+    regionScore * 0.06 +
+    lineScore * 0.04
 }

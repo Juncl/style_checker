@@ -65,6 +65,8 @@ const props = defineProps({
   inspectorNode:{ type: Object,  default: null },
   styleDiffs:   { type: Array,   default: () => [] },
   lockedIds:    { type: Object,  default: () => new Set() }, // Set<string>，不参与图片点击
+  debugVisible: { type: Boolean, default: false },
+  debugPairMap:  { type: Object,  default: () => ({}) },
 })
 
 const emit = defineEmits(['node-click'])
@@ -107,6 +109,8 @@ watch(() => props.highlight,     () => nextTick(draw))
 watch(() => props.highlightPair, () => nextTick(draw))
 watch(() => props.selectedId,    () => nextTick(draw))
 watch(() => [props.canvasW, props.canvasH], () => nextTick(draw))
+watch(() => props.debugVisible,  () => nextTick(draw))
+watch(() => props.debugPairMap,  () => nextTick(draw), { deep: true })
 watch(() => props.inspectorNode?.id, () => {
   inspectorDragPos.value = null
   nextTick(updateInspectorPos)
@@ -129,6 +133,7 @@ function hitNodesAt(px, py) {
   return props.nodes
     .filter(n =>
       n.visible !== false &&
+      !isHiddenTextNode(n) &&
       !n.visualOccluded &&
       n.rect &&
       !props.lockedIds.has(n.id) &&
@@ -151,6 +156,12 @@ function hitTypePriority(node) {
   if (node.type === 'image' || node.type === 'shape') return 1
   if (node.type === 'other') return 2
   return 3
+}
+
+function isHiddenTextNode(node) {
+  return !!(node &&
+    node.type === 'text' &&
+    (node.visualOccluded || node.ocrVisibility?.visible === false))
 }
 
 // ── 交互事件 ────────────────────────────────────────────────────────────────
@@ -219,6 +230,27 @@ function draw() {
 
   const sx = W / props.canvasW
   const sy = H / props.canvasH
+
+  // Debugger 映射框（同一 pair 的设计侧 / 开发侧使用同一颜色）
+  if (props.debugVisible && props.debugPairMap && Object.keys(props.debugPairMap).length) {
+    for (const n of props.nodes) {
+      const meta = props.debugPairMap[n.id]
+      if (!meta || n.visible === false || !n.rect) continue
+      const color = meta.color || '#2f6fed'
+      drawNodeRect(ctx, n.rect, sx, sy, 'rgba(47,111,237,0.04)', color, 2, [5, 3])
+      const px = n.rect.x * sx
+      const py = n.rect.y * sy
+      const badgeW = 14
+      const badgeH = 14
+      if (n.rect.w * sx > 18 && n.rect.h * sy > 14) {
+        ctx.fillStyle = color
+        ctx.fillRect(px, py, badgeW, badgeH)
+        ctx.fillStyle = '#fff'
+        ctx.font = 'bold 9px sans-serif'
+        ctx.fillText(String((meta.index ?? 0) + 1), px + 3, py + 10)
+      }
+    }
+  }
 
   // 锁定节点（红色虚线，仅轮廓）
   for (const n of props.nodes) {

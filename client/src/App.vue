@@ -49,7 +49,7 @@
           >
             <el-icon size="22" color="#c0c4cc"><FolderOpened /></el-icon>
             <span class="drop-hint">点击或拖拽文件到此处</span>
-            <span class="drop-sub">同时选择 4 个文件</span>
+            <span class="drop-sub">同时选择 design / arkui JSON 和 arkui 图片</span>
           </div>
           <!-- 隐藏原生 input -->
           <input
@@ -78,9 +78,9 @@
           <el-button
             type="primary" size="small" style="width:100%;margin-top:6px"
             :loading="loading"
-            :disabled="!uploadFiles.designJson || !uploadFiles.arkuiJson"
-            @click="runUpload"
-          >开始分析</el-button>
+              :disabled="!uploadFiles.designJson || !uploadFiles.arkuiJson || !uploadFiles.arkuiImage"
+              @click="runUpload"
+            >开始分析</el-button>
         </el-card>
 
         <!-- 统计信息 -->
@@ -116,6 +116,43 @@
 
         <!-- 双图对比 -->
         <template v-else-if="result">
+          <div v-if="debugMode" class="debugger-float">
+            <div class="debugger-head">
+              <div class="debugger-title">
+                <span>Debugger</span>
+                <small>映射 {{ debugPairItems.length }} 对</small>
+              </div>
+              <el-switch v-model="debugOverlayOn" size="small" />
+            </div>
+            <div v-show="debugOverlayOn" class="debugger-body">
+              <button
+                class="debugger-summary-toggle"
+                type="button"
+                @click="debugMappingExpanded = !debugMappingExpanded"
+              >
+                <span class="debugger-summary-text">
+                  {{ debugMappingExpanded ? '收起映射列表' : '展开映射列表' }}
+                </span>
+                <span class="debugger-summary-meta">映射 {{ debugPairItems.length }} 对</span>
+                <span class="debugger-summary-icon">{{ debugMappingExpanded ? '▾' : '▸' }}</span>
+              </button>
+              <div v-if="debugMappingExpanded" class="debugger-panel">
+                <div v-if="!debugPairItems.length" class="debugger-empty">
+                  当前没有可展示的映射
+                </div>
+                <div v-else class="debugger-list">
+                  <div v-for="item in debugPairItems" :key="item.key" class="debugger-item">
+                    <span class="debugger-swatch" :style="{ background: item.color }"></span>
+                    <span class="debugger-index">#{{ String(item.index + 1).padStart(2, '0') }}</span>
+                    <span class="debugger-text" :title="item.arkuiLabel">{{ item.arkuiLabel }}</span>
+                    <span class="debugger-arrow">↔</span>
+                    <span class="debugger-text" :title="item.designLabel">{{ item.designLabel }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- 高亮说明条：diff 选中 -->
           <transition name="fade">
             <div v-if="activeDiff && !selectedPair" class="highlight-bar">
@@ -159,6 +196,8 @@
               :selected-id="selectedPair?.arkui?.id || null"
               :inspector-node="selectedPair?.arkui || null"
               :style-diffs="selectedArkuiDiffs"
+              :debug-visible="debugOverlayOn"
+              :debug-pair-map="debugPairMap"
               @node-click="onArkuiNodeClick"
             />
             <ImagePanel
@@ -173,6 +212,8 @@
               :inspector-node="selectedPair?.design || null"
               :style-diffs="selectedDesignDiffs"
               :locked-ids="lockedNodeIds"
+              :debug-visible="debugOverlayOn"
+              :debug-pair-map="debugPairMap"
               @node-click="onDesignNodeClick"
             />
           </div>
@@ -238,7 +279,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { fetchCases, checkCase, checkUpload, imageUrl } from './api/index.js'
 import SummaryCard from './components/SummaryCard.vue'
@@ -258,6 +299,24 @@ const treeSide       = ref('design')
 const lockedNodeIds  = ref(new Set())   // 图片侧锁定的设计节点 id 集合
 const isDragOver     = ref(false)
 const pickerRef    = ref(null)
+const debugMode      = ref(false)
+const debugOverlayOn = ref(false)
+const debugMappingExpanded = ref(false)
+
+const DEBUG_COLORS = [
+  '#2f6fed',
+  '#17a36f',
+  '#d68b00',
+  '#8b5cf6',
+  '#0ea5e9',
+  '#ef4444',
+  '#14b8a6',
+  '#f97316',
+  '#22c55e',
+  '#a855f7',
+  '#e11d48',
+  '#2563eb',
+]
 
 // 双图所有节点；实机侧是主走查入口，设计侧用于高亮匹配目标和节点树。
 const designNodes = computed(() => result.value?.allDesignNodes ?? [])
@@ -268,7 +327,7 @@ const arkuiNodes  = computed(() =>
 )
 const emptyLockedIds = new Set()
 const treeNodes = computed(() => (treeSide.value === 'design' ? designNodes.value : allArkuiNodes.value)
-  .filter(node => !isBlankLikeNode(node)))
+  .filter(node => !isBlankLikeNode(node) && isTreeVisibleNode(node, treeSide.value)))
 const treeSelectedId = computed(() =>
   treeSide.value === 'design'
     ? selectedPair.value?.design?.id || null
@@ -287,12 +346,33 @@ const selectedArkuiDiffs = computed(() =>
     : []
 )
 
-// 4 个文件槽定义（key、标签、是否必填、识别规则）
+const debugPairItems = computed(() =>
+  (result.value?.pairs ?? []).map((pair, index) => ({
+    key: `${pair.design?.id || 'd'}::${pair.arkui?.id || 'a'}::${index}`,
+    index,
+    color: DEBUG_COLORS[index % DEBUG_COLORS.length],
+    designId: pair.design?.id || null,
+    arkuiId: pair.arkui?.id || null,
+    designLabel: nodeDebugLabel(pair.design, true),
+    arkuiLabel: nodeDebugLabel(pair.arkui, true),
+  }))
+)
+
+const debugPairMap = computed(() => {
+  const map = {}
+  for (const item of debugPairItems.value) {
+    if (item.designId) map[item.designId] = { color: item.color, index: item.index }
+    if (item.arkuiId) map[item.arkuiId] = { color: item.color, index: item.index }
+  }
+  return map
+})
+
+// 文件槽定义（key、标签、是否必填、识别规则）
 const FILE_SLOTS = [
   { key: 'designJson',  label: 'design.json',  required: true,  match: f => /design/i.test(f.name) && f.name.endsWith('.json') },
-  { key: 'arkuiJson',   label: 'arkui.json',   required: true,  match: f => /arkui/i.test(f.name)  && f.name.endsWith('.json') },
+  { key: 'arkuiJson',   label: 'arkui.json',   required: true,  match: f => /arkui/i.test(f.name) && f.name.endsWith('.json') },
   { key: 'designImage', label: 'design 图片',  required: false, match: f => /design/i.test(f.name) && f.type.startsWith('image/') },
-  { key: 'arkuiImage',  label: 'arkui 图片',   required: false, match: f => /arkui/i.test(f.name)  && f.type.startsWith('image/') },
+  { key: 'arkuiImage',  label: 'arkui 图片',   required: true,  match: f => /arkui/i.test(f.name)  && f.type.startsWith('image/') },
 ]
 
 const uploadFiles = ref({ designJson: null, arkuiJson: null, designImage: null, arkuiImage: null })
@@ -333,8 +413,8 @@ function assignFiles(files) {
   // 无法按名称识别时，按扩展名顺序回退分配
   const jsonFallback  = files.filter(f => f.name.endsWith('.json'))
   const imageFallback = files.filter(f => f.type.startsWith('image/'))
-  if (!next.designJson  && jsonFallback[0])  next.designJson  = jsonFallback[0]
-  if (!next.arkuiJson   && jsonFallback[1])  next.arkuiJson   = jsonFallback[1]
+  if (!next.designJson  && jsonFallback[0]) next.designJson = jsonFallback[0]
+  if (!next.arkuiJson   && jsonFallback[1]) next.arkuiJson  = jsonFallback[1]
   if (!next.designImage && imageFallback[0]) next.designImage = imageFallback[0]
   if (!next.arkuiImage  && imageFallback[1]) next.arkuiImage  = imageFallback[1]
 
@@ -349,8 +429,8 @@ function assignFiles(files) {
 
   if (unmatched.length) ElMessage.info(`以下文件未能识别：${unmatched.join(', ')}`)
 
-  // 两个必填 JSON 均就位时自动触发分析
-  if (next.designJson && next.arkuiJson) {
+  // 三个必需文件就位时自动触发分析
+  if (next.designJson && next.arkuiJson && next.arkuiImage) {
     nextTick(runUpload)
   }
 }
@@ -371,8 +451,16 @@ const scoreTagType = computed(() => {
 })
 
 onMounted(async () => {
+  const params = new URLSearchParams(window.location.search)
+  debugMode.value = params.get('debugger') === '1'
+  debugOverlayOn.value = false
+  debugMappingExpanded.value = false
   try { cases.value = await fetchCases() }
   catch { ElMessage.warning('无法加载内置 Case') }
+})
+
+watch(debugOverlayOn, value => {
+  if (!value) debugMappingExpanded.value = false
 })
 
 function onDesignNodeClick(nodeId) {
@@ -409,6 +497,8 @@ function isInteractiveImageNode(node) {
   return node &&
     !isBlankLikeNode(node) &&
     node.visible !== false &&
+    !isHiddenFrameworkTextNode(node) &&
+    !isOcrHiddenTextNode(node) &&
     !node.visualOccluded &&
     node.rect &&
     node.rect.w > 4 &&
@@ -416,11 +506,32 @@ function isInteractiveImageNode(node) {
 }
 
 function isSelectableNode(node) {
-  return !!(node && node.visible !== false && !node.visualOccluded && node.rect?.w > 4 && node.rect?.h > 4)
+  return !!(node &&
+    node.visible !== false &&
+    !isHiddenFrameworkTextNode(node) &&
+    !isOcrHiddenTextNode(node) &&
+    !node.visualOccluded &&
+    node.rect?.w > 4 &&
+    node.rect?.h > 4)
 }
 
 function isBlankLikeNode(node) {
   return String(node?.type || node?.name || '').trim().toLowerCase() === 'blank'
+}
+
+function isHiddenFrameworkTextNode(node) {
+  return !!(node && node.type === 'text' && node.hiddenFrameworkAncestor)
+}
+
+function isOcrHiddenTextNode(node) {
+  return !!(node &&
+    node.type === 'text' &&
+    (node.visualOccluded || node.ocrVisibility?.visible === false))
+}
+
+function isTreeVisibleNode(node, side) {
+  if (side !== 'arkui') return true
+  return !isHiddenFrameworkTextNode(node) && !isOcrHiddenTextNode(node)
 }
 
 function nodeDiffsFor(key, nodeId) {
@@ -435,6 +546,7 @@ function onTreeNodeSelect(nodeId) {
 function resolveSelectableNode(nodes, nodeId) {
   const node = nodes.find(n => n.id === nodeId)
   if (!node) return null
+  if (isHiddenFrameworkTextNode(node) || isOcrHiddenTextNode(node)) return null
   if (node.type === 'text' || !node.textContent) return node
 
   const targetText = normalizeLooseText(node.textContent)
@@ -445,7 +557,9 @@ function resolveSelectableNode(nodes, nodeId) {
     normalizeLooseText(n.textContent) === targetText &&
     isPathPrefix(node.path, n.path) &&
     n.visible !== false &&
-    !n.visualOccluded
+    !n.visualOccluded &&
+    !isHiddenFrameworkTextNode(n) &&
+    !isOcrHiddenTextNode(n)
   )
 
   if (!descendants.length) return node
@@ -529,5 +643,14 @@ function confidenceTagType(confidence) {
   if (confidence === 'high') return 'success'
   if (confidence === 'low') return 'warning'
   return 'primary'
+}
+
+function nodeDebugLabel(node, withId = false) {
+  if (!node) return '空'
+  const label = String(node.textContent || node.name || '节点').trim()
+  const displayLabel = label || '节点'
+  if (!withId) return displayLabel
+  const id = node.id ?? '无ID'
+  return `${id}-${displayLabel}`
 }
 </script>

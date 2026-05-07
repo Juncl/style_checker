@@ -28,6 +28,9 @@ export function isAcceptablePair(pair) {
         (isAmbiguousShortNumberText(design.textContent) || isAmbiguousShortNumberText(arkui.textContent)) &&
         !isNearSameLineSlot(design, arkui, 0.10, 0.045)
       ) return false
+      if (matchType === 'dynamic-number-slot') {
+        return designType === arkuiType
+      }
       return designType === arkuiType && numericTextCompatible(design.textContent, arkui.textContent)
     }
     return true
@@ -79,6 +82,19 @@ export function isDesignIconFragment(node) {
 
 export function isComparableOutputNode(node) {
   return isMatchableNode(node) && !isStructuralContainer(node)
+}
+
+export function isPipelineVisibleNode(node) {
+  if (!node?.visible) return false
+  if (node.pixelInvisible) return false
+  if (node.type === 'text' && node.hiddenFrameworkAncestor) return false
+  if (node.visualOccluded) return false
+  if (node.type === 'text' && node.ocrVisibility?.visible === false) {
+    const stroke = node.pixelVisibility?.textStrokeScore ?? 0
+    const ratio = node.pixelVisibility?.visiblePixelRatio ?? 0
+    if (stroke < 0.05 && ratio > 0.20) return false
+  }
+  return true
 }
 
 export function annotateDesignIconFragments(nodes) {
@@ -248,6 +264,7 @@ export function isMatchableNode(node) {
 
 function isHiddenByFramework(node) {
   if (!node.hiddenFrameworkAncestor) return false
+  if (node.type === 'text') return true
   if (node.pixelInvisible) return true
   return (node.pixelVisibility?.visiblePixelRatio ?? 0) < 0.08
 }

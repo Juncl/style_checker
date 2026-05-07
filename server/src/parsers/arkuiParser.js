@@ -103,6 +103,7 @@ function buildUnifiedNode(node, type, attrs, vpRect, canvasWidthVp, canvasHeight
     id:     String(node['$ID'] ?? Math.random()),
     source: 'arkui',
     type:   nodeType,
+    rawType: String(type || '').toLowerCase(),
     name:   type,
     paintIndex: null,
     rect: {
@@ -122,7 +123,7 @@ function buildUnifiedNode(node, type, attrs, vpRect, canvasWidthVp, canvasHeight
   }
 
   // 文字内容
-  const content = attrs.content || attrs.label || ''
+  const content = getArkuiTextContent(attrs)
   if (content) unified.textContent = content
 
   return unified
@@ -138,7 +139,11 @@ function getNodeCategory(type, attrs) {
 
 function isContentfulVisualNode(type, attrs) {
   if (!TEXT_TYPES.has(type)) return true
-  return String(attrs.content || attrs.label || '').trim().length > 0
+  return String(getArkuiTextContent(attrs)).trim().length > 0
+}
+
+function getArkuiTextContent(attrs) {
+  return attrs.content || attrs.accessibilityText || ''
 }
 
 function extractArkuiStyle(type, attrs, resolution) {

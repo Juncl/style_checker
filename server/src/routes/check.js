@@ -21,6 +21,8 @@ import {
   componentVisualDiff,
   extractNodeVisualFeatures,
 } from '../utils/imageFeatures.js'
+import { annotateTextOcrVisibility } from '../utils/textOcrVisibility.js'
+import { isPipelineVisibleNode } from '../matchers/nodeVisibility.js'
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage() })
@@ -70,7 +72,7 @@ router.get('/cases/:caseId/image/:type', (req, res) => {
 })
 
 // ── 分析内置 case ─────────────────────────────────────────────────────────────
-router.post('/check/case/:caseId', (req, res) => {
+router.post('/check/case/:caseId', async (req, res) => {
   const { caseId } = req.params
   const caseDir = join(CASES_DIR, caseId)
 
@@ -81,7 +83,7 @@ router.post('/check/case/:caseId', (req, res) => {
   try {
     const designJson = JSON.parse(readFileSync(join(caseDir, 'design.json'), 'utf-8'))
     const arkuiJson  = JSON.parse(readFileSync(join(caseDir, 'arkui.json'),  'utf-8'))
-    const result = runCheck(designJson, arkuiJson, caseId, {
+    const result = await runCheck(designJson, arkuiJson, caseId, {
       designImageBuffer: readFileSync(join(caseDir, 'design.png')),
       arkuiImageBuffer: readFileSync(join(caseDir, 'arkui.png')),
       enableVisualMatching: shouldUseVisualMatching(req),
@@ -103,15 +105,18 @@ router.post(
     { name: 'designImage', maxCount: 1 },
     { name: 'arkuiImage',  maxCount: 1 },
   ]),
-  (req, res) => {
+  async (req, res) => {
     try {
       const files = req.files
       if (!files?.designJson || !files?.arkuiJson) {
         return res.status(400).json({ error: '缺少 designJson 或 arkuiJson 文件' })
       }
+      if (!files?.arkuiImage) {
+        return res.status(400).json({ error: 'OCR 主流程需要 arkuiImage 文件' })
+      }
       const designJson = JSON.parse(files.designJson[0].buffer.toString('utf-8'))
       const arkuiJson  = JSON.parse(files.arkuiJson[0].buffer.toString('utf-8'))
-      const result = runCheck(designJson, arkuiJson, 'upload', {
+      const result = await runCheck(designJson, arkuiJson, 'upload', {
         designImageBuffer: files.designImage?.[0]?.buffer,
         arkuiImageBuffer: files.arkuiImage?.[0]?.buffer,
         enableVisualMatching: shouldUseVisualMatching(req),
@@ -128,7 +133,7 @@ router.post(
 // ──────────────────────────────────────────────────────────────────────────────
 // 核心分析流程
 // ──────────────────────────────────────────────────────────────────────────────
-function runCheck(designJson, arkuiJson, caseId, assets = {}) {
+async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
   const t0 = Date.now()
 
   // 1. 解析
@@ -141,12 +146,24 @@ function runCheck(designJson, arkuiJson, caseId, assets = {}) {
       h: arkuiResult.canvasHeightVp,
     }, { source: 'arkui' })
     : { checked: 0, hidden: 0 }
+  const arkuiOcrVisibility = assets.arkuiImageBuffer
+    ? await annotateTextOcrVisibility(arkuiResult.nodes, assets.arkuiImageBuffer, {
+      w: arkuiResult.canvasWidthVp,
+      h: arkuiResult.canvasHeightVp,
+    }, {
+      source: 'arkui',
+      mode: 'all',
+    })
+    : { checked: 0, hidden: 0, matched: 0, ocrItems: 0 }
   const designPixelVisibility = assets.designImageBuffer
     ? annotatePixelVisibility(designResult.nodes, assets.designImageBuffer, {
       w: designResult.canvasWidth,
       h: designResult.canvasHeight,
     }, { source: 'design' })
     : { checked: 0, hidden: 0 }
+
+  const designVisibleNodes = designResult.nodes.filter(isPipelineVisibleNode)
+  const arkuiVisibleNodes = arkuiResult.nodes.filter(isPipelineVisibleNode)
 
   // 2. 匹配
   const {
@@ -157,8 +174,8 @@ function runCheck(designJson, arkuiJson, caseId, assets = {}) {
     comparableArkuiCount,
     regions,
   } = matchNodes(
-    designResult.nodes,
-    arkuiResult.nodes,
+    designVisibleNodes,
+    arkuiVisibleNodes,
     {
       visualImages: assets.designImageBuffer && assets.arkuiImageBuffer ? {
         designBuffer: assets.designImageBuffer,
@@ -201,8 +218,12 @@ function runCheck(designJson, arkuiJson, caseId, assets = {}) {
     caseId,
     duration: Date.now() - t0,
     stats: {
-      designNodes:    designResult.nodes.length,
-      arkuiNodes:     arkuiResult.nodes.length,
+      designNodes:    designVisibleNodes.length,
+      arkuiNodes:     arkuiVisibleNodes.length,
+      designNodesRaw: designResult.nodes.length,
+      arkuiNodesRaw: arkuiResult.nodes.length,
+      designNodesFilteredOut: designResult.nodes.length - designVisibleNodes.length,
+      arkuiNodesFilteredOut: arkuiResult.nodes.length - arkuiVisibleNodes.length,
       comparableDesignNodes: comparableDesignCount,
       comparableArkuiNodes: comparableArkuiCount,
       matchedPairs:   pairs.length,
@@ -213,6 +234,10 @@ function runCheck(designJson, arkuiJson, caseId, assets = {}) {
       lowConfidencePairs,
       pixelVisibilityChecked: pixelVisibility.checked,
       pixelInvisibleNodes: pixelVisibility.hidden,
+      arkuiOcrVisibilityChecked: arkuiOcrVisibility.checked,
+      arkuiOcrInvisibleTextNodes: arkuiOcrVisibility.hidden,
+      arkuiOcrMatchedTextNodes: arkuiOcrVisibility.matched,
+      arkuiOcrItems: arkuiOcrVisibility.ocrItems,
       designPixelVisibilityChecked: designPixelVisibility.checked,
       designPixelInvisibleNodes: designPixelVisibility.hidden,
       errorCount,
@@ -228,7 +253,7 @@ function runCheck(designJson, arkuiJson, caseId, assets = {}) {
     diffs,
     allDesignNodes: (() => {
       const matchedIds = new Set(pairs.map(p => p.design.id))
-      return designResult.nodes.map(n => ({
+      return designVisibleNodes.map(n => ({
         id: n.id,
         name: n.name,
         type: n.type,
@@ -241,12 +266,13 @@ function runCheck(designJson, arkuiJson, caseId, assets = {}) {
         visualOccluded: !!n.visualOccluded,
         visualOcclusionReason: n.visualOcclusionReason || null,
         pixelVisibility: n.pixelVisibility || null,
+        ocrVisibility: n.ocrVisibility || null,
         matched: matchedIds.has(n.id),
       }))
     })(),
     allArkuiNodes: (() => {
       const matchedIds = new Set(pairs.map(p => p.arkui.id))
-      return arkuiResult.nodes.map(n => ({
+      return arkuiVisibleNodes.map(n => ({
         id: n.id,
         name: n.name,
         type: n.type,
@@ -256,6 +282,7 @@ function runCheck(designJson, arkuiJson, caseId, assets = {}) {
         rect: n.rect,
         style: n.style,
         visible: n.visible !== false,
+        hiddenFrameworkAncestor: !!n.hiddenFrameworkAncestor,
         visualOccluded: !!n.visualOccluded,
         visualOcclusionReason: n.visualOcclusionReason || null,
         pixelVisibility: n.pixelVisibility || null,
@@ -273,7 +300,7 @@ function runCheck(designJson, arkuiJson, caseId, assets = {}) {
       arkuiRegionId: p.arkuiRegionId,
       isAnchor: p.isAnchor,
       design: { id: p.design.id, name: p.design.name, type: p.design.type, textContent: p.design.textContent || null, rect: p.design.rect, style: p.design.style, visible: p.design.visible !== false, visualOccluded: !!p.design.visualOccluded, visualOcclusionReason: p.design.visualOcclusionReason || null, pixelVisibility: p.design.pixelVisibility || null },
-      arkui:  { id: p.arkui.id,  name: p.arkui.name,  type: p.arkui.type,  textContent: p.arkui.textContent  || null, rect: p.arkui.rect,  style: p.arkui.style,  visible: p.arkui.visible !== false,  visualOccluded: !!p.arkui.visualOccluded,  visualOcclusionReason: p.arkui.visualOcclusionReason || null, pixelVisibility: p.arkui.pixelVisibility || null  },
+      arkui:  { id: p.arkui.id,  name: p.arkui.name,  type: p.arkui.type,  textContent: p.arkui.textContent  || null, rect: p.arkui.rect,  style: p.arkui.style,  visible: p.arkui.visible !== false,  hiddenFrameworkAncestor: !!p.arkui.hiddenFrameworkAncestor, visualOccluded: !!p.arkui.visualOccluded,  visualOcclusionReason: p.arkui.visualOcclusionReason || null, pixelVisibility: p.arkui.pixelVisibility || null, ocrVisibility: p.arkui.ocrVisibility || null  },
     })),
     unmatchedDesignNodes: unmatchedDesign.map(n => ({
       id:   n.id,

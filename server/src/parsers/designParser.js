@@ -56,6 +56,7 @@ export function parseDesign(designJson) {
       id:     node.guid,
       source: 'design',
       type:   semanticAsset ? 'image' : mapNodeType(node.type, style),
+      rawType: String(node.type || '').toLowerCase(),
       name:   node.name || '',
       path:   node.path,
       paintIndex,

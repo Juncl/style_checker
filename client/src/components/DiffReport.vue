@@ -210,7 +210,7 @@ function selectItem(d, idx) {
   }
 }
 
-const COLOR_PROPS = new Set(['fontColor', 'backgroundColor', 'border.color', 'shadow.color'])
+const COLOR_PROPS = new Set(['fontColor', 'backgroundColor', 'border.color', 'borderColor', 'shadow.color'])
 function isColorProp(p)  { return COLOR_PROPS.has(p) }
 function extractHex(val) { return (String(val || '').match(/#[0-9A-Fa-f]{6,8}/) || [''])[0] }
 function displayValue(prop, val) {
@@ -232,8 +232,9 @@ function issueKey(property = '') {
   if (p === 'fontWeight') return 'fontWeight'
   if (p === 'backgroundColor' || p === 'fontColor' || p.includes('Color') || p.endsWith('.color')) return 'color'
   if (p === 'borderRadius') return 'borderRadius'
+  if (p === 'borderWidth') return 'border'
   if (p === 'shadow' || p.startsWith('shadow.')) return 'shadow'
-  if (p === 'backdropBlur') return 'backdropBlur'
+  if (p === 'blur' || p === 'backdropBlur') return 'backdropBlur'
   if (p === 'opacity') return 'opacity'
   if (p === 'padding') return 'padding'
   if (p === 'border' || p.startsWith('border.')) return 'border'
