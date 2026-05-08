@@ -65,6 +65,7 @@ const props = defineProps({
   inspectorNode:{ type: Object,  default: null },
   styleDiffs:   { type: Array,   default: () => [] },
   lockedIds:    { type: Object,  default: () => new Set() }, // Set<string>，不参与图片点击
+  debugPipelineVisible: { type: Boolean, default: false },
   debugVisible: { type: Boolean, default: false },
   debugPairMap:  { type: Object,  default: () => ({}) },
 })
@@ -109,6 +110,7 @@ watch(() => props.highlight,     () => nextTick(draw))
 watch(() => props.highlightPair, () => nextTick(draw))
 watch(() => props.selectedId,    () => nextTick(draw))
 watch(() => [props.canvasW, props.canvasH], () => nextTick(draw))
+watch(() => props.debugPipelineVisible, () => nextTick(draw))
 watch(() => props.debugVisible,  () => nextTick(draw))
 watch(() => props.debugPairMap,  () => nextTick(draw), { deep: true })
 watch(() => props.inspectorNode?.id, () => {
@@ -230,6 +232,14 @@ function draw() {
 
   const sx = W / props.canvasW
   const sy = H / props.canvasH
+
+  // Debugger 节点轮廓：显示进入匹配阶段的全部节点
+  if (props.debugPipelineVisible) {
+    for (const n of props.nodes) {
+      if (n.visible === false || !n.rect) continue
+      drawNodeRect(ctx, n.rect, sx, sy, 'rgba(255,0,0,0)', '#ff0000', 1, [])
+    }
+  }
 
   // Debugger 映射框（同一 pair 的设计侧 / 开发侧使用同一颜色）
   if (props.debugVisible && props.debugPairMap && Object.keys(props.debugPairMap).length) {

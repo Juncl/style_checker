@@ -122,7 +122,16 @@
                 <span>Debugger</span>
                 <small>映射 {{ debugPairItems.length }} 对</small>
               </div>
-              <el-switch v-model="debugOverlayOn" size="small" />
+              <div class="debugger-switches">
+                <span class="debugger-switch-group" title="显示进入节点匹配阶段的节点轮廓">
+                  <span class="debugger-switch-label">框线</span>
+                  <el-switch v-model="debugPipelineOn" size="small" />
+                </span>
+                <span class="debugger-switch-group" title="显示节点映射关系">
+                  <span class="debugger-switch-label">匹配</span>
+                  <el-switch v-model="debugOverlayOn" size="small" />
+                </span>
+              </div>
             </div>
             <div v-show="debugOverlayOn" class="debugger-body">
               <button
@@ -196,6 +205,7 @@
               :selected-id="selectedPair?.arkui?.id || null"
               :inspector-node="selectedPair?.arkui || null"
               :style-diffs="selectedArkuiDiffs"
+              :debug-pipeline-visible="debugPipelineOn"
               :debug-visible="debugOverlayOn"
               :debug-pair-map="debugPairMap"
               @node-click="onArkuiNodeClick"
@@ -212,6 +222,7 @@
               :inspector-node="selectedPair?.design || null"
               :style-diffs="selectedDesignDiffs"
               :locked-ids="lockedNodeIds"
+              :debug-pipeline-visible="debugPipelineOn"
               :debug-visible="debugOverlayOn"
               :debug-pair-map="debugPairMap"
               @node-click="onDesignNodeClick"
@@ -300,6 +311,7 @@ const lockedNodeIds  = ref(new Set())   // 图片侧锁定的设计节点 id 集
 const isDragOver     = ref(false)
 const pickerRef    = ref(null)
 const debugMode      = ref(false)
+const debugPipelineOn = ref(false)
 const debugOverlayOn = ref(false)
 const debugMappingExpanded = ref(false)
 
@@ -453,6 +465,7 @@ const scoreTagType = computed(() => {
 onMounted(async () => {
   const params = new URLSearchParams(window.location.search)
   debugMode.value = params.get('debugger') === '1'
+  debugPipelineOn.value = false
   debugOverlayOn.value = false
   debugMappingExpanded.value = false
   try { cases.value = await fetchCases() }

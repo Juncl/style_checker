@@ -203,6 +203,25 @@ body {
   border-bottom: 1px solid #f0f2f5;
 }
 
+.debugger-switches {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.debugger-switch-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.debugger-switch-label {
+  font-size: 10px;
+  color: var(--hw-muted);
+  white-space: nowrap;
+}
+
 .debugger-title {
   display: flex;
   flex-direction: column;
