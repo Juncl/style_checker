@@ -16,6 +16,19 @@ import {
   textFieldType,
 } from './textSemantics.js'
 
+const INTRINSIC_VISUAL_RAW_TYPES = new Set([
+  'image',
+  'button',
+  'search',
+  'searchfield',
+  'symbolglyph',
+  'circle',
+  'ellipse',
+  'rect',
+  'vector',
+  'boolean_operation',
+])
+
 // Visibility filters keep hidden framework and covered visual nodes out of matching output.
 export function isAcceptablePair(pair) {
   const { design, arkui, matchType, confidence } = pair
@@ -37,7 +50,7 @@ export function isAcceptablePair(pair) {
   }
   if (isStructuralContainer(design)) return false
 
-  const weakMatch = ['anchor-topology', 'rescue-iou', 'shape-geometry', 'image-geometry', 'other-geometry', 'container-iou'].includes(matchType)
+  const weakMatch = ['anchor-topology', 'rescue-iou', 'container-iou', 'container-geometry'].includes(matchType)
   if (!weakMatch) return true
 
   const wRatio = sizeRatio(design.normRect.w, arkui.normRect.w)
@@ -51,16 +64,16 @@ export function isAcceptablePair(pair) {
 
   // Weak non-text matches with extreme size drift are usually wrapper/neighbor mistakes.
   if (minRatio < 0.22) return false
-  if (['image', 'shape', 'other'].includes(design.type) && ['image', 'shape', 'other'].includes(arkui.type) && aspectRatioScore < 0.45) return false
+  if (design.type === 'container' && arkui.type === 'container' && aspectRatioScore < 0.45) return false
 
   // ArkUI SymbolGlyph is a complete icon. Avoid matching it to a small path inside
   // a decomposed design icon.
-  if (arkui.name === 'SymbolGlyph' && design.type === 'image') {
+  if (getRawType(arkui) === 'symbolglyph' && isIntrinsicVisualNode(design)) {
     if (minRatio < 0.72 || centerDist > 0.04) return false
   }
 
   // Low-confidence container matches with both position drift and size drift are too risky.
-  if (confidence === 'low' && centerDist > 0.08 && minRatio < 0.70 && ['container', 'shape', 'image', 'other'].includes(design.type)) {
+  if (confidence === 'low' && centerDist > 0.08 && minRatio < 0.70 && design.type === 'container') {
     return false
   }
 
@@ -68,7 +81,7 @@ export function isAcceptablePair(pair) {
 }
 
 export function isStructuralContainer(node) {
-  return node.type === 'container' && !hasVisualDecoration(node)
+  return node.type === 'container' && !isRenderableNonTextNode(node)
 }
 
 export function isComparableOutputNode(node) {
@@ -172,17 +185,17 @@ export function annotateCoverageOcclusion(nodes) {
 export function isVisualVisibilityCandidate(node) {
   if (!node?.visible || !node.normRect) return false
   if (node.type === 'text') return hasUsableText(node)
-  if (node.type === 'image' || node.type === 'shape') return true
-  return hasVisualDecoration(node)
+  return isRenderableNonTextNode(node)
 }
 
 export function isOccludingNode(node) {
   if (!node?.visible || node.visualOccluded) return false
   if (node.type === 'text') return false
+  if (!isRenderableNonTextNode(node)) return false
   const s = node.style || {}
   const opacity = s.opacity == null ? 1 : s.opacity
   if (opacity < 0.70) return false
-  return !!(s.backgroundColor || node.type === 'image' || node.type === 'shape')
+  return true
 }
 
 export function approximateCoveredRatio(rect, blockers) {
@@ -225,6 +238,16 @@ export function hasVisualDecoration(node) {
   return !!(s.backgroundColor || s.borderRadius || s.border || s.shadow || s.backdropBlur || s.blur)
 }
 
+export function isIntrinsicVisualNode(node) {
+  const rawType = getRawType(node)
+  return INTRINSIC_VISUAL_RAW_TYPES.has(rawType) || !!node?.semanticAsset
+}
+
+export function isRenderableNonTextNode(node) {
+  if (node?.type !== 'container') return false
+  return hasVisualDecoration(node) || isIntrinsicVisualNode(node)
+}
+
 export function hasBackgroundColor(node) {
   return !!node?.style?.backgroundColor
 }
@@ -261,16 +284,17 @@ function isRootSizedOrLargerNode(node) {
 function isCoverageCandidate(node) {
   if (!node?.rect || !node?.normRect) return false
   if (node.type === 'text') return hasUsableText(node)
-  return node.type === 'container' || node.type === 'shape' || node.type === 'image' || node.type === 'other'
+  return isRenderableNonTextNode(node)
 }
 
 function isOpaqueCoverNode(node) {
   if (!node?.visible || node.visualOccluded || !node.rect || !node.normRect) return false
   if (node.type === 'text') return false
+  if (!isRenderableNonTextNode(node)) return false
   const s = node.style || {}
   const opacity = s.opacity == null ? 1 : s.opacity
   if (opacity < 0.96) return false
-  return !!(s.backgroundColor || node.type === 'image' || node.type === 'shape')
+  return true
 }
 
 function rectContainsRect(container, rect) {
@@ -303,12 +327,8 @@ function isBlankNode(node) {
 }
 
 export function isCompatibleType(designNode, arkuiNode) {
-  if (designNode.type === 'text') return arkuiNode.type === 'text'
-  if (designNode.type === arkuiNode.type) return true
-  if (designNode.type === 'image') return arkuiNode.type === 'other' || arkuiNode.type === 'shape'
-  if (designNode.type === 'shape') return arkuiNode.type === 'container' || arkuiNode.type === 'other' || arkuiNode.type === 'image'
-  if (designNode.type === 'other') return arkuiNode.type !== 'text'
-  return false
+  return designNode?.type === arkuiNode?.type &&
+    (designNode.type === 'text' || designNode.type === 'container')
 }
 
 function nonTextAspectRatioScore(a, b) {
@@ -321,4 +341,8 @@ function aspectRatio(rect) {
   const w = Math.max(1e-6, rect?.w || 0)
   const h = Math.max(1e-6, rect?.h || 0)
   return Math.max(w / h, h / w)
+}
+
+function getRawType(node) {
+  return String(node?.rawType || node?.type || node?.name || '').toLowerCase()
 }

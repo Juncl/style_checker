@@ -62,7 +62,7 @@ export function parseDesign(designJson) {
     const unifiedNode = {
       id:     node.guid,
       source: 'design',
-      type:   semanticAsset ? 'image' : mapNodeType(node.type, style),
+      type:   mapNodeType(node.type),
       rawType: String(node.type || '').toLowerCase(),
       name:   node.name || '',
       path:   node.path,
@@ -100,12 +100,9 @@ export function parseDesign(designJson) {
   return { canvasWidth, canvasHeight, nodes: unified }
 }
 
-function mapNodeType(type, style) {
+function mapNodeType(type) {
   if (type === 'TEXT') return 'text'
-  if (CONTAINER_TYPES.has(type)) return 'container'
-  if (type === 'RECTANGLE' || type === 'ELLIPSE') return 'shape'
-  if (type === 'VECTOR' || type === 'BOOLEAN_OPERATION') return 'image'
-  return 'other'
+  return 'container'
 }
 
 function extractDesignStyle(nodeType, style, layout) {

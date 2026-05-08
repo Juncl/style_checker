@@ -14,11 +14,8 @@ import {
   toVpRect,
 } from '../utils/unitUtils.js'
 
-// 映射到 'text' 类型的 ArkUI 组件
-const TEXT_TYPES = new Set(['Text', 'Span', 'Button', 'Search', 'SearchField'])
-
-// 映射到 'container' 类型的布局组件
-const CONTAINER_TYPES = new Set(['Row', 'Column', 'Flex', 'Stack', 'RelativeContainer', 'GridRow', 'GridCol', 'Scroll', 'List', 'ListItem', 'Tabs', 'TabContent', 'Swiper'])
+// 只有 Text 归为 'text'，其余统一进入 'container'
+const TEXT_TYPES = new Set(['Text'])
 
 // 过滤掉的纯框架节点
 const FRAMEWORK_TYPES = new Set(['root', 'JsView', 'Navigation', 'NavBar', 'NavigationContent', 'Divider', 'ScrollBar', 'NavBarContent', 'NavigationMenu', '__Common__', 'TitleBar', 'ToolBar', 'TabBar', 'BackButton'])
@@ -181,10 +178,7 @@ function buildUnifiedNode(node, type, attrs, vpRect, canvasWidthVp, canvasHeight
 
 function getNodeCategory(type, attrs) {
   if (TEXT_TYPES.has(type)) return 'text'
-  if (CONTAINER_TYPES.has(type)) return 'container'
-  if (type === 'Image' || type === 'SymbolGlyph') return 'image'
-  if (type === 'Circle' || type === 'Ellipse' || type === 'Rect') return 'shape'
-  return 'other'
+  return 'container'
 }
 
 function isContentfulVisualNode(type, attrs) {

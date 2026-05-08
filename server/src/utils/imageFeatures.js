@@ -1,4 +1,5 @@
 import { decodePng } from './pngDecoder.js'
+import { isRenderableNonTextNode } from '../matchers/nodeVisibility.js'
 
 export function annotatePixelVisibility(nodes, imageBuffer, canvas, options = {}) {
   if (!imageBuffer || !nodes?.length || !canvas?.w || !canvas?.h) return { checked: 0, hidden: 0 }
@@ -37,8 +38,7 @@ function isPixelVisibilityCandidate(node) {
   if (!node?.visible || node.visualOccluded || !node.rect) return false
   if (node.rect.w < 2 || node.rect.h < 2) return false
   if (node.type === 'text') return !!String(node.textContent || '').trim()
-  if (node.type === 'image' || node.type === 'shape') return true
-  return hasPixelVisualDecoration(node)
+  return isRenderableNonTextNode(node) || hasPixelVisualDecoration(node)
 }
 
 function hasPixelVisualDecoration(node) {
@@ -53,7 +53,7 @@ function isPixelInvisible(node, metrics) {
       metrics.meanColorDelta < 8 &&
       metrics.meanLumaDelta < 5
   }
-  const threshold = node.type === 'image' ? 0.025 : 0.035
+  const threshold = isRenderableNonTextNode(node) ? 0.025 : 0.035
   return metrics.visiblePixelRatio < threshold &&
     metrics.meanColorDelta < 12 &&
     metrics.meanLumaDelta < 8

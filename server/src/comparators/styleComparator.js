@@ -342,7 +342,7 @@ function isTitlebarType(node) {
 function shouldIgnoreBackgroundColorNode(node) {
   if (!node) return false
   const rawType = normalizedNodeType(node)
-  return BACKGROUND_IGNORE_TYPES.has(rawType) || String(node?.type || '').toLowerCase() === 'image'
+  return BACKGROUND_IGNORE_TYPES.has(rawType)
 }
 
 function normalizedNodeType(node) {

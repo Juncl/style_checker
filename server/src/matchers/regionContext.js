@@ -54,7 +54,7 @@ export function segmentRegionsByFixedFloors(nodes, source) {
 
 export function makeRegion(source, index, nodes) {
   const rect = unionNormRect(nodes.map(n => n.normRect))
-  const counts = { text: 0, container: 0, shape: 0, image: 0, other: 0 }
+  const counts = { text: 0, container: 0 }
   const textSet = new Set()
   let decorated = 0
 

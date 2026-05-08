@@ -155,9 +155,8 @@ function findHitNode(px, py) {
 
 function hitTypePriority(node) {
   if (node.type === 'text') return 0
-  if (node.type === 'image' || node.type === 'shape') return 1
-  if (node.type === 'other') return 2
-  return 3
+  if (node.type === 'container') return 1
+  return 2
 }
 
 function isHiddenTextNode(node) {

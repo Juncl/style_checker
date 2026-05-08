@@ -29,6 +29,7 @@ import {
   isAcceptablePair,
   hasBackgroundColor,
   hasVisualDecoration,
+  isRenderableNonTextNode,
 } from './nodeVisibility.js'
 import {
   segmentRegions,
@@ -46,9 +47,8 @@ import { matchAlignedTextRows, matchDynamicTextSlots } from './dynamicTextSlots.
  * Pass 3: 基于强锚点周边拓扑关系匹配弱节点
  * Pass 4: 文本位置回退匹配
  * Pass 5: 几何 IoU 匹配（容器节点）
- * Pass 6: 渐变节点匹配
- * Pass 7: shape/image/other 节点几何匹配
- * Pass 8: 低置信度兜底匹配
+ * Pass 6: 非文本视觉容器几何匹配
+ * Pass 7: 低置信度兜底匹配
  */
 
 /**
@@ -293,18 +293,17 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     }
   }
 
-  // ── Pass 6: shape / image / other 节点几何匹配 ──────────────────────────────
+  // ── Pass 6: 非文本视觉容器几何匹配 ────────────────────────────────────────
   for (const dn of designNodes) {
     if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id)) continue
-    if (!['shape', 'image', 'other'].includes(dn.type)) continue
+    if (!isRenderableNonTextNode(dn)) continue
 
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n => {
-      if (dn.type === 'image') return n.type === 'image' || n.type === 'other' || n.type === 'shape'
-      return n.type !== 'text'
+      return isRenderableNonTextNode(n)
     })
     const best = bestIoUMatch(dn.normRect, candidates, dn, regionContext)
     if (best && best.iou > 0.55) {
-      pairs.push(makePair(dn, best.node, `${dn.type}-geometry`, {
+      pairs.push(makePair(dn, best.node, 'container-geometry', {
         iou: best.iou,
         confidence: 'medium',
       }))
@@ -447,9 +446,7 @@ function matchTypePriority(matchType) {
     'text-row-slot': 21,
     'text-position': 20,
     'container-iou': 18,
-    'image-geometry': 14,
-    'shape-geometry': 12,
-    'other-geometry': 10,
+    'container-geometry': 14,
     'region-text-global-rescue': 8,
     'rescue-iou': 2,
   }

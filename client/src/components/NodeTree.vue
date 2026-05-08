@@ -43,17 +43,36 @@
             locked:    lockedIds.has(node.id),
           }
         ]"
-        :style="{ paddingLeft: `${8 + node.depth * 14}px` }"
+        :style="{ '--indent-width': `${node.depth * 14}px` }"
         :title="!node.matched ? '未匹配（无对应 ArkUI 节点）' : lockedIds.has(node.id) ? '已锁定（图片侧不可点击，树中仍可选中）' : ''"
         @click="onNodeClick(node)"
       >
-        <!-- 缩进 -->
-        <span class="depth-indent" v-if="node.depth > 0">
-          <span v-for="i in node.depth" :key="i" class="indent-bar" />
-        </span>
+        <span class="tree-left-rail">
+          <!-- 层级缩进 -->
+          <span class="depth-indent" v-if="node.depth > 0">
+            <span
+              v-for="i in node.depth"
+              :key="i"
+              class="indent-bar"
+            />
+          </span>
 
-        <!-- 类型徽标 -->
-        <span :class="['type-chip', node.type]">{{ typeLabel(node.type) }}</span>
+          <!-- 折叠控制 -->
+          <button
+            v-if="node.hasChildren"
+            type="button"
+            :class="['tree-toggle', { collapsed: isNodeCollapsed(node) }]"
+            :title="isNodeCollapsed(node) ? '展开子节点' : '折叠子节点'"
+            :aria-expanded="!isNodeCollapsed(node)"
+            @click.stop="toggleNodeCollapse(node)"
+          >
+            <span>{{ isNodeCollapsed(node) ? '▸' : '▾' }}</span>
+          </button>
+          <span v-else class="tree-toggle-spacer" />
+
+          <!-- 类型徽标 -->
+          <span :class="['type-chip', node.type]">{{ typeLabel(node.type) }}</span>
+        </span>
 
         <!-- 节点标签 -->
         <span class="node-label">
@@ -104,6 +123,7 @@ const emit = defineEmits(['select', 'toggle-lock'])
 const search      = ref('')
 const matchedOnly = ref(false)
 const listRef     = ref(null)
+const collapsedPaths = ref(new Set())
 const selectedNodeId = computed(() => props.selectedId || props.selectedDesignId)
 
 function comparePaths(a, b) {
@@ -120,17 +140,48 @@ function normalizePath(path) {
   return Array.isArray(path) ? path : []
 }
 
+function pathKey(path) {
+  return normalizePath(path).join('/')
+}
+
 const sortedNodes = computed(() =>
-  [...props.nodes]
-    .sort((a, b) => comparePaths(a.path, b.path) || (a.paintIndex ?? 0) - (b.paintIndex ?? 0))
-    .map(n => ({ ...n, depth: Math.max(0, normalizePath(n.path).length - 1) }))
+  (() => {
+    const list = [...props.nodes]
+      .sort((a, b) => comparePaths(a.path, b.path) || (a.paintIndex ?? 0) - (b.paintIndex ?? 0))
+      .map(n => {
+        const path = normalizePath(n.path)
+        return {
+          ...n,
+          path,
+          pathKey: pathKey(path),
+          depth: Math.max(0, path.length - 1),
+        }
+      })
+
+    const expandablePaths = new Set()
+    for (const node of list) {
+      const path = node.path
+      for (let i = 1; i < path.length; i++) {
+        expandablePaths.add(path.slice(0, i).join('/'))
+      }
+    }
+
+    return list.map(node => ({
+      ...node,
+      hasChildren: expandablePaths.has(node.pathKey),
+    }))
+  })()
 )
 
 const totalCount  = computed(() => props.nodes.length)
 const matchedCount = computed(() => props.nodes.filter(n => n.matched).length)
 const lockedCount  = computed(() => props.lockedIds.size)
 
-const displayNodes = computed(() => {
+const selectedNode = computed(() =>
+  sortedNodes.value.find(n => n.id === selectedNodeId.value) || null
+)
+
+const filteredNodes = computed(() => {
   const q = search.value.trim().toLowerCase()
   let list = sortedNodes.value
   if (matchedOnly.value) list = list.filter(n => n.matched)
@@ -141,10 +192,52 @@ const displayNodes = computed(() => {
   return list
 })
 
+const autoExpandedPaths = computed(() => {
+  const expanded = new Set()
+  const addAncestors = (node) => {
+    if (!node) return
+    const path = normalizePath(node.path)
+    for (let i = 1; i < path.length; i++) {
+      expanded.add(path.slice(0, i).join('/'))
+    }
+  }
+
+  const q = search.value.trim()
+  if (q || matchedOnly.value) {
+    for (const node of filteredNodes.value) addAncestors(node)
+  }
+  addAncestors(selectedNode.value)
+  return expanded
+})
+
+function hasCollapsedAncestor(path) {
+  const normalized = normalizePath(path)
+  for (let i = 1; i < normalized.length; i++) {
+    const key = normalized.slice(0, i).join('/')
+    if (collapsedPaths.value.has(key) && !autoExpandedPaths.value.has(key)) return true
+  }
+  return false
+}
+
+const displayNodes = computed(() =>
+  filteredNodes.value.filter(node => !hasCollapsedAncestor(node.path))
+)
+
+function isNodeCollapsed(node) {
+  return collapsedPaths.value.has(node.pathKey)
+}
+
+function toggleNodeCollapse(node) {
+  if (!node.hasChildren) return
+  const next = new Set(collapsedPaths.value)
+  if (next.has(node.pathKey)) next.delete(node.pathKey)
+  else next.add(node.pathKey)
+  collapsedPaths.value = next
+}
+
 function typeLabel(type) {
   if (type === 'text')      return 'T'
   if (type === 'container') return 'C'
-  if (type === 'image')     return 'I'
   return '·'
 }
 
@@ -152,11 +245,32 @@ function onNodeClick(node) {
   emit('select', node.id)
 }
 
+function scrollSelectedNodeVertically() {
+  const list = listRef.value
+  if (!list) return
+  const el = list.querySelector('.tree-node.selected')
+  if (!el) return
+
+  const listRect = list.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
+  const topGap = elRect.top - listRect.top
+  const bottomGap = elRect.bottom - listRect.bottom
+
+  if (topGap < 0) {
+    list.scrollTo({ top: list.scrollTop + topGap, behavior: 'smooth' })
+  } else if (bottomGap > 0) {
+    list.scrollTo({ top: list.scrollTop + bottomGap, behavior: 'smooth' })
+  }
+}
+
+watch(() => props.nodes, () => {
+  collapsedPaths.value = new Set()
+}, { deep: false })
+
 watch(selectedNodeId, async (id) => {
   if (!id || !listRef.value) return
   await nextTick()
-  const el = listRef.value.querySelector('.tree-node.selected')
-  if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  scrollSelectedNodeVertically()
 })
 </script>
 
@@ -206,6 +320,7 @@ watch(selectedNodeId, async (id) => {
 .tree-list {
   flex: 1;
   overflow-y: auto;
+  overflow-x: auto;
   padding: 4px 0;
 }
 
@@ -222,7 +337,8 @@ watch(selectedNodeId, async (id) => {
 .tree-node {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 2px;
+  padding-left: 0;
   padding-top: 3px;
   padding-bottom: 3px;
   padding-right: 6px;
@@ -231,7 +347,9 @@ watch(selectedNodeId, async (id) => {
   border-radius: 4px;
   margin: 1px 4px;
   transition: background .1s;
-  min-width: 0;
+  width: max-content;
+  min-width: calc(100% - 8px);
+  white-space: nowrap;
 }
 
 .tree-node.matched {
@@ -259,8 +377,61 @@ watch(selectedNodeId, async (id) => {
 /* 锁定状态始终显示锁定按钮 */
 .tree-node.locked .lock-btn { opacity: 1 !important; }
 
-.depth-indent { display: flex; flex-shrink: 0; }
-.indent-bar   { display: inline-block; width: 14px; flex-shrink: 0; }
+.tree-left-rail {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0;
+}
+
+.tree-toggle,
+.tree-toggle-spacer {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tree-toggle {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  border-radius: 3px;
+  cursor: pointer;
+  color: #909399;
+  font-size: 10px;
+  line-height: 1;
+  transition: background .15s, color .15s;
+}
+
+.tree-toggle:hover {
+  background: #eef4ff;
+  color: #409eff;
+}
+
+.tree-toggle.collapsed {
+  color: #606266;
+}
+
+.tree-toggle.collapsed:hover {
+  background: #f5f7fa;
+  color: #303133;
+}
+
+.depth-indent {
+  display: flex;
+  flex-shrink: 0;
+  width: var(--indent-width, 0px);
+  overflow: hidden;
+}
+.indent-bar {
+  display: inline-block;
+  width: 14px;
+  flex-shrink: 0;
+}
 
 /* ── 类型徽标 ── */
 .type-chip {
@@ -276,7 +447,6 @@ watch(selectedNodeId, async (id) => {
 }
 .type-chip.text      { background: #eef4ff; color: #0a59f7; }
 .type-chip.container { background: #f0f0ff; color: #8b5cf6; }
-.type-chip.image     { background: #f0fff4; color: #22c55e; }
 .type-chip.other     { background: #f5f5f5; color: #909399; }
 
 /* ── 节点标签 ── */
@@ -285,12 +455,13 @@ watch(selectedNodeId, async (id) => {
   align-items: baseline;
   gap: 5px;
   min-width: 0;
-  flex: 1;
-  overflow: hidden;
+  overflow: visible;
+  width: max-content;
+  flex: 0 0 auto;
 }
 .node-primary {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
   white-space: nowrap;
   font-weight: 500;
 }
@@ -298,8 +469,8 @@ watch(selectedNodeId, async (id) => {
   font-size: 10px;
   color: #c0c4cc;
   flex-shrink: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
   white-space: nowrap;
   max-width: 60px;
 }

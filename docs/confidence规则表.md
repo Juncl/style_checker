@@ -29,7 +29,7 @@
 | 档位 | 含义 | 典型来源 | 主要触发条件 | 处理优先级 |
 |---|---|---|---|---|
 | `high` | 强证据，接近锚点级 | `text-content` 的强同文命中 | 同文本 + 位置很近 + 样式很像 + 不是高风险短文本 | 最高 |
-| `medium` | 主规则命中，证据较稳 | `text-content`、`dynamic-text-slot`、`text-row-slot`、`region-text-optimal`、`text-role`、`anchor-topology`、`text-position`、`container-iou`、`gradient-iou`、`image-geometry`、`shape-geometry`、`other-geometry` | 通道本身通过阈值，且不是弱救援级别 | 中 |
+| `medium` | 主规则命中，证据较稳 | `text-content`、`dynamic-text-slot`、`text-row-slot`、`region-text-optimal`、`text-role`、`anchor-topology`、`text-position`、`container-iou`、`container-geometry` | 通道本身通过阈值，且不是弱救援级别 | 中 |
 | `low` | 兜底命中，证据偏弱 | `region-text-global-rescue`、`rescue-iou`、部分 `anchor-topology` / `dynamic-text-slot` / `text-row-slot` 的边缘命中 | 只够“能配上”，但稳定性不强 | 最低 |
 
 ---
@@ -82,10 +82,7 @@
 - `anchor-topology`
 - `text-position`
 - `container-iou`
-- `gradient-iou`
-- `image-geometry`
-- `shape-geometry`
-- `other-geometry`
+- `container-geometry`
 
 ### 4.2 具体规则
 
@@ -128,7 +125,7 @@
 
 #### 几何 / 视觉类
 
-容器、渐变、图标、图片、shape、other 等，只要达到各自阈值，通常给 `medium`。
+容器和原始类型带视觉语义的非文本节点，只要达到各自阈值，通常给 `medium`。
 
 ### 4.3 语义含义
 
