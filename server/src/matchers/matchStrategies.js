@@ -1,4 +1,3 @@
-import { cropSimilarity } from '../utils/imageFeatures.js'
 import { centerDistance, centerY, computeIoU, rectCenter, sizeRatio, xDistance, yDistance } from './matchGeometry.js'
 import {
   allowsTextPositionFallback,
@@ -47,9 +46,8 @@ export function bestExactTextCandidate(targetNode, candidates) {
     const yScore = Math.max(0, 1 - yDistance(targetNode.normRect, cur.normRect) / 0.40)
     const xScore = Math.max(0, 1 - xDistance(targetNode.normRect, cur.normRect) / 0.35)
     const styleScore = textStyleSimilarity(targetNode, cur)
-    const sizeScore = sizeRatio(targetNode.normRect.h, cur.normRect.h)
     const pixelScore = cur.pixelVisibility?.samples ? Math.min(1, cur.pixelVisibility.visiblePixelRatio / 0.14) : 0.70
-    const score = yScore * 0.32 + xScore * 0.24 + styleScore * 0.18 + sizeScore * 0.08 + pixelScore * 0.18
+    const score = yScore * 0.34 + xScore * 0.26 + styleScore * 0.22 + pixelScore * 0.18
     if (score > bestScore) {
       bestScore = score
       best = cur
@@ -66,7 +64,6 @@ export function makePair(design, arkui, matchType, extra = {}) {
     iou: extra.iou ?? null,
     confidence: extra.confidence || 'medium',
     topologyScore: extra.topologyScore ?? null,
-    visualScore: extra.visualScore ?? null,
     isAnchor: extra.isAnchor || false,
   }
 }
@@ -161,8 +158,7 @@ export function maxWeightTextMatching(designTexts, arkuiTexts, regionScore) {
       const fingerprintMatch = hasSameTextAttributeFingerprint(dn, an)
       const fingerprintGeometryOk = fingerprintMatch &&
         Math.abs(centerY(dn.normRect) - centerY(an.normRect)) <= 0.03 &&
-        Math.abs(rectCenter(dn.normRect).x - rectCenter(an.normRect).x) <= 0.06 &&
-        sizeRatio(dn.normRect.h, an.normRect.h) >= 0.65
+        Math.abs(rectCenter(dn.normRect).x - rectCenter(an.normRect).x) <= 0.06
       if (!passesTextSemanticGate(dn.textContent, an.textContent, semantic) && roleScore < 0.85 && !fingerprintGeometryOk) continue
       if (isAmbiguousUnitText(dn.textContent) && Math.abs(centerY(dn.normRect) - centerY(an.normRect)) > 0.04) continue
       if (isAmbiguousShortNumberText(dn.textContent) && !isNearSameLineSlot(dn, an, 0.10, 0.045)) continue
@@ -296,12 +292,9 @@ export function localTextGeometryScore(a, b) {
   const bc = rectCenter(b)
   const dx = Math.abs(ac.x - bc.x)
   const dy = Math.abs(ac.y - bc.y)
-  const hRatio = sizeRatio(a.h, b.h)
   const xScore = Math.max(0, 1 - dx / 0.28)
   const yScore = Math.max(0, 1 - dy / 0.08)
-  // Text wrappers often carry extra padding or line-height slack; keep size as a soft signal.
-  const softSizeScore = 0.65 + hRatio * 0.35
-  return xScore * 0.34 + yScore * 0.54 + softSizeScore * 0.12
+  return xScore * 0.40 + yScore * 0.60
 }
 
 export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArkui, matchedDesignIds, regionContext) {
@@ -311,35 +304,33 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
   const candidateDesignNodes = designNodes
     .filter(n => isMatchableNode(n) && !matchedDesignIds.has(n.id))
     .filter(n => n.type !== 'text' || hasUsableText(n))
-    .map(n => ({ node: n, anchors: nearbyAnchors(n, anchors, 'design') }))
-    .filter(item => item.anchors.length > 0)
-    .sort((a, b) => a.anchors[0].dist - b.anchors[0].dist)
+    .map(n => {
+      const anchorsForNode = nearbyAnchors(n, anchors, 'design')
+      const best = bestTopologyCandidate(n, arkuiNodes, anchorsForNode, usedArkui, regionContext)
+      return {
+        node: n,
+        anchors: anchorsForNode,
+        bestScore: best?.score ?? 0,
+        bestAnchorDist: best?.anchorDist ?? Number.POSITIVE_INFINITY,
+      }
+    })
+    .filter(item => item.anchors.length > 0 && item.bestScore > 0.58)
+    .sort((a, b) => {
+      if (b.bestScore !== a.bestScore) return b.bestScore - a.bestScore
+      if (a.bestAnchorDist !== b.bestAnchorDist) return a.bestAnchorDist - b.bestAnchorDist
+      return (a.node.paintIndex ?? 0) - (b.node.paintIndex ?? 0)
+    })
 
   for (const { node: dn, anchors: nodeAnchors } of candidateDesignNodes) {
     if (localMatchedDesign.has(dn.id)) continue
 
-    let best = null
-    let bestScore = 0
-    const regionCandidates = candidatePool(dn, arkuiNodes, regionContext, n =>
-      isMatchableNode(n) &&
-      !usedArkui.has(n.id) &&
-      !localUsedArkui.has(n.id) &&
-      isCompatibleType(dn, n)
+    const best = bestTopologyCandidate(
+      dn,
+      arkuiNodes,
+      nodeAnchors,
+      new Set([...usedArkui, ...localUsedArkui]),
+      regionContext
     )
-
-    for (const an of regionCandidates) {
-      for (const anchor of nodeAnchors) {
-        const designRelation = relationToAnchor(dn, anchor.pair.design)
-        const arkuiRelation = relationToAnchor(an, anchor.pair.arkui)
-        if (distanceBetweenRelations(designRelation, arkuiRelation) > 0.24) continue
-
-        const score = topologyMatchScore(dn, an, designRelation, arkuiRelation, regionContext)
-        if (score > bestScore) {
-          bestScore = score
-          best = { node: an, score, iou: computeIoU(dn.normRect, an.normRect) }
-        }
-      }
-    }
 
     if (best && best.score > 0.58) {
       result.push(makePair(dn, best.node, 'anchor-topology', {
@@ -353,6 +344,37 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
   }
 
   return result
+}
+
+function bestTopologyCandidate(dn, arkuiNodes, nodeAnchors, unavailableArkui, regionContext) {
+  if (!nodeAnchors.length) return null
+
+  let best = null
+  let bestScore = 0
+  let bestAnchorDist = Number.POSITIVE_INFINITY
+  const regionCandidates = candidatePool(dn, arkuiNodes, regionContext, n =>
+    isMatchableNode(n) &&
+    !unavailableArkui.has(n.id) &&
+    isCompatibleType(dn, n)
+  )
+
+  for (const an of regionCandidates) {
+    for (const anchor of nodeAnchors) {
+      const designRelation = relationToAnchor(dn, anchor.pair.design)
+      const arkuiRelation = relationToAnchor(an, anchor.pair.arkui)
+      const relDist = distanceBetweenRelations(designRelation, arkuiRelation)
+      if (relDist > 0.24) continue
+
+      const score = topologyMatchScore(dn, an, designRelation, arkuiRelation, regionContext)
+      if (score > bestScore) {
+        bestScore = score
+        bestAnchorDist = anchor.dist
+        best = { node: an, score, iou: computeIoU(dn.normRect, an.normRect), anchorDist: anchor.dist }
+      }
+    }
+  }
+
+  return best ? { ...best, bestScore, bestAnchorDist } : null
 }
 
 export function nearestAnchor(node, anchors, side) {
@@ -416,8 +438,8 @@ export function topologyMatchScore(dn, an, designRelation, arkuiRelation, region
   const relScore = Math.max(0, 1 - relDist / 0.22)
   const wRatio = sizeRatio(dn.normRect.w, an.normRect.w)
   const hRatio = sizeRatio(dn.normRect.h, an.normRect.h)
-  const sizeScore = (wRatio + hRatio) / 2
-  const iou = computeIoU(dn.normRect, an.normRect)
+  const sizeScore = dn.type === 'text' && an.type === 'text' ? 1 : (wRatio + hRatio) / 2
+  const iou = dn.type === 'text' && an.type === 'text' ? 0 : computeIoU(dn.normRect, an.normRect)
   const typeScore = dn.type === an.type ? 1 : 0.68
   const textScore = dn.type === 'text' && an.type === 'text'
     ? textStyleSimilarity(dn, an)
@@ -433,13 +455,11 @@ export function topologyMatchScore(dn, an, designRelation, arkuiRelation, region
 
 function isTopologySlotCompatible(dn, an, relDist, roleScore) {
   const style = textStyleSimilarity(dn, an)
-  const hRatio = sizeRatio(dn.normRect.h, an.normRect.h)
   const absoluteX = Math.abs(rectCenter(dn.normRect).x - rectCenter(an.normRect).x)
   const absoluteY = Math.abs(centerY(dn.normRect) - centerY(an.normRect))
   const maxRelDist = roleScore >= 0.72 ? 0.22 : 0.16
   return relDist <= maxRelDist &&
     style >= 0.72 &&
-    hRatio >= 0.60 &&
     absoluteX <= 0.18 &&
     (absoluteY <= 0.14 || roleScore >= 0.72)
 }
@@ -466,37 +486,6 @@ export function bestIoUMatch(targetRect, candidates, targetNode = null, regionCo
   return best
 }
 
-export function bestVisualIoUMatch(targetRect, candidates, targetNode = null, regionContext = null) {
-  let best = null
-  let bestScore = 0
-  for (const n of candidates) {
-    const iou = computeIoU(targetRect, n.normRect)
-    if (iou <= 0) continue
-    const wRatio = Math.min(targetRect.w, n.normRect.w) / Math.max(targetRect.w, n.normRect.w)
-    const hRatio = Math.min(targetRect.h, n.normRect.h) / Math.max(targetRect.h, n.normRect.h)
-    const regionBonus = targetNode ? regionAffinity(targetNode, n, regionContext) : 0
-    const visualScore = nodeVisualSimilarity(targetNode, n, regionContext)
-    const visualWeight = targetNode?.type === 'image' || n.type === 'image' ? 0.35 : 0.18
-    const geometryScore = iou * wRatio * hRatio
-    const score = geometryScore * (1 - visualWeight) +
-      visualScore * visualWeight +
-      regionBonus * 0.08
-    if (score > bestScore) {
-      bestScore = score
-      best = { node: n, iou, visualScore }
-    }
-  }
-  return best
-}
-
-export function nodeVisualSimilarity(designNode, arkuiNode, regionContext) {
-  const features = regionContext?.visualFeatures
-  if (!features || !designNode || !arkuiNode) return 0
-  const designFeature = features.designNodes?.get(designNode.id)
-  const arkuiFeature = features.arkuiNodes?.get(arkuiNode.id)
-  return cropSimilarity(designFeature, arkuiFeature)
-}
-
 export function bestTextPositionMatch(targetRect, candidates, targetNode = null, regionContext = null) {
   let best = null
   let bestScore = 0
@@ -512,16 +501,15 @@ export function bestTextPositionMatch(targetRect, candidates, targetNode = null,
     const cy = r.y + r.h / 2
     const dx = Math.abs(tcx - cx)
     const dy = Math.abs(tcy - cy)
-    const hRatio = Math.min(targetRect.h, r.h) / Math.max(targetRect.h, r.h)
 
     const yLimit = targetNode && passesTextSemanticGate(targetNode.textContent, n.textContent, semantic) ? 0.05 : 0.04
-    if (dy > yLimit || dx > 0.25 || hRatio < 0.35) continue
+    if (dy > yLimit || dx > 0.25) continue
 
     const iou = computeIoU(targetRect, r)
     const yScore = Math.max(0, 1 - dy / yLimit)
     const xScore = Math.max(0, 1 - dx / 0.25)
     const regionBonus = targetNode ? regionAffinity(targetNode, n, regionContext) : 0
-    const score = yScore * 0.48 + xScore * 0.22 + hRatio * 0.18 + iou * 0.12 + semantic * 0.16 + regionBonus * 0.05
+    const score = yScore * 0.56 + xScore * 0.24 + semantic * 0.15 + regionBonus * 0.05
     if (score > bestScore) {
       bestScore = score
       best = { node: n, iou, score }

@@ -154,7 +154,7 @@ function extractArkuiStyle(type, attrs, resolution) {
     s.opacity = parseFloat(attrs.opacity)
   }
 
-  // 背景色（非透明才记录）
+  // 填充（非透明才记录）
   const shapeFill = type === 'Circle' || type === 'Ellipse' || type === 'Rect'
     ? attrs.fill || attrs.foregroundColor
     : null
@@ -223,45 +223,6 @@ function extractArkuiStyle(type, attrs, resolution) {
   if (['Row', 'Column', 'Flex'].includes(type) && attrs.space !== undefined) {
     const space = parseVp(attrs.space)
     if (space !== null && space > 0) s.itemSpacing = space
-  }
-
-  // 渐变背景
-  if (attrs.linearGradient && Array.isArray(attrs.linearGradient.colors) && attrs.linearGradient.colors.length > 0) {
-    const lg = attrs.linearGradient
-    s.gradient = {
-      type: 'linear',
-      direction: lg.direction || '',
-      stops: Array.isArray(lg.colors) ? lg.colors.map(c => ({
-        color:    normalizeArkuiColor(Array.isArray(c) ? c[0] : c.color),
-        position: parseFloat(Array.isArray(c) ? c[1] : c.position) || 0,
-      })) : [],
-    }
-  } else if (attrs.sweepGradient && Array.isArray(attrs.sweepGradient.colors) && attrs.sweepGradient.colors.length > 0) {
-    const sg = attrs.sweepGradient
-    s.gradient = {
-      type: 'angular',
-      direction: '',
-      stops: Array.isArray(sg.colors) ? sg.colors.map(c => ({
-        color:    normalizeArkuiColor(Array.isArray(c) ? c[0] : c.color),
-        position: parseFloat(Array.isArray(c) ? c[1] : c.position) || 0,
-      })) : [],
-    }
-  } else if (attrs.radialGradient && Array.isArray(attrs.radialGradient.colors) && attrs.radialGradient.colors.length > 0) {
-    const rg = attrs.radialGradient
-    s.gradient = {
-      type: 'radial',
-      direction: '',
-      stops: Array.isArray(rg.colors) ? rg.colors.map(c => ({
-        color:    normalizeArkuiColor(Array.isArray(c) ? c[0] : c.color),
-        position: parseFloat(Array.isArray(c) ? c[1] : c.position) || 0,
-      })) : [],
-    }
-  }
-
-  // 图标内容 (SymbolGlyph)
-  if (type === 'SymbolGlyph' && attrs.content) {
-    s.iconContent = attrs.content
-    if (attrs.fontSrc) s.iconFontSrc = attrs.fontSrc
   }
 
   // ===== 文字相关 =====

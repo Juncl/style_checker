@@ -18,7 +18,7 @@ import {
 
 // Visibility filters keep hidden framework and covered visual nodes out of matching output.
 export function isAcceptablePair(pair) {
-  const { design, arkui, matchType, confidence, visualScore } = pair
+  const { design, arkui, matchType, confidence } = pair
   if (design.type === 'text') {
     if (arkui.type !== 'text') return false
     const designType = textFieldType(normalizeText(design.textContent))
@@ -56,12 +56,7 @@ export function isAcceptablePair(pair) {
   // ArkUI SymbolGlyph is a complete icon. Avoid matching it to a small path inside
   // a decomposed design icon.
   if (arkui.name === 'SymbolGlyph' && design.type === 'image') {
-    if (isDesignIconFragment(design)) return false
     if (minRatio < 0.72 || centerDist > 0.04) return false
-  }
-
-  if (design.type === 'image' && arkui.type === 'image' && visualScore != null && visualScore < 0.18 && confidence !== 'high') {
-    return false
   }
 
   // Low-confidence container matches with both position drift and size drift are too risky.
@@ -74,10 +69,6 @@ export function isAcceptablePair(pair) {
 
 export function isStructuralContainer(node) {
   return node.type === 'container' && !hasVisualDecoration(node)
-}
-
-export function isDesignIconFragment(node) {
-  return node.source === 'design' && (node.iconFragment || /^(path|路径)/i.test(String(node.name || '').trim()))
 }
 
 export function isComparableOutputNode(node) {
@@ -95,30 +86,6 @@ export function isPipelineVisibleNode(node) {
     if (stroke < 0.05 && ratio > 0.20) return false
   }
   return true
-}
-
-export function annotateDesignIconFragments(nodes) {
-  const designImages = nodes.filter(n => n.source === 'design' && n.type === 'image' && n.rect && n.normRect)
-  for (const node of designImages) {
-    node.iconFragment = !!node.iconFragment
-    if (node.iconUnion) continue
-    if (!/^(path|路径)/i.test(String(node.name || '').trim())) continue
-    const parent = designImages.find(other =>
-      other.id !== node.id &&
-      Array.isArray(node.path) &&
-      Array.isArray(other.path) &&
-      other.path.length < node.path.length &&
-      isPathPrefix(other.path, node.path) &&
-      rectContainsCenter(other.normRect, node.normRect) &&
-      rectArea(other.normRect) > rectArea(node.normRect) * 1.35
-    )
-    if (parent) node.iconFragment = true
-  }
-}
-
-export function isPathPrefix(prefix, path) {
-  if (prefix.length >= path.length) return false
-  return prefix.every((part, idx) => part === path[idx])
 }
 
 export function annotateVisualOcclusion(nodes) {
@@ -215,7 +182,7 @@ export function isOccludingNode(node) {
   const s = node.style || {}
   const opacity = s.opacity == null ? 1 : s.opacity
   if (opacity < 0.70) return false
-  return !!(s.backgroundColor || s.gradient || node.type === 'image' || node.type === 'shape')
+  return !!(s.backgroundColor || node.type === 'image' || node.type === 'shape')
 }
 
 export function approximateCoveredRatio(rect, blockers) {
@@ -255,11 +222,11 @@ export function approximateVisibleRatio(rect, blockers, viewport) {
 
 export function hasVisualDecoration(node) {
   const s = node.style || {}
-  return !!(s.backgroundColor || s.borderRadius || s.border || s.gradient || s.shadow || s.backdropBlur || s.blur)
+  return !!(s.backgroundColor || s.borderRadius || s.border || s.shadow || s.backdropBlur || s.blur)
 }
 
 export function isMatchableNode(node) {
-  return !!(node?.visible && !isBlankNode(node) && !isHiddenByFramework(node) && !node.visualOccluded && !node.iconFragment && node.rect?.w > 4 && node.rect?.h > 4)
+  return !!(node?.visible && !isBlankNode(node) && !isHiddenByFramework(node) && !node.visualOccluded && node.rect?.w > 4 && node.rect?.h > 4)
 }
 
 function isHiddenByFramework(node) {
@@ -281,7 +248,7 @@ function isOpaqueCoverNode(node) {
   const s = node.style || {}
   const opacity = s.opacity == null ? 1 : s.opacity
   if (opacity < 0.96) return false
-  return !!(s.backgroundColor || s.gradient || node.type === 'image' || node.type === 'shape')
+  return !!(s.backgroundColor || node.type === 'image' || node.type === 'shape')
 }
 
 function rectContainsRect(container, rect) {
@@ -300,6 +267,14 @@ function sameParentPath(a, b) {
   return true
 }
 
+function isPathPrefix(prefix, path) {
+  if (!Array.isArray(prefix) || !Array.isArray(path) || prefix.length >= path.length) return false
+  for (let i = 0; i < prefix.length; i++) {
+    if (prefix[i] !== path[i]) return false
+  }
+  return true
+}
+
 function isBlankNode(node) {
   const type = String(node?.type || node?.name || '').trim().toLowerCase()
   return type === 'blank'
@@ -309,7 +284,7 @@ export function isCompatibleType(designNode, arkuiNode) {
   if (designNode.type === 'text') return arkuiNode.type === 'text'
   if (designNode.type === arkuiNode.type) return true
   if (designNode.type === 'image') return arkuiNode.type === 'other' || arkuiNode.type === 'shape'
-  if (designNode.type === 'shape') return arkuiNode.type === 'container' || arkuiNode.type === 'other'
+  if (designNode.type === 'shape') return arkuiNode.type === 'container' || arkuiNode.type === 'other' || arkuiNode.type === 'image'
   if (designNode.type === 'other') return arkuiNode.type !== 'text'
   return false
 }

@@ -53,7 +53,6 @@ export function compareStyles(pair) {
     iou:         pair.iou ?? null,
     topologyScore: pair.topologyScore ?? null,
     regionScore: pair.regionScore ?? null,
-    visualScore: pair.visualScore ?? null,
   }
 
   // ── 文字节点属性 ──────────────────────────────────────────────────────────
@@ -62,7 +61,7 @@ export function compareStyles(pair) {
       diffNumber(diffs, ctx, 'fontSize', ds.fontSize, as_.fontSize, 'dp/vp', TOLERANCE.fontSize, '字号')
     }
     diffFontWeight(diffs, ctx, ds.fontWeight, as_.fontWeight)
-    diffColor(diffs, ctx, 'fontColor',       ds.fontColor,   as_.fontColor,   '字色')
+    diffColor(diffs, ctx, 'fontColor',       ds.fontColor,   as_.fontColor,   '颜色')
     diffFontFamily(diffs, ctx, ds.fontFamily, as_.fontFamily)
     diffBlur(diffs, ctx, ds.blur, as_.blur, 'blur', '模糊')
     diffShadow(diffs, ctx, ds.shadow, as_.shadow)
@@ -77,22 +76,6 @@ export function compareStyles(pair) {
     diffOpacity(diffs, ctx, ds.opacity, as_.opacity)
     diffBlur(diffs, ctx, ds.blur, as_.blur, 'blur', '模糊')
     diffShadow(diffs, ctx, ds.shadow, as_.shadow)
-  }
-
-  // 图标/图片尺寸 + 内容校验
-  if (dn.type === 'image' || an.type === 'image') {
-    const dw = dn.rect.w, dh = dn.rect.h
-    const aw = an.rect.w, ah = an.rect.h
-    if (Math.abs(dw - aw) > 2 || Math.abs(dh - ah) > 2) {
-      diffs.push(makeDiff(ctx, 'icon.size',
-        `${dw.toFixed(0)}×${dh.toFixed(0)}dp`,
-        `${aw.toFixed(0)}×${ah.toFixed(0)}vp`,
-        'info', '图标尺寸不匹配'))
-    }
-    if (as_.iconContent) {
-      diffs.push(makeDiff(ctx, 'icon.content', dn.name, as_.iconContent, 'info',
-        `图标资源：设计层"${dn.name}" | ArkUI unicode ${as_.iconContent}`))
-    }
   }
 
   return diffs
@@ -156,7 +139,7 @@ function diffColor(diffs, ctx, prop, dv, av, label) {
 function diffFontFamily(diffs, ctx, dv, av) {
   if (!dv || !av) return
   if (!isEquivalentFont(dv, av)) {
-    diffs.push(makeDiff(ctx, 'fontFamily', dv, av, 'warning', '字体族不匹配'))
+    diffs.push(makeDiff(ctx, 'fontFamily', dv, av, 'warning', '字体不匹配'))
   }
 }
 
@@ -241,7 +224,7 @@ function diffBorder(diffs, ctx, dv, av) {
       widthDelta > 2 ? 'error' : 'warning',
       `描边宽度偏差 ${(dw - aw).toFixed(1)}`))
   }
-  diffColor(diffs, ctx, 'borderColor', dv?.color, av?.color, '描边色')
+  diffColor(diffs, ctx, 'borderColor', dv?.color, av?.color, '描边颜色')
 }
 
 function diffBackgroundColor(diffs, ctx, designNode, arkuiNode, dv, av) {
@@ -252,7 +235,7 @@ function diffBackgroundColor(diffs, ctx, designNode, arkuiNode, dv, av) {
   const a = comparableBackground(av)
   if (!d && !a) return
   if (!d || !a) {
-    diffs.push(makeDiff(ctx, 'backgroundColor', d || '—', a || '—', 'warning', '背景色：一侧缺失'))
+    diffs.push(makeDiff(ctx, 'backgroundColor', d || '—', a || '—', 'warning', '填充：一侧缺失'))
     return
   }
   const delta = colorDelta(d, a)
@@ -262,7 +245,7 @@ function diffBackgroundColor(diffs, ctx, designNode, arkuiNode, dv, av) {
       `${d} (${toDisplayColor(d)})`,
       `${a} (${toDisplayColor(a)})`,
       severity,
-      `背景色不匹配 ΔE≈${delta.toFixed(0)}`
+      `填充不匹配 ΔE≈${delta.toFixed(0)}`
     ))
   }
 }
@@ -280,33 +263,6 @@ function diffItemSpacing(diffs, ctx, dv, av) {
     diffs.push(makeDiff(ctx, 'itemSpacing', `${dv}dp`, `${av}vp`,
       delta > 4 ? 'error' : 'warning',
       `元素间距偏差 ${(dv - av).toFixed(1)}`))
-  }
-}
-
-function diffGradient(diffs, ctx, dv, av) {
-  if (!dv && !av) return
-  if (dv && !av) {
-    diffs.push(makeDiff(ctx, 'gradient', formatGradient(dv), '—', 'warning', '渐变：实现缺失'))
-    return
-  }
-  if (!dv || !av) return
-  const dvStops = dv.stops || []
-  const avStops = av.stops || []
-  if (dvStops.length !== avStops.length) {
-    diffs.push(makeDiff(ctx, 'gradient', formatGradient(dv), formatGradient(av), 'warning',
-      `渐变色标数量不匹配（设计:${dvStops.length} 实现:${avStops.length}）`))
-    return
-  }
-  let mismatchIdx = -1
-  for (let i = 0; i < dvStops.length; i++) {
-    if (colorDelta(dvStops[i].color, avStops[i].color) > TOLERANCE.colorDelta) {
-      mismatchIdx = i
-      break
-    }
-  }
-  if (mismatchIdx >= 0) {
-    diffs.push(makeDiff(ctx, 'gradient', formatGradient(dv), formatGradient(av),
-      'warning', `渐变第 ${mismatchIdx + 1} 个色标不匹配`))
   }
 }
 
@@ -341,7 +297,6 @@ function makeDiff(ctx, property, designValue, arkuiValue, severity, description)
     iou:         ctx.iou,
     topologyScore: ctx.topologyScore,
     regionScore: ctx.regionScore,
-    visualScore: ctx.visualScore,
   }
 }
 

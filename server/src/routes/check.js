@@ -16,11 +16,7 @@ import { parseArkui }  from '../parsers/arkuiParser.js'
 import { matchNodes }  from '../matchers/nodeMatcher.js'
 import { compareAll }  from '../comparators/styleComparator.js'
 import { compareSpatialRelations } from '../comparators/spatialComparator.js'
-import {
-  annotatePixelVisibility,
-  componentVisualDiff,
-  extractNodeVisualFeatures,
-} from '../utils/imageFeatures.js'
+import { annotatePixelVisibility } from '../utils/imageFeatures.js'
 import { annotateTextOcrVisibility } from '../utils/textOcrVisibility.js'
 import { isPipelineVisibleNode } from '../matchers/nodeVisibility.js'
 
@@ -30,7 +26,6 @@ const upload = multer({ storage: multer.memoryStorage() })
 // case 数据根目录（相对于项目位置动态解析）
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const CASES_DIR = resolve(__dirname, '../../../case')
-const VISUAL_MATCHING_ENABLED = process.env.STYLE_CHECKER_VISUAL_MATCHING === 'true'
 const DEFAULT_MATCH_DIRECTION = process.env.STYLE_CHECKER_MATCH_DIRECTION || 'arkui'
 
 // ── 列出所有可用 case ─────────────────────────────────────────────────────────
@@ -86,7 +81,6 @@ router.post('/check/case/:caseId', async (req, res) => {
     const result = await runCheck(designJson, arkuiJson, caseId, {
       designImageBuffer: readFileSync(join(caseDir, 'design.png')),
       arkuiImageBuffer: readFileSync(join(caseDir, 'arkui.png')),
-      enableVisualMatching: shouldUseVisualMatching(req),
       matchDirection: matchDirectionFromRequest(req),
     })
     res.json(result)
@@ -119,7 +113,6 @@ router.post(
       const result = await runCheck(designJson, arkuiJson, 'upload', {
         designImageBuffer: files.designImage?.[0]?.buffer,
         arkuiImageBuffer: files.arkuiImage?.[0]?.buffer,
-        enableVisualMatching: shouldUseVisualMatching(req),
         matchDirection: matchDirectionFromRequest(req),
       })
       res.json(result)
@@ -177,12 +170,6 @@ async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
     designVisibleNodes,
     arkuiVisibleNodes,
     {
-      visualImages: assets.designImageBuffer && assets.arkuiImageBuffer ? {
-        designBuffer: assets.designImageBuffer,
-        arkuiBuffer: assets.arkuiImageBuffer,
-        designCanvas: { w: designResult.canvasWidth, h: designResult.canvasHeight },
-        arkuiCanvas: { w: arkuiResult.canvasWidthVp, h: arkuiResult.canvasHeightVp },
-      } : null,
       primarySource: assets.matchDirection || DEFAULT_MATCH_DIRECTION,
     }
   )
@@ -191,9 +178,8 @@ async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
   const rectByPairKey = new Map(
     pairs.map(p => [`${p.design.id}::${p.arkui.id}`, { designRect: p.design.rect, arkuiRect: p.arkui.rect }])
   )
-  const visualDiffs = buildComponentVisualDiffs(pairs, designResult, arkuiResult, assets)
   const spatialDiffs = compareSpatialRelations(pairs)
-  const diffs = [...compareAll(pairs), ...spatialDiffs, ...visualDiffs].map(d => ({
+  const diffs = [...compareAll(pairs), ...spatialDiffs].map(d => ({
     ...d,
     ...( rectByPairKey.get(`${d.designNodeId}::${d.arkuiNodeId}`) || {} ),
   }))
@@ -294,7 +280,6 @@ async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
       iou: p.iou,
       confidence: p.confidence,
       topologyScore: p.topologyScore,
-      visualScore: p.visualScore,
       regionScore: p.regionScore,
       designRegionId: p.designRegionId,
       arkuiRegionId: p.arkuiRegionId,
@@ -318,68 +303,6 @@ async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
     })),
   }
 }
-
-function buildComponentVisualDiffs(pairs, designResult, arkuiResult, assets) {
-  if (!assets.designImageBuffer || !assets.arkuiImageBuffer) return []
-  const visualPairs = pairs.filter(p =>
-    p.confidence !== 'low' &&
-    p.design.type !== 'text' &&
-    p.arkui.type !== 'text' &&
-    (p.design.type === 'image' || p.arkui.type === 'image' || hasVisualStyle(p.design) || hasVisualStyle(p.arkui))
-  )
-  if (!visualPairs.length) return []
-
-  const designFeatures = extractNodeVisualFeatures(assets.designImageBuffer, {
-    w: designResult.canvasWidth,
-    h: designResult.canvasHeight,
-  }, visualPairs.map(p => p.design))
-  const arkuiFeatures = extractNodeVisualFeatures(assets.arkuiImageBuffer, {
-    w: arkuiResult.canvasWidthVp,
-    h: arkuiResult.canvasHeightVp,
-  }, visualPairs.map(p => p.arkui))
-  if (!designFeatures || !arkuiFeatures) return []
-
-  const diffs = []
-  for (const pair of visualPairs) {
-    const metrics = componentVisualDiff(
-      designFeatures.get(pair.design.id),
-      arkuiFeatures.get(pair.arkui.id)
-    )
-    if (!metrics || metrics.similarity >= 0.68) continue
-    diffs.push({
-      property: 'visual.component',
-      designValue: `similarity ${(metrics.similarity * 100).toFixed(0)}%`,
-      arkuiValue: `diff ${(metrics.diff * 100).toFixed(0)}%`,
-      severity: metrics.similarity < 0.50 ? 'warning' : 'info',
-      description: `组件截图差异：前景 ${(metrics.foregroundDelta * 100).toFixed(0)}%，边缘 ${(metrics.edgeDelta * 100).toFixed(0)}%`,
-      nodeType: pair.design.type,
-      textContent: pair.design.textContent || null,
-      designName: pair.design.name,
-      arkuiName: pair.arkui.name,
-      matchType: pair.matchType,
-      confidence: pair.confidence,
-      iou: pair.iou ?? null,
-      topologyScore: pair.topologyScore ?? null,
-      regionScore: pair.regionScore ?? null,
-      designNodeId: pair.design.id,
-      arkuiNodeId: pair.arkui.id,
-    })
-  }
-  return diffs
-}
-
-function hasVisualStyle(node) {
-  const s = node?.style || {}
-  return !!(s.backgroundColor || s.border || s.gradient || s.shadow || s.backdropBlur || s.blur)
-}
-
-function shouldUseVisualMatching(req) {
-  return VISUAL_MATCHING_ENABLED ||
-    req.query.visual === '1' ||
-    req.query.visualMatching === 'true' ||
-    req.body?.visualMatching === true
-}
-
 function matchDirectionFromRequest(req) {
   const value = req.query.matchDirection || req.body?.matchDirection
   return value === 'design' || value === 'design-first' ? 'design' : DEFAULT_MATCH_DIRECTION

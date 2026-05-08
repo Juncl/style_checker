@@ -12,7 +12,7 @@ const FW_MAP = {
   'FontWeight.Bolder': 900,
 }
 
-// 字体族别名等价表（Design名 → Set<ArkUI等价名>）
+// 字体别名等价表（Design名 → Set<ArkUI等价名>）
 const FONT_ALIASES = new Map([
   ['HarmonyHeiTi',      new Set(['HarmonyOS Sans', 'HwChinese-medium', 'HarmonyHeiTi-Medium', 'HarmonyHeiTi'])],
   ['HarmonyOS Sans SC', new Set(['HarmonyOS_Sans_SC', 'HarmonyOS_Sans_SC_Bold', 'HarmonyOS Sans SC'])],
@@ -57,7 +57,7 @@ export function normalizeTextAlign(align) {
   return TEXT_ALIGN_MAP[align] || align || 'left'
 }
 
-/** 判断两个字体族是否等价 */
+/** 判断两个字体是否等价 */
 export function isEquivalentFont(designFont, arkuiFont) {
   if (!designFont || !arkuiFont) return false
   if (designFont === arkuiFont) return true

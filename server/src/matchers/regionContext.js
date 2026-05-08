@@ -1,23 +1,15 @@
-import {
-  extractNodeVisualFeatures,
-  extractRegionVisualFeatures,
-  extractVisualPartitions,
-  visualSimilarity,
-} from '../utils/imageFeatures.js'
 import { centerY, unionNormRect, sizeRatio } from './matchGeometry.js'
 import { hasVisualDecoration, isMatchableNode } from './nodeVisibility.js'
 import { normalizeText } from './textSemantics.js'
 
 // Regions provide coarse page structure before individual node matching runs.
-export function segmentRegions(nodes, source, visualPartitions = null) {
+export function segmentRegions(nodes, source) {
   const matchable = nodes
     .filter(isMatchableNode)
     .filter(n => n.normRect && Number.isFinite(n.normRect.y))
     .sort((a, b) => centerY(a.normRect) - centerY(b.normRect))
 
   if (matchable.length === 0) return []
-  const visualRegions = segmentRegionsByVisualPartitions(matchable, source, visualPartitions)
-  if (visualRegions.length >= 3) return visualRegions
 
   const regions = []
   let current = []
@@ -36,74 +28,7 @@ export function segmentRegions(nodes, source, visualPartitions = null) {
 
   if (current.length > 0) regions.push(makeRegion(source, regions.length, current))
 
-  // 若页面节点过于连续导致切不动，退化到移动端常见纵向楼层。
-  if (regions.length < 3 && matchable.length > 80) {
-    return segmentRegionsByFixedFloors(matchable, source)
-  }
-
   return regions
-}
-
-export function segmentRegionsByVisualPartitions(nodes, source, visualPartitions) {
-  if (!visualPartitions?.length) return []
-  const regions = []
-  const used = new Set()
-  for (const partition of visualPartitions) {
-    const band = partition.rect
-    const bandNodes = nodes.filter(n => {
-      if (used.has(n.id)) return false
-      const cy = centerY(n.normRect)
-      return cy >= band.y - 0.01 && cy <= band.y + band.h + 0.01
-    })
-    if (bandNodes.length < 2) continue
-    for (const n of bandNodes) used.add(n.id)
-    regions.push(makeRegion(source, regions.length, bandNodes, partition))
-  }
-  const leftovers = nodes.filter(n => !used.has(n.id))
-  if (leftovers.length >= 4) {
-    for (const region of segmentRegionsByFixedFloors(leftovers, source)) {
-      regions.push({ ...region, id: `${source}-region-${regions.length}`, index: regions.length })
-    }
-  }
-  return regions
-}
-
-export function buildVisualFeatures(options, designRegions, arkuiRegions) {
-  if (options.visualFeatures) return options.visualFeatures
-  if (!options.visualImages) return null
-
-  const design = extractRegionVisualFeatures(
-    options.visualImages.designBuffer,
-    options.visualImages.designCanvas,
-    designRegions
-  )
-  const arkui = extractRegionVisualFeatures(
-    options.visualImages.arkuiBuffer,
-    options.visualImages.arkuiCanvas,
-    arkuiRegions
-  )
-
-  const designNodes = extractNodeVisualFeatures(
-    options.visualImages.designBuffer,
-    options.visualImages.designCanvas,
-    options.visualNodes?.design || []
-  )
-  const arkuiNodes = extractNodeVisualFeatures(
-    options.visualImages.arkuiBuffer,
-    options.visualImages.arkuiCanvas,
-    options.visualNodes?.arkui || []
-  )
-
-  return design && arkui ? { design, arkui, designNodes, arkuiNodes } : null
-}
-
-export function buildVisualPartitions(options) {
-  if (options.visualPartitions) return options.visualPartitions
-  if (!options.visualImages) return null
-  return {
-    design: extractVisualPartitions(options.visualImages.designBuffer, options.visualImages.designCanvas),
-    arkui: extractVisualPartitions(options.visualImages.arkuiBuffer, options.visualImages.arkuiCanvas),
-  }
 }
 
 export function segmentRegionsByFixedFloors(nodes, source) {
@@ -127,7 +52,7 @@ export function segmentRegionsByFixedFloors(nodes, source) {
     .filter(Boolean)
 }
 
-export function makeRegion(source, index, nodes, visualPartition = null) {
+export function makeRegion(source, index, nodes) {
   const rect = unionNormRect(nodes.map(n => n.normRect))
   const counts = { text: 0, container: 0, shape: 0, image: 0, other: 0 }
   const textSet = new Set()
@@ -150,11 +75,10 @@ export function makeRegion(source, index, nodes, visualPartition = null) {
     counts,
     textSet,
     decoratedRatio: nodes.length ? decorated / nodes.length : 0,
-    visualPartition: visualPartition?.id || null,
   }
 }
 
-export function buildRegionContext(designRegions, arkuiRegions, anchors, visualFeatures = null) {
+export function buildRegionContext(designRegions, arkuiRegions, anchors) {
   const designNodeToRegion = nodeToRegionMap(designRegions)
   const arkuiNodeToRegion = nodeToRegionMap(arkuiRegions)
   const anchorVotes = new Map()
@@ -170,11 +94,8 @@ export function buildRegionContext(designRegions, arkuiRegions, anchors, visualF
   const scored = []
   for (const dr of designRegions) {
     for (const ar of arkuiRegions) {
-      const visualScore = visualFeatures
-        ? visualSimilarity(visualFeatures.design?.get(dr.id), visualFeatures.arkui?.get(ar.id))
-        : 0
-      const score = regionMatchScore(dr, ar, anchorVotes.get(`${dr.id}::${ar.id}`) || 0, visualScore)
-      if (score > 0.28) scored.push({ designRegionId: dr.id, arkuiRegionId: ar.id, score, visualScore })
+      const score = regionMatchScore(dr, ar, anchorVotes.get(`${dr.id}::${ar.id}`) || 0)
+      if (score > 0.28) scored.push({ designRegionId: dr.id, arkuiRegionId: ar.id, score })
     }
   }
 
@@ -190,7 +111,7 @@ export function buildRegionContext(designRegions, arkuiRegions, anchors, visualF
     if (usedD.has(item.designRegionId) || usedA.has(item.arkuiRegionId)) continue
     usedD.add(item.designRegionId)
     usedA.add(item.arkuiRegionId)
-    const pair = { ...item, score: Number(item.score.toFixed(3)), visualScore: Number((item.visualScore || 0).toFixed(3)) }
+    const pair = { ...item, score: Number(item.score.toFixed(3)) }
     regionPairs.push(pair)
     designToArkuiRegions.set(item.designRegionId, [item.arkuiRegionId])
   }
@@ -203,7 +124,6 @@ export function buildRegionContext(designRegions, arkuiRegions, anchors, visualF
     arkuiNodeToRegion,
     designToArkuiRegions,
     arkuiRegionNodeIds,
-    visualFeatures,
   }
 }
 
@@ -245,7 +165,7 @@ export function annotatePairsWithRegions(pairs, regionContext) {
   }
 }
 
-export function regionMatchScore(designRegion, arkuiRegion, anchorVotes, visualScore = 0) {
+export function regionMatchScore(designRegion, arkuiRegion, anchorVotes) {
   const centerScore = Math.max(0, 1 - Math.abs(centerY(designRegion.rect) - centerY(arkuiRegion.rect)) / 0.35)
   const heightScore = sizeRatio(designRegion.rect.h, arkuiRegion.rect.h)
   const geometryScore = centerScore * 0.65 + heightScore * 0.35
@@ -259,8 +179,7 @@ export function regionMatchScore(designRegion, arkuiRegion, anchorVotes, visualS
     geometryScore * 0.22 +
     histScore * 0.18 +
     textScore * 0.10 +
-    decorationScore * 0.05 +
-    visualScore * 0.15
+    decorationScore * 0.20
   )
 }
 
@@ -311,6 +230,5 @@ export function formatRegionForOutput(region) {
     nodeCount: region.nodeCount,
     counts: region.counts,
     decoratedRatio: Number(region.decoratedRatio.toFixed(3)),
-    visualPartition: region.visualPartition,
   }
 }

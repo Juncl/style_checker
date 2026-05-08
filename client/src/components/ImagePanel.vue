@@ -37,7 +37,7 @@
             :class="['prop-row', item.diff ? `diff-${item.diff.severity}` : '']"
             :title="item.diff?.description || ''"
           >
-            <span class="prop-key">{{ item.key }}</span>
+            <span class="prop-key">{{ item.label }}</span>
             <span class="prop-val">
               <span v-if="item.color" class="color-dot" :style="{ background: item.color }"></span>
               {{ item.val }}
@@ -501,41 +501,39 @@ const displayStyle = computed(() => {
   const s = props.inspectorNode?.style
   if (!s) return []
   const rows = []
-  const add = (key, val, color = null) => rows.push({
+  const add = (key, val, color = null, label = null) => rows.push({
     key,
+    label: label || key,
     val: String(val),
     color: toCssColor(color),
     diff: diffForStyleKey(key),
   })
 
-  if (s.fontSize      != null) add('fontSize',      `${s.fontSize}vp`)
-  if (s.fontWeight    != null) add('fontWeight',    s.fontWeight)
-  if (s.fontColor)             add('fontColor',     s.fontColor, s.fontColor)
-  if (s.fontFamily)            add('fontFamily',    s.fontFamily)
-  if (s.textAlign)             add('textAlign',     s.textAlign)
-  if (s.lineHeight    != null) add('lineHeight',    `${s.lineHeight}vp`)
-  if (s.letterSpacing != null) add('letterSpacing', `${s.letterSpacing}px`)
-  if (s.backgroundColor)       add('background',    s.backgroundColor, s.backgroundColor)
-  if (s.opacity != null && s.opacity !== 1) add('opacity', s.opacity)
+  if (s.fontSize      != null) add('fontSize',      `${s.fontSize}vp`, null, '字号')
+  if (s.fontWeight    != null) add('fontWeight',    s.fontWeight, null, '字重')
+  if (s.fontColor)             add('fontColor',     s.fontColor, s.fontColor, '颜色')
+  if (s.fontFamily)            add('fontFamily',    s.fontFamily, null, '字体')
+  if (s.textAlign)             add('textAlign',     s.textAlign, null, '对齐')
+  if (s.lineHeight    != null) add('lineHeight',    `${s.lineHeight}vp`, null, '行高')
+  if (s.letterSpacing != null) add('letterSpacing', `${s.letterSpacing}px`, null, '字间距')
+  if (s.backgroundColor)       add('backgroundColor', s.backgroundColor, s.backgroundColor, '填充')
+  if (s.opacity != null && s.opacity !== 1) add('opacity', s.opacity, null, '不透明度')
   if (s.borderRadius) {
     const br = s.borderRadius
     const v  = [br.topLeft, br.topRight, br.bottomRight, br.bottomLeft]
     const uniform = v.every(x => x === v[0])
-    add('borderRadius', uniform ? `${v[0]}vp` : v.join('/') + 'vp')
+    add('borderRadius', uniform ? `${v[0]}vp` : v.join('/') + 'vp', null, '圆角')
   }
-  if (s.border)       add('border',        `${s.border.width}vp ${s.border.color}`, s.border.color)
+  if (s.border?.width != null) add('borderWidth', `${s.border.width}vp`, null, '描边宽度')
+  if (s.border?.color)        add('borderColor', s.border.color, s.border.color, '描边颜色')
   if (s.padding) {
     const p = s.padding
     const uniform = p.top === p.right && p.right === p.bottom && p.bottom === p.left
-    add('padding', uniform ? `${p.top}vp` : `${p.top} ${p.right} ${p.bottom} ${p.left}vp`)
+    add('padding', uniform ? `${p.top}vp` : `${p.top} ${p.right} ${p.bottom} ${p.left}vp`, null, '内边距')
   }
-  if (s.itemSpacing   != null) add('itemSpacing',   `${s.itemSpacing}vp`)
-  if (s.shadow)                add('shadow',        `blur:${s.shadow.radius} x:${s.shadow.offsetX} y:${s.shadow.offsetY}`)
-  if (s.backdropBlur  != null) add('backdropBlur',  `${s.backdropBlur}`)
-  if (s.gradient) {
-    const stops = (s.gradient.stops || []).map(st => st.color).join(' → ')
-    add('gradient', `${s.gradient.type}(${stops})`)
-  }
+  if (s.itemSpacing   != null) add('itemSpacing',   `${s.itemSpacing}vp`, null, '间距')
+  if (s.shadow)                add('shadow',        `blur:${s.shadow.radius} x:${s.shadow.offsetX} y:${s.shadow.offsetY}`, s.shadow.color, '阴影')
+  if (s.backdropBlur  != null) add('backdropBlur',  `${s.backdropBlur}`, null, '模糊')
   return rows
 })
 
@@ -545,10 +543,19 @@ function diffForStyleKey(key) {
 }
 
 const STYLE_DIFF_ALIASES = {
-  background: ['backgroundColor'],
-  border: ['border', 'border.color'],
-  shadow: ['shadow', 'shadow.color'],
+  backgroundColor: ['backgroundColor'],
+  borderWidth: ['borderWidth'],
+  borderColor: ['borderColor', 'border.color'],
+  shadow: ['shadow', 'shadow.color', 'shadow.radius', 'shadow.offsetX', 'shadow.offsetY'],
   fontSize: ['fontSize', 'fontSize.scale'],
+  fontWeight: ['fontWeight'],
+  fontFamily: ['fontFamily'],
+  fontColor: ['fontColor'],
+  opacity: ['opacity'],
+  padding: ['padding'],
+  itemSpacing: ['itemSpacing'],
+  borderRadius: ['borderRadius'],
+  backdropBlur: ['backdropBlur', 'blur'],
 }
 
 function toCssColor(color) {

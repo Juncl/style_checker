@@ -90,8 +90,6 @@ export function parseDesign(designJson) {
     unified.push(unifiedNode)
   }
 
-  addDesignIconUnions(unified, canvasWidth, canvasHeight)
-
   return { canvasWidth, canvasHeight, nodes: unified }
 }
 
@@ -111,25 +109,11 @@ function extractDesignStyle(nodeType, style, layout) {
     result.opacity = style.opacity
   }
 
-  // 背景色 + 渐变
+  // 填充
   if (Array.isArray(style.background)) {
     const solidBg = style.background.find(b => b.type === 'SOLID')
     if (solidBg?.color) {
       result.backgroundColor = normalizeDesignColor(solidBg.color)
-    }
-    const gradientBg = style.background.find(b =>
-      b.type === 'GRADIENT_LINEAR' || b.type === 'GRADIENT_RADIAL' || b.type === 'GRADIENT_ANGULAR'
-    )
-    if (gradientBg) {
-      result.gradient = {
-        type: gradientBg.type === 'GRADIENT_LINEAR' ? 'linear'
-             : gradientBg.type === 'GRADIENT_RADIAL' ? 'radial' : 'angular',
-        angle: gradientBg.angle || 0,
-        stops: Array.isArray(gradientBg.data) ? gradientBg.data.map(s => ({
-          color:    normalizeDesignColor(s.color),
-          position: parseFloat(s.position) / 100,
-        })) : [],
-      }
     }
   }
 
@@ -205,85 +189,6 @@ function extractDesignStyle(nodeType, style, layout) {
   return result
 }
 
-function addDesignIconUnions(nodes, canvasWidth, canvasHeight) {
-  const byPath = new Map(nodes.map(n => [pathKey(n.path), n]))
-  const pathImages = nodes.filter(n =>
-    n.source === 'design' &&
-    n.type === 'image' &&
-    n.visible !== false &&
-    isPathLikeLayer(n) &&
-    n.rect.w > 0 &&
-    n.rect.h > 0
-  )
-  const groups = new Map()
-
-  for (const node of pathImages) {
-    const parentPath = node.path?.slice(0, -1)
-    if (!parentPath?.length) continue
-    const key = pathKey(parentPath)
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key).push(node)
-  }
-
-  for (const [parentKey, children] of groups) {
-    if (children.length < 2) continue
-    const union = unionRect(children.map(n => n.rect))
-    if (!isIconSized(union)) continue
-
-    const parent = byPath.get(parentKey)
-    const unionPath = [...(parent?.path || children[0].path.slice(0, -1)), '__icon_union__']
-    const iconNode = {
-      id: `${parent?.id || parentKey}::icon-union`,
-      source: 'design',
-      type: 'image',
-      name: `${parent?.name || 'icon'}::icon-union`,
-      path: unionPath,
-      paintIndex: Math.max(...children.map(n => n.paintIndex ?? 0)) + 0.1,
-      rect: union,
-      normRect: {
-        x: union.x / canvasWidth,
-        y: union.y / canvasHeight,
-        w: union.w / canvasWidth,
-        h: union.h / canvasHeight,
-      },
-      visible: true,
-      style: { ...(parent?.style || {}), iconUnion: true },
-      iconUnion: true,
-      iconFragmentIds: children.map(n => n.id),
-    }
-
-    for (const child of children) {
-      child.iconFragment = true
-      child.iconUnionParentId = iconNode.id
-    }
-    nodes.push(iconNode)
-  }
-}
-
-function isPathLikeLayer(node) {
-  return /^(path|路径)/i.test(String(node.name || '').trim())
-}
-
-function isIconSized(rect) {
-  if (!rect) return false
-  if (rect.w < 4 || rect.h < 4) return false
-  if (rect.w > 48 || rect.h > 48) return false
-  const ratio = Math.max(rect.w / rect.h, rect.h / rect.w)
-  return ratio <= 4
-}
-
-function unionRect(rects) {
-  const x1 = Math.min(...rects.map(r => r.x))
-  const y1 = Math.min(...rects.map(r => r.y))
-  const x2 = Math.max(...rects.map(r => r.x + r.w))
-  const y2 = Math.max(...rects.map(r => r.y + r.h))
-  return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 }
-}
-
-function pathKey(path) {
-  return Array.isArray(path) ? path.join('/') : ''
-}
-
 function isDescendantOfAnyPath(path, ancestorPaths) {
   if (!Array.isArray(path)) return false
   return ancestorPaths.some(ancestor => isDescendantPath(path, ancestor))
@@ -332,7 +237,12 @@ function isSemanticAssetRoot(node) {
   if (/^#?illustration\b/i.test(name) || /插画|illustration/i.test(name)) return true
   if (!/(^|[/_\s-])icon([/_\s-]|$)|(^|[/_\s-])ic_|图标/i.test(name)) return false
   const rect = node.rect || {}
-  return isIconSized({ w: rect.w ?? 0, h: rect.h ?? 0 })
+  const w = rect.w ?? 0
+  const h = rect.h ?? 0
+  if (w < 4 || h < 4) return false
+  if (w > 48 || h > 48) return false
+  const ratio = Math.max(w / h, h / w)
+  return ratio <= 4
 }
 
 function assetKind(node) {

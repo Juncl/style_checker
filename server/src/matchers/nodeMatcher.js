@@ -7,7 +7,6 @@ import {
   bestTextRoleMatch,
   bestTextPositionMatch,
   bestIoUMatch,
-  bestVisualIoUMatch,
 } from './matchStrategies.js'
 import { yDistance, xDistance, computeIoU } from './matchGeometry.js'
 import {
@@ -23,7 +22,6 @@ import {
   numericTextCompatible,
 } from './textSemantics.js'
 import {
-  annotateDesignIconFragments,
   annotateVisualOcclusion,
   isMatchableNode,
   isComparableOutputNode,
@@ -32,8 +30,6 @@ import {
   hasVisualDecoration,
 } from './nodeVisibility.js'
 import {
-  buildVisualPartitions,
-  buildVisualFeatures,
   segmentRegions,
   buildRegionContext,
   candidatePool,
@@ -66,22 +62,9 @@ export function matchNodes(designNodes, arkuiNodes, options = {}) {
 }
 
 function matchNodesArkuiFirst(designNodes, arkuiNodes, options = {}) {
-  const reversedVisualImages = options.visualImages ? {
-    designBuffer: options.visualImages.arkuiBuffer,
-    arkuiBuffer: options.visualImages.designBuffer,
-    designCanvas: options.visualImages.arkuiCanvas,
-    arkuiCanvas: options.visualImages.designCanvas,
-  } : null
-  const reversedVisualFeatures = options.visualFeatures ? {
-    design: options.visualFeatures.arkui,
-    arkui: options.visualFeatures.design,
-  } : null
-
   const primaryResult = matchNodesDesignFirst(arkuiNodes, designNodes, {
     ...options,
     primarySource: 'design',
-    visualImages: reversedVisualImages,
-    visualFeatures: reversedVisualFeatures,
   })
 
   const primaryPairs = primaryResult.pairs
@@ -132,7 +115,6 @@ function matchNodesArkuiFirst(designNodes, arkuiNodes, options = {}) {
 }
 
 function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
-  annotateDesignIconFragments(designNodes)
   annotateVisualOcclusion(designNodes)
   annotateVisualOcclusion(arkuiNodes)
 
@@ -141,13 +123,8 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   const matchedDesignIds = new Set()
   const strongAnchors = []
   const topologyAnchors = []
-  const visualPartitions = buildVisualPartitions(options)
-  const designRegions = segmentRegions(designNodes, 'design', visualPartitions?.design)
-  const arkuiRegions = segmentRegions(arkuiNodes, 'arkui', visualPartitions?.arkui)
-  const visualFeatures = buildVisualFeatures({
-    ...options,
-    visualNodes: { design: designNodes, arkui: arkuiNodes },
-  }, designRegions, arkuiRegions)
+  const designRegions = segmentRegions(designNodes, 'design')
+  const arkuiRegions = segmentRegions(arkuiNodes, 'arkui')
   let regionContext = null
 
   // ── Pass 1: 文本内容精确匹配 ─────────────────────────────────────────────
@@ -200,7 +177,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     }
   }
 
-  regionContext = buildRegionContext(designRegions, arkuiRegions, strongAnchors, visualFeatures)
+  regionContext = buildRegionContext(designRegions, arkuiRegions, strongAnchors)
 
   // ── Pass 2: 动态时间/星期槽位匹配（mock 与真实数据不同，但序列位置一致）──────
   const dynamicSlotPairs = matchDynamicTextSlots(
@@ -317,26 +294,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     }
   }
 
-  // ── Pass 6: 渐变节点几何匹配（形状/其他类型均纳入）──────────────────────────
-  for (const dn of designNodes) {
-    if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id)) continue
-    if (!dn.style.gradient) continue
-
-    const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
-      !usedArkui.has(n.id) && n.style.gradient
-    )
-    const best = bestIoUMatch(dn.normRect, candidates, dn, regionContext)
-    if (best && best.iou > 0.3) {
-      pairs.push(makePair(dn, best.node, 'gradient-iou', {
-        iou: best.iou,
-        confidence: 'medium',
-      }))
-      usedArkui.add(best.node.id)
-      matchedDesignIds.add(dn.id)
-    }
-  }
-
-  // ── Pass 7: shape / image / other 节点几何匹配 ──────────────────────────────
+  // ── Pass 6: shape / image / other 节点几何匹配 ──────────────────────────────
   for (const dn of designNodes) {
     if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id)) continue
     if (!['shape', 'image', 'other'].includes(dn.type)) continue
@@ -346,19 +304,18 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
       if (dn.type === 'image') return n.type === 'image' || n.type === 'other' || n.type === 'shape'
       return n.type !== 'text'
     })
-    const best = bestVisualIoUMatch(dn.normRect, candidates, dn, regionContext)
+    const best = bestIoUMatch(dn.normRect, candidates, dn, regionContext)
     if (best && best.iou > 0.55) {
       pairs.push(makePair(dn, best.node, `${dn.type}-geometry`, {
         iou: best.iou,
         confidence: 'medium',
-        visualScore: best.visualScore ?? null,
       }))
       usedArkui.add(best.node.id)
       matchedDesignIds.add(dn.id)
     }
   }
 
-  // ── Pass 8: Rescue Pass，保留低置信度标签，供前端和评分识别 ────────────────
+  // ── Pass 7: Rescue Pass，保留低置信度标签，供前端和评分识别 ────────────────
   for (const dn of designNodes) {
     if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id)) continue
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
@@ -469,8 +426,7 @@ function pairPriority(pair) {
   const typeScore = matchTypePriority(pair.matchType)
   const topologyScore = (pair.topologyScore ?? 0) * 10
   const iouScore = (pair.iou ?? 0) * 8
-  const visualScore = (pair.visualScore ?? 0) * 4
-  return confidenceScore + anchorScore + typeScore + topologyScore + iouScore + visualScore
+  return confidenceScore + anchorScore + typeScore + topologyScore + iouScore
 }
 
 function matchTypePriority(matchType) {
@@ -483,7 +439,6 @@ function matchTypePriority(matchType) {
     'text-row-slot': 21,
     'text-position': 20,
     'container-iou': 18,
-    'gradient-iou': 16,
     'image-geometry': 14,
     'shape-geometry': 12,
     'other-geometry': 10,

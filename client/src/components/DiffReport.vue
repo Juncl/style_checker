@@ -131,11 +131,12 @@ const emit = defineEmits(['select'])
 
 const ISSUE_GROUPS = [
   { key: 'all', label: '全部' },
-  { key: 'font', label: '字体' }, { key: 'fontWeight', label: '字重' }, { key: 'color', label: '颜色' },
-  { key: 'borderRadius', label: '圆角' }, { key: 'shadow', label: '阴影' }, { key: 'backdropBlur', label: '模糊' },
-  { key: 'opacity', label: '不透明度' }, { key: 'padding', label: '内边距' }, { key: 'border', label: '描边' },
-  { key: 'spacing', label: '间距' }, { key: 'gradient', label: '渐变' }, { key: 'icon', label: '图标' },
-  { key: 'visual', label: '视觉' }, { key: 'fontSize.scale', label: '字体缩放' }, { key: 'other', label: '其它' },
+  { key: 'fontSize', label: '字号' }, { key: 'fontFamily', label: '字体' }, { key: 'fontWeight', label: '字重' },
+  { key: 'color', label: '颜色' }, { key: 'fill', label: '填充' }, { key: 'borderColor', label: '描边颜色' },
+  { key: 'borderWidth', label: '描边宽度' }, { key: 'borderRadius', label: '圆角' }, { key: 'shadow', label: '阴影' },
+  { key: 'backdropBlur', label: '模糊' },
+  { key: 'opacity', label: '不透明度' }, { key: 'padding', label: '内边距' },
+  { key: 'spacing', label: '间距' }, { key: 'fontSize.scale', label: '字体缩放' }, { key: 'other', label: '其它' },
 ]
 
 const activeIssue = ref('all')
@@ -228,20 +229,19 @@ function issueKey(property = '') {
   const p = String(property)
   if (p === 'fontSize.scale') return 'fontSize.scale'
   if (IGNORED_ISSUE_PROPS.has(p)) return '__ignored__'
-  if (['fontSize', 'fontFamily', 'lineHeight', 'letterSpacing'].includes(p)) return 'font'
+  if (p === 'fontSize') return 'fontSize'
+  if (p === 'fontFamily') return 'fontFamily'
   if (p === 'fontWeight') return 'fontWeight'
-  if (p === 'backgroundColor' || p === 'fontColor' || p.includes('Color') || p.endsWith('.color')) return 'color'
+  if (p === 'fontColor') return 'color'
+  if (p === 'backgroundColor') return 'fill'
+  if (p === 'borderColor' || p === 'border.color') return 'borderColor'
+  if (p === 'borderWidth') return 'borderWidth'
   if (p === 'borderRadius') return 'borderRadius'
-  if (p === 'borderWidth') return 'border'
   if (p === 'shadow' || p.startsWith('shadow.')) return 'shadow'
   if (p === 'blur' || p === 'backdropBlur') return 'backdropBlur'
   if (p === 'opacity') return 'opacity'
   if (p === 'padding') return 'padding'
-  if (p === 'border' || p.startsWith('border.')) return 'border'
   if (p === 'itemSpacing' || p.startsWith('spacing.')) return 'spacing'
-  if (p === 'gradient') return 'gradient'
-  if (p.startsWith('icon.')) return 'icon'
-  if (p.startsWith('visual.')) return 'visual'
   return 'other'
 }
 function issueLabel(property) {

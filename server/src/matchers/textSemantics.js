@@ -1,4 +1,4 @@
-import { xDistance, yDistance, centerY, rectCenter, sizeRatio } from './matchGeometry.js'
+import { xDistance, yDistance, centerY } from './matchGeometry.js'
 import { setJaccard } from './regionContext.js'
 
 // Text gates protect the matcher from pairing unrelated labels that merely share a slot.
@@ -48,8 +48,9 @@ export function textSemanticSimilarity(a, b) {
   const charScore = charJaccard(ta, tb)
   const bigramScore = bigramJaccard(ta, tb)
   const prefixScore = cjkCommonPrefixScore(ta, tb)
+  const suffixScore = cjkCommonSuffixScore(ta, tb)
 
-  return Math.max(typeScore, prefixScore, charScore * 0.45 + bigramScore * 0.55)
+  return Math.max(typeScore, prefixScore, suffixScore, charScore * 0.45 + bigramScore * 0.55)
 }
 
 export function passesTextSemanticGate(a, b, semantic) {
@@ -90,14 +91,13 @@ export function textRoleMatchScore(dn, an) {
   const ar = an.normRect
   const dx = Math.abs(dr.x - ar.x)
   const dy = Math.abs(centerY(dr) - centerY(ar))
-  const hRatio = sizeRatio(dr.h, ar.h)
   const style = textStyleSimilarity(dn, an)
 
-  if (dx > 0.08 || dy > 0.08 || hRatio < 0.65 || style < 0.72) return 0
+  if (dx > 0.08 || dy > 0.08 || style < 0.72) return 0
 
   const xScore = Math.max(0, 1 - dx / 0.08)
   const yScore = Math.max(0, 1 - dy / 0.08)
-  return xScore * 0.25 + yScore * 0.35 + hRatio * 0.20 + style * 0.20
+  return xScore * 0.30 + yScore * 0.40 + style * 0.30
 }
 
 export function isStrongTitleSlotMatch(dn, an, score = 0) {
@@ -106,12 +106,11 @@ export function isStrongTitleSlotMatch(dn, an, score = 0) {
   if (!isTitleLikeRole(roleA) || !isTitleLikeRole(roleB)) return false
   const dx = Math.abs(dn.normRect.x - an.normRect.x)
   const dy = Math.abs(centerY(dn.normRect) - centerY(an.normRect))
-  const hRatio = sizeRatio(dn.normRect.h, an.normRect.h)
   const style = textStyleSimilarity(dn, an)
   const maxDx = roleA === 'page-title' ? 0.055 : 0.04
   const maxDy = roleA === 'page-title' ? 0.045 : 0.05
   const minScore = roleA === 'page-title' ? 0.75 : 0.78
-  return score >= minScore && dx < maxDx && dy < maxDy && hRatio > 0.80 && style > 0.82
+  return score >= minScore && dx < maxDx && dy < maxDy && style > 0.82
 }
 
 export function inferTextRole(node) {
@@ -249,6 +248,16 @@ export function cjkCommonPrefixScore(a, b) {
   if (len < 2) return 0
   const prefixRatio = len / Math.max(a.length, b.length)
   return Math.min(0.62, 0.32 + prefixRatio * 0.42)
+}
+
+export function cjkCommonSuffixScore(a, b) {
+  if (!hasCjk(a) || !hasCjk(b)) return 0
+  let len = 0
+  const max = Math.min(a.length, b.length)
+  while (len < max && a[a.length - 1 - len] === b[b.length - 1 - len]) len += 1
+  if (len < 2) return 0
+  const suffixRatio = len / Math.max(a.length, b.length)
+  return Math.min(0.58, 0.30 + suffixRatio * 0.40)
 }
 
 export function colorDistance(c1, c2) {
