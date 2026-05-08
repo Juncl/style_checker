@@ -27,6 +27,7 @@ import {
   isComparableOutputNode,
   isCompatibleType,
   isAcceptablePair,
+  hasBackgroundColor,
   hasVisualDecoration,
 } from './nodeVisibility.js'
 import {
@@ -280,7 +281,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     if (dn.type !== 'container') continue
 
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
-      n.type === 'container' && !usedArkui.has(n.id)
+      n.type === 'container'
     )
     const best = bestIoUMatch(dn.normRect, candidates, dn, regionContext)
     const threshold = hasVisualDecoration(dn) ? 0.40 : 0.60
@@ -289,8 +290,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
         iou: best.iou,
         confidence: hasVisualDecoration(dn) ? 'high' : 'medium',
       }))
-      usedArkui.add(best.node.id)
-      matchedDesignIds.add(dn.id)
     }
   }
 
@@ -300,7 +299,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     if (!['shape', 'image', 'other'].includes(dn.type)) continue
 
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n => {
-      if (usedArkui.has(n.id)) return false
       if (dn.type === 'image') return n.type === 'image' || n.type === 'other' || n.type === 'shape'
       return n.type !== 'text'
     })
@@ -310,8 +308,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
         iou: best.iou,
         confidence: 'medium',
       }))
-      usedArkui.add(best.node.id)
-      matchedDesignIds.add(dn.id)
     }
   }
 
@@ -319,7 +315,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   for (const dn of designNodes) {
     if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id)) continue
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
-      !usedArkui.has(n.id) &&
       isCompatibleType(dn, n) &&
       (!(dn.type === 'text' && n.type === 'text') ||
         passesTextSemanticGate(dn.textContent, n.textContent, textSemanticSimilarity(dn.textContent, n.textContent))) &&
@@ -333,8 +328,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
         iou: best.iou,
         confidence: 'low',
       }))
-      usedArkui.add(best.node.id)
-      matchedDesignIds.add(dn.id)
     }
   }
 
@@ -408,7 +401,18 @@ function selectOneToOnePairs(pairs) {
   const selected = []
   const usedDesign = new Set()
   const usedArkui = new Set()
-  const sorted = [...pairs].sort((a, b) => pairPriority(b) - pairPriority(a))
+  const sorted = [...pairs].sort((a, b) => {
+    const priorityDelta = pairPriority(b) - pairPriority(a)
+    if (priorityDelta !== 0) return priorityDelta
+
+    const backgroundDelta = backgroundMatchPriority(b) - backgroundMatchPriority(a)
+    if (backgroundDelta !== 0) return backgroundDelta
+
+    const designOrderDelta = (a.design.paintIndex ?? 0) - (b.design.paintIndex ?? 0)
+    if (designOrderDelta !== 0) return designOrderDelta
+
+    return (a.arkui.paintIndex ?? 0) - (b.arkui.paintIndex ?? 0)
+  })
 
   for (const pair of sorted) {
     if (usedDesign.has(pair.design.id) || usedArkui.has(pair.arkui.id)) continue
@@ -427,6 +431,10 @@ function pairPriority(pair) {
   const topologyScore = (pair.topologyScore ?? 0) * 10
   const iouScore = (pair.iou ?? 0) * 8
   return confidenceScore + anchorScore + typeScore + topologyScore + iouScore
+}
+
+function backgroundMatchPriority(pair) {
+  return hasBackgroundColor(pair.design) === hasBackgroundColor(pair.arkui) ? 1 : 0
 }
 
 function matchTypePriority(matchType) {

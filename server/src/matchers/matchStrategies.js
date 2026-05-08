@@ -17,8 +17,10 @@ import {
   textStyleSimilarity,
 } from './textSemantics.js'
 import { hasSameTextAttributeFingerprint } from './textFingerprints.js'
-import { isCompatibleType, isMatchableNode } from './nodeVisibility.js'
+import { hasBackgroundColor, isCompatibleType, isMatchableNode } from './nodeVisibility.js'
 import { candidatePool, regionAffinity } from './regionContext.js'
+
+const SCORE_TIE_EPSILON = 1e-9
 
 export function buildTextIndex(arkuiTextNodes) {
   const map = new Map()
@@ -42,14 +44,17 @@ export function closestByY(targetNode, candidates) {
 export function bestExactTextCandidate(targetNode, candidates) {
   let best = null
   let bestScore = -Infinity
+  let bestBackgroundScore = -1
   for (const cur of candidates) {
     const yScore = Math.max(0, 1 - yDistance(targetNode.normRect, cur.normRect) / 0.40)
     const xScore = Math.max(0, 1 - xDistance(targetNode.normRect, cur.normRect) / 0.35)
     const styleScore = textStyleSimilarity(targetNode, cur)
     const pixelScore = cur.pixelVisibility?.samples ? Math.min(1, cur.pixelVisibility.visiblePixelRatio / 0.14) : 0.70
     const score = yScore * 0.34 + xScore * 0.26 + styleScore * 0.22 + pixelScore * 0.18
-    if (score > bestScore) {
+    const backgroundScore = backgroundPresenceScore(targetNode, cur)
+    if (score > bestScore + SCORE_TIE_EPSILON || (Math.abs(score - bestScore) <= SCORE_TIE_EPSILON && backgroundScore > bestBackgroundScore)) {
       bestScore = score
+      bestBackgroundScore = backgroundScore
       best = cur
     }
   }
@@ -202,6 +207,12 @@ function isWeakVisibleTextNode(node) {
   return (visibility.visiblePixelRatio ?? 1) < 0.10 && (visibility.textStrokeScore ?? 0) < 0.08
 }
 
+function backgroundPresenceScore(targetNode, candidateNode) {
+  if (!targetNode || !candidateNode) return 0
+  if (targetNode.type === 'text' || candidateNode.type === 'text') return 0
+  return hasBackgroundColor(targetNode) === hasBackgroundColor(candidateNode) ? 1 : 0
+}
+
 function weakVisibleTextCompatible(dn, an, semantic, roleScore) {
   const ta = normalizeText(dn.textContent)
   const tb = normalizeText(an.textContent)
@@ -269,10 +280,13 @@ export function exactAssignmentForSmallGroups(designTexts, arkuiTexts, edgeScore
 export function bestTextRoleMatch(targetNode, candidates) {
   let best = null
   let bestScore = 0
+  let bestBackgroundScore = -1
   for (const node of candidates) {
     const score = textRoleMatchScore(targetNode, node)
-    if (score > bestScore) {
+    const backgroundScore = backgroundPresenceScore(targetNode, node)
+    if (score > bestScore + SCORE_TIE_EPSILON || (Math.abs(score - bestScore) <= SCORE_TIE_EPSILON && backgroundScore > bestBackgroundScore)) {
       bestScore = score
+      bestBackgroundScore = backgroundScore
       best = node
     }
   }
@@ -352,6 +366,7 @@ function bestTopologyCandidate(dn, arkuiNodes, nodeAnchors, unavailableArkui, re
   let best = null
   let bestScore = 0
   let bestAnchorDist = Number.POSITIVE_INFINITY
+  let bestBackgroundScore = -1
   const regionCandidates = candidatePool(dn, arkuiNodes, regionContext, n =>
     isMatchableNode(n) &&
     !unavailableArkui.has(n.id) &&
@@ -366,8 +381,10 @@ function bestTopologyCandidate(dn, arkuiNodes, nodeAnchors, unavailableArkui, re
       if (relDist > 0.24) continue
 
       const score = topologyMatchScore(dn, an, designRelation, arkuiRelation, regionContext)
-      if (score > bestScore) {
+      const backgroundScore = backgroundPresenceScore(dn, an)
+      if (score > bestScore + SCORE_TIE_EPSILON || (Math.abs(score - bestScore) <= SCORE_TIE_EPSILON && backgroundScore > bestBackgroundScore)) {
         bestScore = score
+        bestBackgroundScore = backgroundScore
         bestAnchorDist = anchor.dist
         best = { node: an, score, iou: computeIoU(dn.normRect, an.normRect), anchorDist: anchor.dist }
       }
@@ -471,6 +488,7 @@ export function distanceBetweenRelations(a, b) {
 export function bestIoUMatch(targetRect, candidates, targetNode = null, regionContext = null) {
   let best = null
   let bestScore = 0
+  let bestBackgroundScore = -1
   for (const n of candidates) {
     const iou = computeIoU(targetRect, n.normRect)
     if (iou <= 0) continue
@@ -478,8 +496,10 @@ export function bestIoUMatch(targetRect, candidates, targetNode = null, regionCo
     const hRatio = Math.min(targetRect.h, n.normRect.h) / Math.max(targetRect.h, n.normRect.h)
     const regionBonus = targetNode ? regionAffinity(targetNode, n, regionContext) : 0
     const score = iou * wRatio * hRatio * (1 + regionBonus * 0.25)
-    if (score > bestScore) {
+    const backgroundScore = backgroundPresenceScore(targetNode, n)
+    if (score > bestScore + SCORE_TIE_EPSILON || (Math.abs(score - bestScore) <= SCORE_TIE_EPSILON && backgroundScore > bestBackgroundScore)) {
       bestScore = score
+      bestBackgroundScore = backgroundScore
       best = { node: n, iou }
     }
   }
@@ -489,6 +509,7 @@ export function bestIoUMatch(targetRect, candidates, targetNode = null, regionCo
 export function bestTextPositionMatch(targetRect, candidates, targetNode = null, regionContext = null) {
   let best = null
   let bestScore = 0
+  let bestBackgroundScore = -1
   const tcx = targetRect.x + targetRect.w / 2
   const tcy = targetRect.y + targetRect.h / 2
 
@@ -510,8 +531,10 @@ export function bestTextPositionMatch(targetRect, candidates, targetNode = null,
     const xScore = Math.max(0, 1 - dx / 0.25)
     const regionBonus = targetNode ? regionAffinity(targetNode, n, regionContext) : 0
     const score = yScore * 0.56 + xScore * 0.24 + semantic * 0.15 + regionBonus * 0.05
-    if (score > bestScore) {
+    const backgroundScore = backgroundPresenceScore(targetNode, n)
+    if (score > bestScore + SCORE_TIE_EPSILON || (Math.abs(score - bestScore) <= SCORE_TIE_EPSILON && backgroundScore > bestBackgroundScore)) {
       bestScore = score
+      bestBackgroundScore = backgroundScore
       best = { node: n, iou, score }
     }
   }

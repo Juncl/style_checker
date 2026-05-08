@@ -48,13 +48,19 @@ function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result, i
   const type = node['$type'] || ''
   const attrs = node['$attrs'] || {}
   const frameworkNode = FRAMEWORK_TYPES.has(type) || type === 'root'
+  const rectRaw = parseArkuiRect(node['$rect'])
+  const vpRect = rectRaw ? toVpRect(rectRaw, resolution) : null
+  const pruneReason = getArkuiSubtreePruneReason(type, attrs, vpRect, canvasWidthVp, canvasHeightVp)
+  const selfSkipReason = getArkuiSelfSkipReason(type, attrs, vpRect, canvasWidthVp)
   const ownVisible =
     attrs.visibility !== 'Visibility.None' &&
-    attrs.visibility !== 'Visibility.Hidden' &&
-    !hasZeroOpacity(attrs.opacity)
+    !pruneReason
   const nodeVisible = inheritedVisible && ownVisible
   const childInheritedVisible = inheritedVisible && (frameworkNode ? true : ownVisible)
   const childHiddenFrameworkAncestor = hiddenFrameworkAncestor || (frameworkNode && !ownVisible)
+
+  // Hidden / fully transparent nodes prune the whole subtree from matching input.
+  if (pruneReason) return
 
   // Blank 只是布局占位，不参与可视化节点、选择和匹配。
   if (type === 'Blank') {
@@ -66,8 +72,7 @@ function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result, i
   }
 
   if (!FRAMEWORK_TYPES.has(type) && type !== 'root' && !SPAN_TYPES.has(type)) {
-    const rectRaw = parseArkuiRect(node['$rect'])
-    if (!rectRaw) {
+    if (!rectRaw || !vpRect) {
       // 递归子节点再跳过本节点
       const children = node['$children'] || []
       for (let i = 0; i < children.length; i++) {
@@ -76,12 +81,10 @@ function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result, i
       return
     }
 
-    const vpRect = toVpRect(rectRaw, resolution)
-
     // 过滤不可见 / 零尺寸节点
     const hasSize = vpRect.w > 0 && vpRect.h > 0
 
-    if (nodeVisible && hasSize && isContentfulVisualNode(type, attrs)) {
+    if (nodeVisible && hasSize && isContentfulVisualNode(type, attrs) && !selfSkipReason) {
       const unified = buildUnifiedNode(node, type, attrs, vpRect, canvasWidthVp, canvasHeightVp, resolution)
       unified.path = path
       unified.hiddenFrameworkAncestor = hiddenFrameworkAncestor
@@ -94,6 +97,53 @@ function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result, i
     const child = node['$children'][i]
     traverseTree(child, resolution, canvasWidthVp, canvasHeightVp, result, childInheritedVisible, [...path, i], childHiddenFrameworkAncestor)
   }
+}
+
+function getArkuiSubtreePruneReason(type, attrs, rect, canvasWidthVp, canvasHeightVp) {
+  const rules = [
+    attrs.visibility === 'Visibility.Hidden' ? 'visibility-hidden' : null,
+    hasZeroOpacity(attrs.opacity) ? 'opacity-zero' : null,
+    isArkuiSpecialPrunedType(type) ? 'special-component' : null,
+    isOutOfBoundsRect(rect, canvasWidthVp, canvasHeightVp) ? 'out-of-bounds' : null,
+  ]
+  return rules.find(Boolean) || null
+}
+
+function getArkuiSelfSkipReason(type, attrs, rect, canvasWidthVp) {
+  const normalizedType = String(type || '').toLowerCase()
+  const selfSkipTypes = new Set([
+    'jsview',
+    'stack',
+    'column',
+    'row',
+    'list',
+    'listitem',
+    'group',
+    '__common__',
+    'gridcol',
+    'gridrow',
+    'blank',
+    'spacer',
+  ])
+  const bgColor = String(attrs.backgroundColor || '').trim()
+  const rules = [
+    selfSkipTypes.has(normalizedType) && (!bgColor || bgColor.startsWith('#00')) ? 'transparent-layout-node' : null,
+    rect && rect.w > canvasWidthVp * 3 ? 'too-wide' : null,
+  ]
+  return rules.find(Boolean) || null
+}
+
+function isArkuiSpecialPrunedType(type) {
+  const normalized = String(type || '').toLowerCase()
+  return normalized === 'leftarrow' || normalized === 'rightarrow'
+}
+
+function isOutOfBoundsRect(rect, canvasWidthVp, canvasHeightVp) {
+  if (!rect) return false
+  return rect.x > canvasWidthVp ||
+    rect.y > canvasHeightVp ||
+    rect.x + rect.w <= 0 ||
+    rect.y + rect.h <= 0
 }
 
 function buildUnifiedNode(node, type, attrs, vpRect, canvasWidthVp, canvasHeightVp, resolution) {

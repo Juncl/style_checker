@@ -33,6 +33,9 @@ export function parseDesign(designJson) {
   const rootNode = nodes.find(n => n.path.length === 1)
   const canvasWidth  = rootNode?.rect?.w || 360
   const canvasHeight = rootNode?.rect?.h || 792
+  const outOfBoundsPaths = nodes
+    .filter(n => Array.isArray(n.path) && isOutOfBoundsRect(n.rect, canvasWidth, canvasHeight))
+    .map(n => n.path)
   const semanticAssetPaths = nodes
     .filter(n => shouldCollapseSemanticAsset(n, nodes, canvasWidth, canvasHeight))
     .map(n => n.path)
@@ -43,9 +46,13 @@ export function parseDesign(designJson) {
     const node = nodes[paintIndex]
     if (!VISUAL_TYPES.has(node.type)) continue
     if (node.type === TEXT_TYPE && !hasTextContent(node.content)) continue
-    if (isDescendantOfAnyPath(node.path, semanticAssetPaths)) continue
-    if (isDescendantOfAnyPath(node.path, booleanOperationPaths)) continue
-    if (hasZeroOpacity(node.style?.opacity) || isSelfOrDescendantOfAnyPath(node.path, zeroOpacityPaths)) continue
+    const pruneReason = getDesignSubtreePruneReason(node, {
+      semanticAssetPaths,
+      booleanOperationPaths,
+      zeroOpacityPaths,
+      outOfBoundsPaths,
+    })
+    if (pruneReason) continue
 
     const rect = node.rect || {}
     const style = node.style || {}
@@ -216,6 +223,30 @@ function hasZeroOpacity(value) {
   if (value === undefined || value === null || value === '') return false
   const opacity = Number(value)
   return Number.isFinite(opacity) && opacity <= 0
+}
+
+function getDesignSubtreePruneReason(node, { semanticAssetPaths, booleanOperationPaths, zeroOpacityPaths, outOfBoundsPaths }) {
+  const rules = [
+    isDescendantOfAnyPath(node.path, semanticAssetPaths) ? 'semantic-asset-descendant' : null,
+    isDescendantOfAnyPath(node.path, booleanOperationPaths) ? 'boolean-operation-descendant' : null,
+    hasZeroOpacity(node.style?.opacity) || isSelfOrDescendantOfAnyPath(node.path, zeroOpacityPaths)
+      ? 'opacity-zero'
+      : null,
+    isDescendantOfAnyPath(node.path, outOfBoundsPaths) ? 'out-of-bounds' : null,
+  ]
+  return rules.find(Boolean) || null
+}
+
+function isOutOfBoundsRect(rect, canvasWidth, canvasHeight) {
+  if (!rect) return false
+  const x = Number(rect.x ?? 0)
+  const y = Number(rect.y ?? 0)
+  const w = Number(rect.w ?? 0)
+  const h = Number(rect.h ?? 0)
+  return x > canvasWidth ||
+    y > canvasHeight ||
+    x + w <= 0 ||
+    y + h <= 0
 }
 
 function hasTextContent(value) {
