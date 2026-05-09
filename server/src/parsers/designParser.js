@@ -54,18 +54,20 @@ export function parseDesign(designJson) {
     })
     if (pruneReason) continue
 
-    const rect = node.rect || {}
-    const style = node.style || {}
-    const layout = node.layout || {}
-
     const semanticAsset = shouldCollapseSemanticAsset(node, nodes, canvasWidth, canvasHeight)
+    const src = semanticAsset ? selectSemanticRepresentative(node, nodes) : node
+
+    const rect = src.rect || {}
+    const style = src.style || {}
+    const layout = src.layout || {}
+
     const unifiedNode = {
-      id:     node.guid,
+      id:     src.guid,
       source: 'design',
-      type:   mapNodeType(node.type),
-      rawType: String(node.type || '').toLowerCase(),
-      name:   node.name || '',
-      path:   node.path,
+      type:   mapNodeType(src.type),
+      rawType: String(src.type || '').toLowerCase(),
+      name:   src.name || '',
+      path:   src.path,
       paintIndex,
       rect: {
         x: rect.x ?? 0,
@@ -80,8 +82,8 @@ export function parseDesign(designJson) {
         w: (rect.w ?? 0) / canvasWidth,
         h: (rect.h ?? 0) / canvasHeight,
       },
-      visible: node.state?.visible !== false,
-      style: extractDesignStyle(node.type, style, layout),
+      visible: src.state?.visible !== false,
+      style: extractDesignStyle(src.type, style, layout),
     }
 
     if (semanticAsset) {
@@ -299,4 +301,30 @@ function hasTextDescendant(node, allNodes) {
     hasTextContent(n.content) &&
     isDescendantPath(n.path, node.path)
   )
+}
+
+// 语义折叠代表节点选取：frame 折叠时，若存在与 frame 等大的非文本后代，
+// 优先取有背景色的节点；frame 和子节点都有背景色时取子节点。
+function selectSemanticRepresentative(frameNode, allRawNodes) {
+  const frameW = frameNode.rect?.w ?? 0
+  const frameH = frameNode.rect?.h ?? 0
+
+  const sameSized = allRawNodes.filter(n => {
+    if (n.type === TEXT_TYPE) return false
+    if (!isDescendantPath(n.path, frameNode.path)) return false
+    const w = n.rect?.w ?? 0
+    const h = n.rect?.h ?? 0
+    return Math.abs(w - frameW) <= 1 && Math.abs(h - frameH) <= 1
+  })
+
+  if (sameSized.length === 0) return frameNode
+
+  const withBg = sameSized
+    .filter(n => Array.isArray(n.style?.background) && n.style.background.some(b => b.type === 'SOLID' && b.color))
+    .sort((a, b) => a.path.length - b.path.length)
+
+  if (withBg.length === 0) return frameNode
+
+  // 子节点有背景色 → 用子节点（含两者都有背景色的情形）
+  return withBg[0]
 }
