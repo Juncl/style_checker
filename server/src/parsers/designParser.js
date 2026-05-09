@@ -61,11 +61,14 @@ export function parseDesign(designJson) {
     const style = src.style || {}
     const layout = src.layout || {}
 
+    // HM Symbol 文本节点在设计侧表现为 TEXT，但本质是矢量图标，需作为 container/symbolglyph 处理
+    const hmSymbol = src.type === TEXT_TYPE && isHmSymbolNode(src)
+
     const unifiedNode = {
       id:     src.guid,
       source: 'design',
-      type:   mapNodeType(src.type),
-      rawType: String(src.type || '').toLowerCase(),
+      type:   hmSymbol ? 'container' : mapNodeType(src.type),
+      rawType: hmSymbol ? 'symbolglyph' : String(src.type || '').toLowerCase(),
       name:   src.name || '',
       path:   src.path,
       paintIndex,
@@ -83,7 +86,7 @@ export function parseDesign(designJson) {
         h: (rect.h ?? 0) / canvasHeight,
       },
       visible: src.state?.visible !== false,
-      style: extractDesignStyle(src.type, style, layout),
+      style: extractDesignStyle(src.type, style, layout, { hmSymbol }),
     }
 
     if (semanticAsset) {
@@ -91,8 +94,8 @@ export function parseDesign(designJson) {
       unifiedNode.style.semanticAsset = assetKind(node)
     }
 
-    // 仅 TEXT 节点有文字内容
-    if (node.type === TEXT_TYPE) {
+    // HM Symbol 节点不携带文字内容，普通 TEXT 节点才设置 textContent
+    if (node.type === TEXT_TYPE && !hmSymbol) {
       unifiedNode.textContent = node.content || ''
     }
 
@@ -107,7 +110,13 @@ function mapNodeType(type) {
   return 'container'
 }
 
-function extractDesignStyle(nodeType, style, layout) {
+function isHmSymbolNode(node) {
+  const t = node.style?.text?.[0]
+  return !!t && /hm\s*symbol/i.test(t.fontFamily || '')
+}
+
+function extractDesignStyle(nodeType, style, layout, options = {}) {
+  const { hmSymbol = false } = options
   const result = {}
 
   // 不透明度
@@ -161,20 +170,30 @@ function extractDesignStyle(nodeType, style, layout) {
   // 文字样式
   if (nodeType === TEXT_TYPE && Array.isArray(style.text) && style.text.length > 0) {
     const t = style.text[0]
-    result.textAlign = style.textAlign || 'left'
-    result.fontSize = t.fontSize ?? null
-    result.fontWeight = normalizeDesignFontWeight(t.fontWeight)
-    result.fontFamily = t.fontFamily || null
-    result.lineHeight = typeof t.lineHeight === 'number' && t.lineHeight !== 1
-      ? t.lineHeight
-      : null
-    result.letterSpacing = t.letterSpacing ?? null
+    if (hmSymbol) {
+      // HM Symbol 本质是矢量图标：颜色作为填充色，不设置文字相关属性
+      if (Array.isArray(t.data)) {
+        const solidFill = t.data.find(d => d.type === 'SOLID')
+        if (solidFill?.color) {
+          result.backgroundColor = normalizeDesignColor(solidFill.color)
+        }
+      }
+    } else {
+      result.textAlign = style.textAlign || 'left'
+      result.fontSize = t.fontSize ?? null
+      result.fontWeight = normalizeDesignFontWeight(t.fontWeight)
+      result.fontFamily = t.fontFamily || null
+      result.lineHeight = typeof t.lineHeight === 'number' && t.lineHeight !== 1
+        ? t.lineHeight
+        : null
+      result.letterSpacing = t.letterSpacing ?? null
 
-    // 文字颜色：取第一段的第一个 SOLID fill
-    if (Array.isArray(t.data)) {
-      const solidFill = t.data.find(d => d.type === 'SOLID')
-      if (solidFill?.color) {
-        result.fontColor = normalizeDesignColor(solidFill.color)
+      // 文字颜色：取第一段的第一个 SOLID fill
+      if (Array.isArray(t.data)) {
+        const solidFill = t.data.find(d => d.type === 'SOLID')
+        if (solidFill?.color) {
+          result.fontColor = normalizeDesignColor(solidFill.color)
+        }
       }
     }
   }
