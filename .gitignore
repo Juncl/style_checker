@@ -5,3 +5,4 @@ client/node_modules
 client/dist
 .cache/
 .DS_Store
+CLAUDE.md

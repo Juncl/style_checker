@@ -17,7 +17,7 @@ const TOLERANCE = {
   blur:          2.0,
   shadowRadius:  2.0,
   shadowOffset:  1.0,
-  colorDelta:    8,    // 颜色欧氏距离（0-442 范围）
+  colorDelta:    0,    // 颜色欧氏距离（0-442 范围）；0 表示完全精确匹配
 }
 
 const BACKGROUND_IGNORE_TYPES = new Set([

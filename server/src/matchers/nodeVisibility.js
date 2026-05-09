@@ -37,13 +37,13 @@ export function isAcceptablePair(pair) {
     const designType = textFieldType(normalizeText(design.textContent))
     const arkuiType = textFieldType(normalizeText(arkui.textContent))
     if (designType === 'number' || arkuiType === 'number') {
+      if (matchType === 'dynamic-number-slot' || matchType === 'numeric-slot') {
+        return designType === arkuiType
+      }
       if (
         (isAmbiguousShortNumberText(design.textContent) || isAmbiguousShortNumberText(arkui.textContent)) &&
         !isNearSameLineSlot(design, arkui, 0.10, 0.045)
       ) return false
-      if (matchType === 'dynamic-number-slot') {
-        return designType === arkuiType
-      }
       return designType === arkuiType && numericTextCompatible(design.textContent, arkui.textContent)
     }
     return true

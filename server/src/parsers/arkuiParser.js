@@ -201,7 +201,9 @@ function extractArkuiStyle(type, attrs, resolution) {
   // 填充（非透明才记录）
   const shapeFill = type === 'Circle' || type === 'Ellipse' || type === 'Rect'
     ? attrs.fill || attrs.foregroundColor
-    : null
+    : type === 'SymbolGlyph'
+      ? attrs.fontColor
+      : null
   const bgColor = shapeFill || attrs.backgroundColor
   if (bgColor && !isTransparent(bgColor)) {
     s.backgroundColor = normalizeArkuiColor(bgColor)

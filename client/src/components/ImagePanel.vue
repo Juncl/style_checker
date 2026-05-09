@@ -31,6 +31,10 @@
           <span class="inspector-badge">{{ inspectorNode.type }}</span>
         </div>
         <div class="inspector-body">
+          <div v-if="debugPipelineVisible || debugVisible" class="prop-row">
+            <span class="prop-key">id</span>
+            <span class="prop-val">{{ inspectorNode.id }}</span>
+          </div>
           <div
             v-for="item in displayStyle"
             :key="item.key"

@@ -275,6 +275,40 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     }
   }
 
+  // ── Pass 5b: 数字槽位匹配（mock 整数与实际整数数值不同，但位置与样式一致）─────
+  for (const dn of designNodes) {
+    if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id) || dn.type !== 'text') continue
+    if (textFieldType(normalizeText(dn.textContent)) !== 'number') continue
+
+    const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
+      n.type === 'text' &&
+      !usedArkui.has(n.id) &&
+      hasUsableText(n) &&
+      textFieldType(normalizeText(n.textContent)) === 'number'
+    )
+
+    let best = null
+    let bestScore = -Infinity
+    for (const an of candidates) {
+      const dy = yDistance(dn.normRect, an.normRect)
+      const dx = xDistance(dn.normRect, an.normRect)
+      if (dy > 0.08 || dx > 0.20) continue
+      const styleScore = textStyleSimilarity(dn, an)
+      if (styleScore < 0.70) continue
+      const score = (1 - dy / 0.08) * 0.55 + (1 - dx / 0.20) * 0.25 + styleScore * 0.20
+      if (score > bestScore) { bestScore = score; best = an }
+    }
+
+    if (best && bestScore > 0.40) {
+      pairs.push(makePair(dn, best, 'numeric-slot', {
+        confidence: 'medium',
+        topologyScore: bestScore,
+      }))
+      usedArkui.add(best.id)
+      matchedDesignIds.add(dn.id)
+    }
+  }
+
   // ── Pass 5: 几何 IoU 匹配容器节点 ─────────────────────────────────────────
   for (const dn of designNodes) {
     if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id)) continue
@@ -445,6 +479,7 @@ function matchTypePriority(matchType) {
     'dynamic-text-slot': 22,
     'text-row-slot': 21,
     'text-position': 20,
+    'numeric-slot': 19,
     'container-iou': 18,
     'container-geometry': 14,
     'region-text-global-rescue': 8,
