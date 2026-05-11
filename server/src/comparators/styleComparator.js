@@ -227,10 +227,104 @@ function diffBorder(diffs, ctx, dv, av) {
   diffColor(diffs, ctx, 'borderColor', dv?.color, av?.color, '描边颜色')
 }
 
-function diffBackgroundColor(diffs, ctx, designNode, arkuiNode, dv, av) {
-  if (shouldIgnoreBackgroundColorNode(designNode) || shouldIgnoreBackgroundColorNode(arkuiNode)) {
+function parseGradient(str) {
+  if (!str || typeof str !== 'string' || !str.startsWith('linear-gradient(')) return null
+  try {
+    const inner = str.slice('linear-gradient('.length, -1)
+    const parts = inner.split(',').map(s => s.trim())
+    if (parts.length < 2) return null
+
+    const angle = parseFloat(parts[0])
+    if (!Number.isFinite(angle)) return null
+
+    const stops = []
+    for (let i = 1; i < parts.length; i++) {
+      const tokens = parts[i].split(/\s+/)
+      const color = tokens[0]
+      const positionStr = tokens[1]
+      const position = parseFloat(positionStr)
+      if (!Number.isFinite(position)) continue
+      stops.push({ color, position })
+    }
+
+    if (stops.length === 0) return null
+    return { type: 'linear', angle, stops }
+  } catch {
+    return null
+  }
+}
+
+function diffGradient(diffs, ctx, dGrad, aGrad, dv, av) {
+  if (!dGrad && !aGrad) return
+
+  // 只有一侧是渐变
+  if (!dGrad || !aGrad) {
+    const desc = dGrad
+      ? '填充：设计侧为渐变色，开发侧为纯色'
+      : '填充：设计侧为纯色，开发侧为渐变色'
+    diffs.push(makeDiff(ctx, 'backgroundColor', dv || '—', av || '—', 'warning', desc))
     return
   }
+
+  const issues = []
+
+  // 比较角度 (±5°容差)
+  if (Math.abs(dGrad.angle - aGrad.angle) > 5) {
+    issues.push(`角度 ${dGrad.angle}° vs ${aGrad.angle}°`)
+  }
+
+  // 比较停止点数量
+  if (dGrad.stops.length !== aGrad.stops.length) {
+    issues.push(`节点数 ${dGrad.stops.length} vs ${aGrad.stops.length}`)
+  }
+
+  // 逐个比较停止点
+  const len = Math.min(dGrad.stops.length, aGrad.stops.length)
+  for (let i = 0; i < len; i++) {
+    const ds = dGrad.stops[i]
+    const as = aGrad.stops[i]
+
+    const delta = colorDelta(ds.color, as.color)
+    if (delta > TOLERANCE.colorDelta) {
+      issues.push(`节点${i + 1}颜色不匹配`)
+    }
+
+    if (Math.abs(ds.position - as.position) > 2) {
+      issues.push(`节点${i + 1}位置 ${ds.position}% vs ${as.position}%`)
+    }
+  }
+
+  if (issues.length > 0) {
+    diffs.push(makeDiff(ctx, 'backgroundColor',
+      `linear-gradient(${dGrad.angle}deg, ...)`,
+      `linear-gradient(${aGrad.angle}deg, ...)`,
+      'warning',
+      `渐变不匹配: ${issues.join('; ')}`
+    ))
+  }
+}
+
+function diffBackgroundColor(diffs, ctx, designNode, arkuiNode, dv, av) {
+  // 检查是否为渐变色
+  const dGrad = parseGradient(dv)
+  const aGrad = parseGradient(av)
+
+  // 规则：只有当 backgroundColor 无值或透明色，且节点类型在忽略列表中，才忽略比较
+  // 如果有值（包括渐变色），即使是忽略类型也要比较
+  const dHasValue = dv && !isTransparentColor(dv)
+  const aHasValue = av && !isTransparentColor(av)
+
+  if (!dHasValue && !aHasValue && (shouldIgnoreBackgroundColorNode(designNode) || shouldIgnoreBackgroundColorNode(arkuiNode))) {
+    return
+  }
+
+  // 如果任一侧是渐变色，走渐变比较逻辑
+  if (dGrad || aGrad) {
+    diffGradient(diffs, ctx, dGrad, aGrad, dv, av)
+    return
+  }
+
+  // 原有纯色逻辑
   const d = comparableBackground(dv)
   const a = comparableBackground(av)
   if (!d && !a) return

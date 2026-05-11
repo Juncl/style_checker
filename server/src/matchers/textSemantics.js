@@ -44,6 +44,13 @@ export function textSemanticSimilarity(a, b) {
 
   const typeA = textFieldType(ta)
   const typeB = textFieldType(tb)
+
+  // 对于 label 类型的中文文本，若共享后缀（≥2字符），给予高分（只比完全相同低一点点）
+  if (typeA === 'label' && typeB === 'label' && hasCjk(ta) && hasCjk(tb)) {
+    const suffixBoost = cjkCommonSuffixBoost(ta, tb)
+    if (suffixBoost > 0) return suffixBoost
+  }
+
   const typeScore = typeA !== 'label' && typeA === typeB && (typeA !== 'number' || numericTextCompatible(ta, tb)) ? 0.72 : 0
   const charScore = charJaccard(ta, tb)
   const bigramScore = bigramJaccard(ta, tb)
@@ -258,6 +265,15 @@ export function cjkCommonSuffixScore(a, b) {
   if (len < 2) return 0
   const suffixRatio = len / Math.max(a.length, b.length)
   return Math.min(0.58, 0.30 + suffixRatio * 0.40)
+}
+
+function cjkCommonSuffixBoost(a, b) {
+  if (!hasCjk(a) || !hasCjk(b)) return 0
+  let len = 0
+  const max = Math.min(a.length, b.length)
+  while (len < max && a[a.length - 1 - len] === b[b.length - 1 - len]) len += 1
+  // 当后缀长度≥2个字符时，返回高分（只比完全相同低一点点）
+  return len >= 2 ? 0.94 : 0
 }
 
 export function colorDistance(c1, c2) {

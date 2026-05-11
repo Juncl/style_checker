@@ -166,7 +166,7 @@ function buildUnifiedNode(node, type, attrs, vpRect, canvasWidthVp, canvasHeight
       h: vpRect.h / canvasHeightVp,
     },
     visible: true,
-    style: extractArkuiStyle(type, attrs, resolution),
+    style: extractArkuiStyle(type, attrs, resolution, vpRect),
   }
 
   // 文字内容
@@ -190,7 +190,7 @@ function getArkuiTextContent(attrs) {
   return attrs.content || attrs.accessibilityText || ''
 }
 
-function extractArkuiStyle(type, attrs, resolution) {
+function extractArkuiStyle(type, attrs, resolution, vpRect) {
   const s = {}
 
   // 不透明度
@@ -209,11 +209,40 @@ function extractArkuiStyle(type, attrs, resolution) {
     s.backgroundColor = normalizeArkuiColor(bgColor)
   }
 
-  // 圆角
+  // 尺寸信息（优先从 attrs.size 获取，否则用 vpRect 计算）
+  let sizeWidth = null
+  let sizeHeight = null
+
+  if (attrs.size && typeof attrs.size === 'object') {
+    sizeWidth = parseVp(attrs.size.width)
+    sizeHeight = parseVp(attrs.size.height)
+  }
+
+  if (sizeWidth === null || sizeWidth === undefined) {
+    sizeWidth = vpRect ? Math.round(vpRect.w) : null
+  }
+  if (sizeHeight === null || sizeHeight === undefined) {
+    sizeHeight = vpRect ? Math.round(vpRect.h) : null
+  }
+
+  if (sizeWidth !== null && sizeWidth > 0) s.width = sizeWidth
+  if (sizeHeight !== null && sizeHeight > 0) s.height = sizeHeight
+
+  // 圆角规范化（用 size 尺寸）
   if (attrs.borderRadius && typeof attrs.borderRadius === 'object') {
     const br = parseBorderRadius(attrs.borderRadius)
     if (br && Object.values(br).some(v => v > 0)) {
-      s.borderRadius = br
+      if (sizeWidth !== null && sizeHeight !== null && sizeWidth > 0 && sizeHeight > 0) {
+        const maxBr = Math.min(sizeWidth, sizeHeight) / 2
+        s.borderRadius = {
+          topLeft:     Math.min(br.topLeft,     maxBr),
+          topRight:    Math.min(br.topRight,    maxBr),
+          bottomRight: Math.min(br.bottomRight, maxBr),
+          bottomLeft:  Math.min(br.bottomLeft,  maxBr),
+        }
+      } else {
+        s.borderRadius = br
+      }
     }
   }
 

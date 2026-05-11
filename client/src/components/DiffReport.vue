@@ -66,13 +66,13 @@
             <div class="val-block arkui">
               <span class="val-label">开发</span>
               <ColorDot v-if="isColorProp(d.property)" :hex="extractHex(d.arkuiValue)" />
-              <span class="val-text">{{ displayValue(d.property, d.arkuiValue) }}</span>
+              <span class="val-text" :title="d.arkuiValue">{{ displayValue(d.property, d.arkuiValue) }}</span>
             </div>
             <el-icon class="arrow"><ArrowRight /></el-icon>
             <div class="val-block design">
               <span class="val-label">设计</span>
               <ColorDot v-if="isColorProp(d.property)" :hex="extractHex(d.designValue)" />
-              <span class="val-text">{{ displayValue(d.property, d.designValue) }}</span>
+              <span class="val-text" :title="d.designValue">{{ displayValue(d.property, d.designValue) }}</span>
             </div>
           </div>
 
@@ -217,6 +217,10 @@ function extractHex(val) { return (String(val || '').match(/#[0-9A-Fa-f]{6,8}/) 
 function displayValue(prop, val) {
   const text = String(val ?? '')
   if (!isColorProp(prop)) return text
+  // 渐变色保留完整字符串，由 CSS 处理缩略
+  if (text.startsWith('linear-gradient(') || text.startsWith('radial-gradient(')) {
+    return text
+  }
   return extractHex(text) || text.replace(/\s*\(rgba\([^)]+\)\)/i, '')
 }
 function truncate(s, n)  { return s.length > n ? s.slice(0, n) + '…' : s }
@@ -462,6 +466,9 @@ function issueLabel(property) {
 .val-text {
   word-break: break-all;
   line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .val-block.arkui  .val-text { color: #303133; }
 .val-block.design .val-text { color: #0a59f7; }

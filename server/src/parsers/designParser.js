@@ -129,6 +129,16 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
     const solidBg = style.background.find(b => b.type === 'SOLID')
     if (solidBg?.color) {
       result.backgroundColor = normalizeDesignColor(solidBg.color)
+    } else {
+      // 处理线性渐变
+      const linearGradient = style.background.find(b => b.type === 'GRADIENT_LINEAR')
+      if (linearGradient && Array.isArray(linearGradient.data) && linearGradient.data.length > 0) {
+        const angle = linearGradient.angle ?? 0
+        const stops = linearGradient.data
+          .map(stop => `${normalizeDesignColor(stop.color)} ${stop.position ?? '0%'}`)
+          .join(', ')
+        result.backgroundColor = `linear-gradient(${angle}deg, ${stops})`
+      }
     }
   }
 
