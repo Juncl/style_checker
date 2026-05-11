@@ -526,16 +526,16 @@ export function bestTextPositionMatch(targetRect, candidates, targetNode = null,
     const yLimit = targetNode && passesTextSemanticGate(targetNode.textContent, n.textContent, semantic) ? 0.05 : 0.04
     if (dy > yLimit || dx > 0.25) continue
 
-    const iou = computeIoU(targetRect, r)
     const yScore = Math.max(0, 1 - dy / yLimit)
     const xScore = Math.max(0, 1 - dx / 0.25)
+    const styleScore = targetNode ? textStyleSimilarity(targetNode, n) : 0.75
     const regionBonus = targetNode ? regionAffinity(targetNode, n, regionContext) : 0
-    const score = yScore * 0.56 + xScore * 0.24 + semantic * 0.15 + regionBonus * 0.05
+    const score = yScore * 0.45 + xScore * 0.20 + semantic * 0.15 + styleScore * 0.15 + regionBonus * 0.05
     const backgroundScore = backgroundPresenceScore(targetNode, n)
     if (score > bestScore + SCORE_TIE_EPSILON || (Math.abs(score - bestScore) <= SCORE_TIE_EPSILON && backgroundScore > bestBackgroundScore)) {
       bestScore = score
       bestBackgroundScore = backgroundScore
-      best = { node: n, iou, score }
+      best = { node: n, score }
     }
   }
 

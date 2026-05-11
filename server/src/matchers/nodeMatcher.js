@@ -164,7 +164,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
           : 0.14
     const xThreshold = ambiguousShortNumber ? 0.10 : Infinity
     if (dist < yThreshold && xDist < xThreshold) {
-      const isStrongAnchor = !ambiguousShortNumber && dist < 0.06 && styleScore >= 0.72
+      const isStrongAnchor = !ambiguousShortNumber && dist < 0.05 && styleScore >= 0.78
       const pair = makePair(dn, best, 'text-content', {
         confidence: isStrongAnchor ? 'high' : 'medium',
         topologyScore: styleScore,
@@ -232,7 +232,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     const best = bestTextRoleMatch(dn, candidates)
     if (best && (best.score >= 0.85 || isStrongTitleSlotMatch(dn, best.node, best.score))) {
       pairs.push(makePair(dn, best.node, 'text-role', {
-        iou: computeIoU(dn.normRect, best.node.normRect),
         confidence: 'medium',
         topologyScore: best.score,
       }))
@@ -267,7 +266,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     const best = bestTextPositionMatch(dn.normRect, candidates, dn, regionContext)
     if (best && best.score > 0.35) {
       pairs.push(makePair(dn, best.node, 'text-position', {
-        iou: best.iou,
         confidence: 'medium',
       }))
       usedArkui.add(best.node.id)
@@ -553,7 +551,8 @@ function pairPriority(pair) {
   const anchorScore = pair.isAnchor ? 25 : 0
   const typeScore = matchTypePriority(pair.matchType)
   const topologyScore = (pair.topologyScore ?? 0) * 10
-  const iouScore = (pair.iou ?? 0) * 8
+  const isTextPair = pair.design?.type === 'text' && pair.arkui?.type === 'text'
+  const iouScore = isTextPair ? 0 : (pair.iou ?? 0) * 8
   return confidenceScore + anchorScore + typeScore + topologyScore + iouScore
 }
 
