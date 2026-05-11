@@ -644,8 +644,15 @@ async function runUpload() {
 }
 
 function onDiffSelect(diff) {
-  selectedPair.value = null
   activeDiff.value = diff
+  if (diff) {
+    const pair = result.value?.pairs?.find(p =>
+      p.design.id === diff.designNodeId && p.arkui.id === diff.arkuiNodeId
+    )
+    selectedPair.value = pair || null
+  } else {
+    selectedPair.value = null
+  }
 }
 
 function confidenceText(confidence) {

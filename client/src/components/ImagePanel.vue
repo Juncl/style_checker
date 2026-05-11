@@ -15,7 +15,7 @@
 
     <Transition name="inspector-fade">
       <div
-        v-if="inspectorNode && displayStyle.length"
+        v-if="inspectorNode && (displayStyle.length || debugMode)"
         ref="inspectorRef"
         class="node-inspector"
         :class="{ dragging: isDraggingInspector }"
@@ -28,7 +28,7 @@
           @dblclick.stop="resetInspectorPosition"
         >
           <span class="inspector-name">{{ inspectorNode.textContent || inspectorNode.name }}</span>
-          <span class="inspector-badge">{{ inspectorNode.type }}</span>
+          <span class="inspector-badge">{{ inspectorNode.rawType || inspectorNode.type }}</span>
         </div>
         <div class="inspector-body">
           <div v-if="debugMode" class="prop-row">
