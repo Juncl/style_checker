@@ -8,7 +8,7 @@ import {
   bestTextPositionMatch,
   bestIoUMatch,
 } from './matchStrategies.js'
-import { yDistance, xDistance, computeIoU } from './matchGeometry.js'
+import { yDistance, xDistance, computeIoU, sizeRatio } from './matchGeometry.js'
 import {
   textStyleSimilarity,
   isAmbiguousUnitText,
@@ -344,6 +344,97 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     }
   }
 
+  // ── Pass 6.5: 空间担保匹配 ─────────────────────────────────────────────────
+  // 当已匹配对从左右两侧夹住候选节点（两侧方向一致），且尺寸吻合时，确认该匹配。
+  // 适用于因画布宽度差异导致 IoU=0 但位置关系明确的小型容器/图标节点。
+  {
+    const previewPairs = selectOneToOnePairs(pairs.filter(isAcceptablePair))
+    const previewUsedDesign = new Set(previewPairs.map(p => p.design.id))
+    const previewUsedArkui  = new Set(previewPairs.map(p => p.arkui.id))
+
+    const bracketCandidates = []
+
+    for (const dn of designNodes) {
+      if (!isMatchableNode(dn) || previewUsedDesign.has(dn.id)) continue
+      if (dn.type !== 'container') continue
+
+      const dnCX = dn.normRect.x + dn.normRect.w / 2
+      const dnCY = dn.normRect.y + dn.normRect.h / 2
+
+      const sameRowPairs = previewPairs.filter(p => {
+        const pDCY = p.design.normRect.y + p.design.normRect.h / 2
+        const pACY = p.arkui.normRect.y  + p.arkui.normRect.h  / 2
+        return Math.abs(pDCY - dnCY) < 0.08 && Math.abs(pACY - dnCY) < 0.08
+      })
+
+      const leftBrackets = sameRowPairs.filter(p =>
+        p.design.normRect.x + p.design.normRect.w <= dnCX
+      )
+      const rightBrackets = sameRowPairs.filter(p =>
+        p.design.normRect.x >= dnCX
+      )
+      if (leftBrackets.length === 0 || rightBrackets.length === 0) continue
+
+      const bestLeft = leftBrackets.reduce((best, p) =>
+        (dnCX - (p.design.normRect.x + p.design.normRect.w)) <
+        (dnCX - (best.design.normRect.x + best.design.normRect.w)) ? p : best
+      )
+      const bestRight = rightBrackets.reduce((best, p) =>
+        (p.design.normRect.x - dnCX) < (best.design.normRect.x - dnCX) ? p : best
+      )
+
+      // 左右两个担保对本身必须在同一行（design 侧互相对齐，arkui 侧互相对齐）
+      const blDCY = bestLeft.design.normRect.y  + bestLeft.design.normRect.h  / 2
+      const brDCY = bestRight.design.normRect.y + bestRight.design.normRect.h / 2
+      const blACY = bestLeft.arkui.normRect.y   + bestLeft.arkui.normRect.h   / 2
+      const brACY = bestRight.arkui.normRect.y  + bestRight.arkui.normRect.h  / 2
+      if (Math.abs(blDCY - brDCY) > 0.06) continue
+      if (Math.abs(blACY - brACY) > 0.06) continue
+
+      for (const an of arkuiNodes) {
+        if (!isMatchableNode(an) || previewUsedArkui.has(an.id)) continue
+        if (an.type !== 'container') continue
+        if (Math.min(sizeRatio(dn.normRect.w, an.normRect.w), sizeRatio(dn.normRect.h, an.normRect.h)) < 0.5) continue
+
+        const anCX = an.normRect.x + an.normRect.w / 2
+        const anCY = an.normRect.y + an.normRect.h / 2
+
+        // 候选节点本身 y 轴不能相差太远
+        if (Math.abs(anCY - dnCY) > 0.05) continue
+
+        // 两个担保对的 arkui 侧也必须与 an 同行
+        const leftArkuiCY  = bestLeft.arkui.normRect.y  + bestLeft.arkui.normRect.h  / 2
+        const rightArkuiCY = bestRight.arkui.normRect.y + bestRight.arkui.normRect.h / 2
+        if (Math.abs(anCY - leftArkuiCY)  > 0.08) continue
+        if (Math.abs(anCY - rightArkuiCY) > 0.08) continue
+
+        // 开发侧也必须被同一担保对的 ArkUI 节点从左右夹住
+        if (bestLeft.arkui.normRect.x + bestLeft.arkui.normRect.w > anCX) continue
+        if (bestRight.arkui.normRect.x < anCX) continue
+
+        const score = sizeRatio(dn.normRect.w, an.normRect.w) * 0.5 +
+                      sizeRatio(dn.normRect.h, an.normRect.h) * 0.5
+        bracketCandidates.push({
+          dn, an,
+          confidence: lowerConfidence(bestLeft.confidence, bestRight.confidence),
+          score,
+        })
+      }
+    }
+
+    bracketCandidates.sort((a, b) => b.score - a.score)
+    const usedBracketDesign = new Set()
+    const usedBracketArkui  = new Set()
+    for (const { dn, an, confidence, score } of bracketCandidates) {
+      if (usedBracketDesign.has(dn.id) || usedBracketArkui.has(an.id)) continue
+      pairs.push(makePair(dn, an, 'spatial-bracket', { confidence, topologyScore: score }))
+      usedArkui.add(an.id)
+      matchedDesignIds.add(dn.id)
+      usedBracketDesign.add(dn.id)
+      usedBracketArkui.add(an.id)
+    }
+  }
+
   // ── Pass 7: Rescue Pass，保留低置信度标签，供前端和评分识别 ────────────────
   for (const dn of designNodes) {
     if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id)) continue
@@ -470,6 +561,11 @@ function backgroundMatchPriority(pair) {
   return hasBackgroundColor(pair.design) === hasBackgroundColor(pair.arkui) ? 1 : 0
 }
 
+function lowerConfidence(a, b) {
+  const rank = { high: 2, medium: 1, low: 0 }
+  return rank[a] <= rank[b] ? a : b
+}
+
 function matchTypePriority(matchType) {
   const order = {
     'text-content': 40,
@@ -481,6 +577,7 @@ function matchTypePriority(matchType) {
     'text-position': 20,
     'numeric-slot': 19,
     'container-iou': 18,
+    'spatial-bracket': 16,
     'container-geometry': 14,
     'region-text-global-rescue': 8,
     'rescue-iou': 2,
