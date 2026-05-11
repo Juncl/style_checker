@@ -31,7 +31,7 @@
           <span class="inspector-badge">{{ inspectorNode.type }}</span>
         </div>
         <div class="inspector-body">
-          <div v-if="debugPipelineVisible || debugVisible" class="prop-row">
+          <div v-if="debugMode" class="prop-row">
             <span class="prop-key">id</span>
             <span class="prop-val">{{ inspectorNode.id }}</span>
           </div>
@@ -69,6 +69,7 @@ const props = defineProps({
   inspectorNode:{ type: Object,  default: null },
   styleDiffs:   { type: Array,   default: () => [] },
   lockedIds:    { type: Object,  default: () => new Set() }, // Set<string>，不参与图片点击
+  debugMode:    { type: Boolean, default: false },
   debugPipelineVisible: { type: Boolean, default: false },
   debugVisible: { type: Boolean, default: false },
   debugPairMap:  { type: Object,  default: () => ({}) },
