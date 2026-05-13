@@ -83,6 +83,10 @@ router.post('/check/case/:caseId', async (req, res) => {
       arkuiImageBuffer: readFileSync(join(caseDir, 'arkui.png')),
       matchDirection: matchDirectionFromRequest(req),
     })
+    const validationPath = join(caseDir, 'matchValidation.json')
+    if (existsSync(validationPath)) {
+      result.matchValidation = JSON.parse(readFileSync(validationPath, 'utf-8'))
+    }
     res.json(result)
   } catch (err) {
     console.error(err)

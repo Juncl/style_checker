@@ -150,7 +150,13 @@
                   当前没有可展示的映射
                 </div>
                 <div v-else class="debugger-list">
-                  <div v-for="item in debugPairItems" :key="item.key" class="debugger-item">
+                  <div
+                    v-for="item in debugPairItems"
+                    :key="item.key"
+                    class="debugger-item"
+                    :style="{ background: validationBg(item.validationStatus), cursor: item.arkuiId ? 'pointer' : 'default' }"
+                    @click="item.arkuiId && onArkuiNodeClick(item.arkuiId)"
+                  >
                     <span class="debugger-swatch" :style="{ background: item.color }"></span>
                     <span class="debugger-index">#{{ String(item.index + 1).padStart(2, '0') }}</span>
                     <span class="debugger-text" :title="item.arkuiLabel">{{ item.arkuiLabel }}</span>
@@ -360,17 +366,50 @@ const selectedArkuiDiffs = computed(() =>
     : []
 )
 
-const debugPairItems = computed(() =>
-  (result.value?.pairs ?? []).map((pair, index) => ({
-    key: `${pair.design?.id || 'd'}::${pair.arkui?.id || 'a'}::${index}`,
-    index,
-    color: DEBUG_COLORS[index % DEBUG_COLORS.length],
-    designId: pair.design?.id || null,
-    arkuiId: pair.arkui?.id || null,
-    designLabel: nodeDebugLabel(pair.design, true),
-    arkuiLabel: nodeDebugLabel(pair.arkui, true),
-  }))
-)
+const debugPairItems = computed(() => {
+  const validation = result.value?.matchValidation ?? null
+  const items = (result.value?.pairs ?? []).map((pair, index) => {
+    const arkuiId = pair.arkui?.id ?? null
+    let validationStatus = null
+    if (validation) {
+      if (arkuiId && arkuiId in validation) {
+        validationStatus = validation[arkuiId] === pair.design?.id ? 'ok' : 'wrong'
+      } else {
+        validationStatus = 'extra'
+      }
+    }
+    return {
+      key: `${pair.design?.id || 'd'}::${arkuiId || 'a'}::${index}`,
+      index,
+      color: DEBUG_COLORS[index % DEBUG_COLORS.length],
+      designId: pair.design?.id || null,
+      arkuiId,
+      designLabel: nodeDebugLabel(pair.design, true),
+      arkuiLabel: nodeDebugLabel(pair.arkui, true),
+      validationStatus,
+    }
+  })
+  if (validation) {
+    const matchedArkuiIds = new Set(items.map(i => i.arkuiId).filter(Boolean))
+    for (const [arkuiId, designId] of Object.entries(validation)) {
+      if (!matchedArkuiIds.has(arkuiId)) {
+        items.push({
+          key: `missing::${arkuiId}`,
+          index: null,
+          color: '#999999',
+          designId,
+          arkuiId,
+          designLabel: designId,
+          arkuiLabel: arkuiId,
+          validationStatus: 'missing',
+        })
+      }
+    }
+  }
+  items.sort((a, b) => (parseInt(a.arkuiId) || 0) - (parseInt(b.arkuiId) || 0))
+  items.forEach((item, i) => { item.index = i })
+  return items
+})
 
 const debugPairMap = computed(() => {
   const map = {}
@@ -674,5 +713,12 @@ function nodeDebugLabel(node, withId = false) {
   if (!withId) return displayLabel
   const id = node.id ?? '无ID'
   return `${id}-${displayLabel}`
+}
+
+function validationBg(status) {
+  if (status === 'wrong')   return 'rgba(239, 68, 68, 0.18)'
+  if (status === 'extra')   return 'rgba(234, 179, 8, 0.18)'
+  if (status === 'missing') return 'rgba(150, 150, 150, 0.18)'
+  return 'transparent'
 }
 </script>

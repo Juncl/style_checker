@@ -48,7 +48,7 @@ function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result, i
   const rectRaw = parseArkuiRect(node['$rect'])
   const vpRect = rectRaw ? toVpRect(rectRaw, resolution) : null
   const pruneReason = getArkuiSubtreePruneReason(type, attrs, vpRect, canvasWidthVp, canvasHeightVp)
-  const selfSkipReason = getArkuiSelfSkipReason(type, attrs, vpRect, canvasWidthVp)
+  const selfSkipReason = getArkuiSelfSkipReason(type, attrs)
   const ownVisible =
     attrs.visibility !== 'Visibility.None' &&
     !pruneReason
@@ -68,7 +68,13 @@ function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result, i
     return
   }
 
-  if (!FRAMEWORK_TYPES.has(type) && type !== 'root' && !SPAN_TYPES.has(type)) {
+  const bgColorRaw = String(attrs.backgroundColor || '').trim()
+  const hasBg = !!bgColorRaw && !bgColorRaw.startsWith('#00')
+  // 框架类型（非 root）有背景色时视为视觉节点，无背景色才跳过（与 selfSkipTypes 逻辑一致）
+  const isFrameworkWithBg = FRAMEWORK_TYPES.has(type) && type !== 'root' && hasBg
+  const isNormalNode = !FRAMEWORK_TYPES.has(type) && type !== 'root'
+
+  if ((isNormalNode || isFrameworkWithBg) && !SPAN_TYPES.has(type)) {
     if (!rectRaw || !vpRect) {
       // 递归子节点再跳过本节点
       const children = node['$children'] || []
@@ -81,7 +87,8 @@ function traverseTree(node, resolution, canvasWidthVp, canvasHeightVp, result, i
     // 过滤不可见 / 零尺寸节点
     const hasSize = vpRect.w > 0 && vpRect.h > 0
 
-    if (nodeVisible && hasSize && isContentfulVisualNode(type, attrs) && !selfSkipReason) {
+    const tooWide = vpRect.w > canvasWidthVp * 3
+    if (nodeVisible && hasSize && isContentfulVisualNode(type, attrs) && !selfSkipReason && !tooWide) {
       const unified = buildUnifiedNode(node, type, attrs, vpRect, canvasWidthVp, canvasHeightVp, resolution)
       unified.path = path
       unified.hiddenFrameworkAncestor = hiddenFrameworkAncestor
@@ -106,13 +113,14 @@ function getArkuiSubtreePruneReason(type, attrs, rect, canvasWidthVp, canvasHeig
   return rules.find(Boolean) || null
 }
 
-function getArkuiSelfSkipReason(type, attrs, rect, canvasWidthVp) {
+function getArkuiSelfSkipReason(type, attrs) {
   const normalizedType = String(type || '').toLowerCase()
   const selfSkipTypes = new Set([
     'jsview',
     'stack',
     'column',
     'row',
+    'flex',
     'list',
     'listitem',
     'group',
@@ -123,11 +131,8 @@ function getArkuiSelfSkipReason(type, attrs, rect, canvasWidthVp) {
     'spacer',
   ])
   const bgColor = String(attrs.backgroundColor || '').trim()
-  const rules = [
-    selfSkipTypes.has(normalizedType) && (!bgColor || bgColor.startsWith('#00')) ? 'transparent-layout-node' : null,
-    rect && rect.w > canvasWidthVp * 3 ? 'too-wide' : null,
-  ]
-  return rules.find(Boolean) || null
+  const transparent = !bgColor || bgColor.startsWith('#00')
+  return selfSkipTypes.has(normalizedType) && transparent ? 'transparent-layout-node' : null
 }
 
 function isArkuiSpecialPrunedType(type) {
@@ -229,20 +234,28 @@ function extractArkuiStyle(type, attrs, resolution, vpRect) {
   if (sizeHeight !== null && sizeHeight > 0) s.height = sizeHeight
 
   // 圆角规范化（用 size 尺寸）
+  // borderRadius 可能是对象格式 {topLeft, ...} 或统一字符串格式 "20.00vp"
+  let brRaw = null
   if (attrs.borderRadius && typeof attrs.borderRadius === 'object') {
-    const br = parseBorderRadius(attrs.borderRadius)
-    if (br && Object.values(br).some(v => v > 0)) {
-      if (sizeWidth !== null && sizeHeight !== null && sizeWidth > 0 && sizeHeight > 0) {
-        const maxBr = Math.min(sizeWidth, sizeHeight) / 2
-        s.borderRadius = {
-          topLeft:     Math.min(br.topLeft,     maxBr),
-          topRight:    Math.min(br.topRight,    maxBr),
-          bottomRight: Math.min(br.bottomRight, maxBr),
-          bottomLeft:  Math.min(br.bottomLeft,  maxBr),
-        }
-      } else {
-        s.borderRadius = br
+    brRaw = parseBorderRadius(attrs.borderRadius)
+  } else if (typeof attrs.borderRadius === 'string') {
+    const val = parseVp(attrs.borderRadius)
+    if (val !== null && val > 0) {
+      brRaw = { topLeft: val, topRight: val, bottomRight: val, bottomLeft: val }
+    }
+  }
+  if (brRaw && Object.values(brRaw).some(v => v > 0)) {
+    const br = brRaw
+    if (sizeWidth !== null && sizeHeight !== null && sizeWidth > 0 && sizeHeight > 0) {
+      const maxBr = Math.min(sizeWidth, sizeHeight) / 2
+      s.borderRadius = {
+        topLeft:     Math.min(br.topLeft,     maxBr),
+        topRight:    Math.min(br.topRight,    maxBr),
+        bottomRight: Math.min(br.bottomRight, maxBr),
+        bottomLeft:  Math.min(br.bottomLeft,  maxBr),
       }
+    } else {
+      s.borderRadius = br
     }
   }
 
@@ -298,6 +311,12 @@ function extractArkuiStyle(type, attrs, resolution, vpRect) {
   if (['Row', 'Column', 'Flex'].includes(type) && attrs.space !== undefined) {
     const space = parseVp(attrs.space)
     if (space !== null && space > 0) s.itemSpacing = space
+  }
+
+  // 混合模式（非 0 表示特殊合成，不视为遮挡层）
+  const blendMode = parseInt(attrs.blendMode, 10)
+  if (!isNaN(blendMode) && blendMode !== 0) {
+    s.blendMode = blendMode
   }
 
   // ===== 文字相关 =====

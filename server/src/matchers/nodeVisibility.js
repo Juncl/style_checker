@@ -96,9 +96,29 @@ export function isPipelineVisibleNode(node) {
   if (node.type === 'text' && node.ocrVisibility?.visible === false) {
     const stroke = node.pixelVisibility?.textStrokeScore ?? 0
     const ratio = node.pixelVisibility?.visiblePixelRatio ?? 0
-    if (stroke < 0.05 && ratio > 0.20) return false
+    // 白色/浅色字体在 OCR 中天然识别率极低，不参与此项过滤
+    if (stroke < 0.05 && ratio > 0.20 && !isLightFontColor(node.style?.fontColor)) return false
   }
   return true
+}
+
+function isLightFontColor(color) {
+  if (!color || typeof color !== 'string') return false
+  const hex = color.replace('#', '')
+  let r, g, b
+  if (hex.length === 8) {
+    r = parseInt(hex.slice(2, 4), 16)
+    g = parseInt(hex.slice(4, 6), 16)
+    b = parseInt(hex.slice(6, 8), 16)
+  } else if (hex.length === 6) {
+    r = parseInt(hex.slice(0, 2), 16)
+    g = parseInt(hex.slice(2, 4), 16)
+    b = parseInt(hex.slice(4, 6), 16)
+  } else {
+    return false
+  }
+  // 感知亮度 > 200/255 视为浅色字体
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 200
 }
 
 export function annotateVisualOcclusion(nodes) {
@@ -137,50 +157,6 @@ export function annotateVisualOcclusion(nodes) {
   }
 }
 
-// 后绘制且足够不透明的图层，如果把前面的节点整块盖住，前面的节点和子节点都应视为不可匹配。
-export function annotateCoverageOcclusion(nodes) {
-  if (!nodes.some(n => n?.rect && Number.isFinite(n.rect.x))) return
-
-  const sorted = [...nodes]
-    .filter(n => n.visible !== false && n.rect && Number.isFinite(n.paintIndex))
-    .sort((a, b) => (a.paintIndex ?? 0) - (b.paintIndex ?? 0))
-
-  const coveredPaths = []
-
-  for (let i = 0; i < sorted.length; i++) {
-    const node = sorted[i]
-    if (node.visualOccluded) continue
-    if (!isCoverageCandidate(node)) continue
-
-    for (let j = i + 1; j < sorted.length; j++) {
-      const later = sorted[j]
-      if (!isOpaqueCoverNode(later)) continue
-      if (!sameParentPath(node.path, later.path)) continue
-      if (rectIntersectionArea(node.normRect, later.normRect) <= 0) continue
-      if (
-        rectContainsRect(later.normRect, node.normRect) ||
-        approximateCoveredRatio(node.normRect, [later.normRect]) >= 0.95
-      ) {
-        node.visualOccluded = true
-        node.visualOcclusionReason = 'covered-by-later-node'
-        coveredPaths.push(Array.isArray(node.path) ? [...node.path] : null)
-        break
-      }
-    }
-  }
-
-  if (!coveredPaths.length) return
-
-  for (const node of sorted) {
-    if (node.visualOccluded) continue
-    const path = node.path
-    if (!Array.isArray(path) || path.length === 0) continue
-    if (coveredPaths.some(prefix => prefix && isPathPrefix(prefix, path))) {
-      node.visualOccluded = true
-      node.visualOcclusionReason = 'covered-by-opaque-ancestor'
-    }
-  }
-}
 
 export function isVisualVisibilityCandidate(node) {
   if (!node?.visible || !node.normRect) return false
@@ -195,25 +171,11 @@ export function isOccludingNode(node) {
   const s = node.style || {}
   const opacity = s.opacity == null ? 1 : s.opacity
   if (opacity < 0.70) return false
+  // 特殊混合模式（非 0）表示该节点以合成方式叠加，不是普通覆盖层，不视为遮挡物
+  if (s.blendMode != null && s.blendMode !== 0) return false
   return true
 }
 
-export function approximateCoveredRatio(rect, blockers) {
-  if (!blockers.length) return 0
-  const cols = 8
-  const rows = 4
-  let covered = 0
-  let total = 0
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const px = rect.x + (x + 0.5) / cols * rect.w
-      const py = rect.y + (y + 0.5) / rows * rect.h
-      total += 1
-      if (blockers.some(b => pointInRect(px, py, b))) covered += 1
-    }
-  }
-  return total ? covered / total : 0
-}
 
 export function approximateVisibleRatio(rect, blockers, viewport) {
   const cols = 8
@@ -281,45 +243,6 @@ function isRootSizedOrLargerNode(node) {
   return w >= 0.999 && h >= 0.999
 }
 
-function isCoverageCandidate(node) {
-  if (!node?.rect || !node?.normRect) return false
-  if (node.type === 'text') return hasUsableText(node)
-  return isRenderableNonTextNode(node)
-}
-
-function isOpaqueCoverNode(node) {
-  if (!node?.visible || node.visualOccluded || !node.rect || !node.normRect) return false
-  if (node.type === 'text') return false
-  if (!isRenderableNonTextNode(node)) return false
-  const s = node.style || {}
-  const opacity = s.opacity == null ? 1 : s.opacity
-  if (opacity < 0.96) return false
-  return true
-}
-
-function rectContainsRect(container, rect) {
-  return rect.x >= container.x &&
-    rect.y >= container.y &&
-    rect.x + rect.w <= container.x + container.w &&
-    rect.y + rect.h <= container.y + container.h
-}
-
-function sameParentPath(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length < 2 || b.length < 2) return false
-  if (a.length !== b.length) return false
-  for (let i = 0; i < a.length - 1; i++) {
-    if (a[i] !== b[i]) return false
-  }
-  return true
-}
-
-function isPathPrefix(prefix, path) {
-  if (!Array.isArray(prefix) || !Array.isArray(path) || prefix.length >= path.length) return false
-  for (let i = 0; i < prefix.length; i++) {
-    if (prefix[i] !== path[i]) return false
-  }
-  return true
-}
 
 function isBlankNode(node) {
   const type = String(node?.type || node?.name || '').trim().toLowerCase()

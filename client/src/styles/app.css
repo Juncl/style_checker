@@ -321,6 +321,12 @@ body {
   font-size: 10px;
   line-height: 1.35;
   color: var(--hw-subtext);
+  border-radius: 3px;
+  padding: 1px 3px;
+  transition: filter 0.1s;
+}
+.debugger-item:hover {
+  filter: brightness(0.92);
 }
 
 .debugger-swatch {
