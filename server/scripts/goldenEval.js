@@ -1,8 +1,8 @@
 import { readFileSync, readdirSync, existsSync } from 'fs'
 import { join, resolve } from 'path'
 
-import { parseDesign } from '../src/parsers/designParser.js'
-import { parseArkui } from '../src/parsers/arkuiParser.js'
+import { parseDesign } from '../src/parsers/design/index.js'
+import { parseArkui } from '../src/parsers/arkui/index.js'
 import { matchNodes } from '../src/matchers/nodeMatcher.js'
 import { annotatePixelVisibility } from '../src/utils/imageFeatures.js'
 

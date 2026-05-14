@@ -2,6 +2,8 @@
 
 > 生成日期：2026-04-26  
 > 数据来源：case1 ~ case12，共 12 个 case
+>
+> ⚠️ **本文为旧架构快照**：解析阶段已重构为 5 步流水线（`parsers/{arkui,design}/{buildTree,pruneTree,annotateTree,flattenTree,index}.js`）。文内的代码片段以 `designParser.js` / `arkuiParser.js` 旧文件名指代相应逻辑，对应到新架构请去 `parsers/design/buildTree.js` 和 `parsers/arkui/buildTree.js`。
 
 ---
 

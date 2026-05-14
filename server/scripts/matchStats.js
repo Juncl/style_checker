@@ -1,15 +1,12 @@
 import { readFileSync, readdirSync, existsSync } from 'fs'
 import { join, resolve } from 'path'
 
-import { parseDesign } from '../src/parsers/designParser.js'
-import { parseArkui } from '../src/parsers/arkuiParser.js'
+import { parseDesign } from '../src/parsers/design/index.js'
+import { parseArkui } from '../src/parsers/arkui/index.js'
 import { matchNodes } from '../src/matchers/nodeMatcher.js'
 import { compareAll } from '../src/comparators/styleComparator.js'
-import { annotatePixelVisibility } from '../src/utils/imageFeatures.js'
 
 const casesDir = resolve(process.cwd(), '../case')
-const useVisualMatching = process.argv.includes('--visual') ||
-  process.env.STYLE_CHECKER_VISUAL_MATCHING === 'true'
 const matchDirection = process.argv.includes('--design-first') ||
   process.env.STYLE_CHECKER_MATCH_DIRECTION === 'design'
   ? 'design'
@@ -32,18 +29,21 @@ for (const caseId of caseIds) {
   const designJson = JSON.parse(readFileSync(join(caseDir, 'design.json'), 'utf-8'))
   const arkuiJson = JSON.parse(readFileSync(join(caseDir, 'arkui.json'), 'utf-8'))
 
-  const design = parseDesign(designJson)
-  const arkui = parseArkui(arkuiJson)
-  const pixelVisibility = annotatePixelVisibility(arkui.nodes, readFileSync(join(caseDir, 'arkui.png')), {
-    w: arkui.canvasWidthVp,
-    h: arkui.canvasHeightVp,
-  }, { source: 'arkui' })
-  const visualImages = {
-    designBuffer: readFileSync(join(caseDir, 'design.png')),
-    arkuiBuffer: readFileSync(join(caseDir, 'arkui.png')),
+  const designImagePath = join(caseDir, 'design.png')
+  const arkuiImagePath = join(caseDir, 'arkui.png')
+  const designBuffer = existsSync(designImagePath) ? readFileSync(designImagePath) : undefined
+  const arkuiBuffer = existsSync(arkuiImagePath) ? readFileSync(arkuiImagePath) : undefined
+
+  const design = await parseDesign(designJson, { imageBuffer: designBuffer })
+  const arkui = await parseArkui(arkuiJson, { imageBuffer: arkuiBuffer })
+
+  const visualImages = designBuffer && arkuiBuffer ? {
+    designBuffer,
+    arkuiBuffer,
     designCanvas: { w: design.canvasWidth, h: design.canvasHeight },
     arkuiCanvas: { w: arkui.canvasWidthVp, h: arkui.canvasHeightVp },
-  }
+  } : undefined
+
   const {
     pairs,
     unmatchedDesign,
@@ -76,7 +76,6 @@ for (const caseId of caseIds) {
     unmatchedDesign: unmatchedDesign.length,
     unmatchedArkui: unmatchedArkui.length,
     lowConfidence,
-    pixelInvisible: pixelVisibility.hidden,
     designRegions: regions?.design?.length || 0,
     arkuiRegions: regions?.arkui?.length || 0,
     regionPairs: regions?.pairs?.length || 0,
@@ -86,7 +85,7 @@ for (const caseId of caseIds) {
 }
 
 console.log(`Match direction: ${matchDirection === 'arkui' ? 'arkui-first' : 'design-first'}`)
-console.log(`Visual region matching: on (${useVisualMatching ? 'legacy flag set' : 'default'})\n`)
+console.log()
 console.table(rows.map(({ matchTypes, ...r }) => r))
 console.log('\nMatch type breakdown:')
 for (const row of rows) {

@@ -22,7 +22,6 @@ import {
   numericTextCompatible,
 } from './textSemantics.js'
 import {
-  annotateVisualOcclusion,
   isMatchableNode,
   isComparableOutputNode,
   isCompatibleType,
@@ -116,9 +115,6 @@ function matchNodesArkuiFirst(designNodes, arkuiNodes, options = {}) {
 }
 
 function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
-  annotateVisualOcclusion(designNodes)
-  annotateVisualOcclusion(arkuiNodes)
-
   const usedArkui = new Set()
   const pairs = []
   const matchedDesignIds = new Set()

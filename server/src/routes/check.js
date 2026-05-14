@@ -11,14 +11,11 @@ import { dirname, join, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import multer from 'multer'
 
-import { parseDesign } from '../parsers/designParser.js'
-import { parseArkui }  from '../parsers/arkuiParser.js'
+import { parseDesign } from '../parsers/design/index.js'
+import { parseArkui }  from '../parsers/arkui/index.js'
 import { matchNodes }  from '../matchers/nodeMatcher.js'
 import { compareAll }  from '../comparators/styleComparator.js'
 import { compareSpatialRelations } from '../comparators/spatialComparator.js'
-import { annotatePixelVisibility } from '../utils/imageFeatures.js'
-import { annotateTextOcrVisibility } from '../utils/textOcrVisibility.js'
-import { isPipelineVisibleNode } from '../matchers/nodeVisibility.js'
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage() })
@@ -133,34 +130,18 @@ router.post(
 async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
   const t0 = Date.now()
 
-  // 1. 解析
-  const designResult = parseDesign(designJson)
-  const arkuiResult  = parseArkui(arkuiJson)
+  // 1. 解析（流水线内已完成像素/OCR 标注 + 不可见节点剔除）
+  const [designResult, arkuiResult] = await Promise.all([
+    parseDesign(designJson, { imageBuffer: assets.designImageBuffer }),
+    parseArkui(arkuiJson,  { imageBuffer: assets.arkuiImageBuffer }),
+  ])
 
-  const pixelVisibility = assets.arkuiImageBuffer
-    ? annotatePixelVisibility(arkuiResult.nodes, assets.arkuiImageBuffer, {
-      w: arkuiResult.canvasWidthVp,
-      h: arkuiResult.canvasHeightVp,
-    }, { source: 'arkui' })
-    : { checked: 0, hidden: 0 }
-  const arkuiOcrVisibility = assets.arkuiImageBuffer
-    ? await annotateTextOcrVisibility(arkuiResult.nodes, assets.arkuiImageBuffer, {
-      w: arkuiResult.canvasWidthVp,
-      h: arkuiResult.canvasHeightVp,
-    }, {
-      source: 'arkui',
-      mode: 'all',
-    })
-    : { checked: 0, hidden: 0, matched: 0, ocrItems: 0 }
-  const designPixelVisibility = assets.designImageBuffer
-    ? annotatePixelVisibility(designResult.nodes, assets.designImageBuffer, {
-      w: designResult.canvasWidth,
-      h: designResult.canvasHeight,
-    }, { source: 'design' })
-    : { checked: 0, hidden: 0 }
+  // 流水线已剔除不可见节点，直接使用 nodes
+  const designVisibleNodes = designResult.nodes
+  const arkuiVisibleNodes  = arkuiResult.nodes
 
-  const designVisibleNodes = designResult.nodes.filter(isPipelineVisibleNode)
-  const arkuiVisibleNodes = arkuiResult.nodes.filter(isPipelineVisibleNode)
+  const arkuiAnnotate  = arkuiResult.annotateStats  || {}
+  const designAnnotate = designResult.annotateStats || {}
 
   // 2. 匹配
   const {
@@ -210,10 +191,6 @@ async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
     stats: {
       designNodes:    designVisibleNodes.length,
       arkuiNodes:     arkuiVisibleNodes.length,
-      designNodesRaw: designResult.nodes.length,
-      arkuiNodesRaw: arkuiResult.nodes.length,
-      designNodesFilteredOut: designResult.nodes.length - designVisibleNodes.length,
-      arkuiNodesFilteredOut: arkuiResult.nodes.length - arkuiVisibleNodes.length,
       comparableDesignNodes: comparableDesignCount,
       comparableArkuiNodes: comparableArkuiCount,
       matchedPairs:   pairs.length,
@@ -222,14 +199,14 @@ async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
       matchCoverage:   Number((matchCoverage * 100).toFixed(1)),
       matchDirection: assets.matchDirection || DEFAULT_MATCH_DIRECTION,
       lowConfidencePairs,
-      pixelVisibilityChecked: pixelVisibility.checked,
-      pixelInvisibleNodes: pixelVisibility.hidden,
-      arkuiOcrVisibilityChecked: arkuiOcrVisibility.checked,
-      arkuiOcrInvisibleTextNodes: arkuiOcrVisibility.hidden,
-      arkuiOcrMatchedTextNodes: arkuiOcrVisibility.matched,
-      arkuiOcrItems: arkuiOcrVisibility.ocrItems,
-      designPixelVisibilityChecked: designPixelVisibility.checked,
-      designPixelInvisibleNodes: designPixelVisibility.hidden,
+      pixelVisibilityChecked: arkuiAnnotate.pixelChecked || 0,
+      pixelInvisibleNodes: arkuiAnnotate.pixelHidden || 0,
+      arkuiOcrVisibilityChecked: arkuiAnnotate.ocrChecked || 0,
+      arkuiOcrInvisibleTextNodes: arkuiAnnotate.ocrHidden || 0,
+      arkuiOcrMatchedTextNodes: arkuiAnnotate.ocrMatched || 0,
+      arkuiOcrItems: arkuiAnnotate.ocrItems || 0,
+      designPixelVisibilityChecked: designAnnotate.pixelChecked || 0,
+      designPixelInvisibleNodes: designAnnotate.pixelHidden || 0,
       errorCount,
       warningCount,
       infoCount,
