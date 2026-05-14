@@ -7,7 +7,7 @@
         <span class="title">UI 一致性检查</span>
       </div>
       <div class="header-right">
-        <el-tag v-if="result" :type="scoreTagType" size="large" effect="dark">
+        <el-tag v-if="result" :type="scoreTagType" class="score-tag" effect="plain">
           还原度评分 {{ result.stats.score }} 分
         </el-tag>
       </div>
@@ -23,13 +23,19 @@
           </template>
           <div v-if="!cases.length" class="hint">加载中…</div>
           <div class="case-grid">
-            <el-button
+            <div
               v-for="c in cases" :key="c.id"
-              :type="selectedCase === c.id ? 'primary' : 'default'"
-              size="small"
-              :loading="loading && selectedCase === c.id"
+              :class="['case-card', { active: selectedCase === c.id }]"
               @click="selectCase(c.id)"
-            >{{ c.id }}</el-button>
+            >
+              <div class="case-card-thumb">
+                <img :src="imageUrl(c.id, 'arkui')" :alt="c.id" class="case-card-img" />
+                <div v-if="loading && selectedCase === c.id" class="case-card-loading">
+                  <el-icon class="spin"><Loading /></el-icon>
+                </div>
+              </div>
+              <span class="case-card-label">{{ c.id }}</span>
+            </div>
           </div>
         </el-card>
 
@@ -47,7 +53,7 @@
             @dragleave.prevent="isDragOver = false"
             @drop.prevent="onDrop"
           >
-            <el-icon size="22" color="#c0c4cc"><FolderOpened /></el-icon>
+            <el-icon class="drop-zone-icon"><FolderOpened /></el-icon>
             <span class="drop-hint">点击或拖拽文件到此处</span>
             <span class="drop-sub">同时选择 design / arkui JSON 和 arkui 图片</span>
           </div>
@@ -76,7 +82,7 @@
           </ul>
 
           <el-button
-            type="primary" size="small" style="width:100%;margin-top:6px"
+            type="primary" class="upload-btn" style="width:100%;margin-top:6px"
             :loading="loading"
               :disabled="!uploadFiles.designJson || !uploadFiles.arkuiJson || !uploadFiles.arkuiImage"
               @click="runUpload"
