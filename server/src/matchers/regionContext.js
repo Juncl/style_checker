@@ -1,6 +1,6 @@
-import { centerY, unionNormRect, sizeRatio } from './matchGeometry.js'
-import { hasVisualDecoration, isMatchableNode } from './nodeVisibility.js'
-import { normalizeText } from './textSemantics.js'
+import { centerY, unionNormRect, sizeRatio } from '../utils/matchGeometry.js'
+import { hasVisualDecoration, isMatchableNode } from '../utils/nodeVisibility.js'
+import { normalizeText, setJaccard } from '../utils/textSemantics.js'
 
 // Regions provide coarse page structure before individual node matching runs.
 export function segmentRegions(nodes, source) {
@@ -213,13 +213,6 @@ export function histogramSimilarity(a, b) {
     bb += bv * bv
   }
   return aa && bb ? dot / Math.sqrt(aa * bb) : 0
-}
-
-export function setJaccard(a, b) {
-  if (!a?.size && !b?.size) return 0
-  let inter = 0
-  for (const item of a) if (b.has(item)) inter += 1
-  return inter / (a.size + b.size - inter || 1)
 }
 
 export function formatRegionForOutput(region) {

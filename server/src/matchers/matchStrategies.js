@@ -1,4 +1,4 @@
-import { centerDistance, centerY, computeIoU, rectCenter, sizeRatio, xDistance, yDistance } from './matchGeometry.js'
+import { centerDistance, centerY, computeIoU, rectCenter, sizeRatio, xDistance, yDistance } from '../utils/matchGeometry.js'
 import {
   allowsTextPositionFallback,
   hasUsableText,
@@ -15,10 +15,11 @@ import {
   textRoleMatchScore,
   textSemanticSimilarity,
   textStyleSimilarity,
-} from './textSemantics.js'
+} from '../utils/textSemantics.js'
 import { hasSameTextAttributeFingerprint } from './textFingerprints.js'
-import { hasBackgroundColor, isCompatibleType, isMatchableNode } from './nodeVisibility.js'
+import { hasBackgroundColor, isCompatibleType, isMatchableNode } from '../utils/nodeVisibility.js'
 import { candidatePool, regionAffinity } from './regionContext.js'
+import { comparePaths } from '../utils/pathOrder.js'
 
 const SCORE_TIE_EPSILON = 1e-9
 
@@ -332,7 +333,7 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
     .sort((a, b) => {
       if (b.bestScore !== a.bestScore) return b.bestScore - a.bestScore
       if (a.bestAnchorDist !== b.bestAnchorDist) return a.bestAnchorDist - b.bestAnchorDist
-      return (a.node.paintIndex ?? 0) - (b.node.paintIndex ?? 0)
+      return comparePaths(a.node.path, b.node.path)
     })
 
   for (const { node: dn, anchors: nodeAnchors } of candidateDesignNodes) {

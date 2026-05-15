@@ -8,7 +8,7 @@ import {
   bestTextPositionMatch,
   bestIoUMatch,
 } from './matchStrategies.js'
-import { yDistance, xDistance, computeIoU, sizeRatio } from './matchGeometry.js'
+import { yDistance, xDistance, computeIoU, sizeRatio } from '../utils/matchGeometry.js'
 import {
   textStyleSimilarity,
   isAmbiguousUnitText,
@@ -20,7 +20,7 @@ import {
   normalizeText,
   textFieldType,
   numericTextCompatible,
-} from './textSemantics.js'
+} from '../utils/textSemantics.js'
 import {
   isMatchableNode,
   isComparableOutputNode,
@@ -29,7 +29,7 @@ import {
   hasBackgroundColor,
   hasVisualDecoration,
   isRenderableNonTextNode,
-} from './nodeVisibility.js'
+} from '../utils/nodeVisibility.js'
 import {
   segmentRegions,
   buildRegionContext,
@@ -37,6 +37,7 @@ import {
   annotatePairsWithRegions,
   formatRegionForOutput,
 } from './regionContext.js'
+import { comparePaths } from '../utils/pathOrder.js'
 import { matchAlignedTextRows, matchDynamicTextSlots } from './dynamicTextSlots.js'
 import { matchByListIndex } from './listIndexMatcher.js'
 
@@ -541,10 +542,10 @@ function selectOneToOnePairs(pairs) {
     const backgroundDelta = backgroundMatchPriority(b) - backgroundMatchPriority(a)
     if (backgroundDelta !== 0) return backgroundDelta
 
-    const designOrderDelta = (a.design.paintIndex ?? 0) - (b.design.paintIndex ?? 0)
+    const designOrderDelta = comparePaths(a.design.path, b.design.path)
     if (designOrderDelta !== 0) return designOrderDelta
 
-    return (a.arkui.paintIndex ?? 0) - (b.arkui.paintIndex ?? 0)
+    return comparePaths(a.arkui.path, b.arkui.path)
   })
 
   for (const pair of sorted) {
@@ -554,7 +555,7 @@ function selectOneToOnePairs(pairs) {
     usedArkui.add(pair.arkui.id)
   }
 
-  return selected.sort((a, b) => (a.design.paintIndex ?? 0) - (b.design.paintIndex ?? 0))
+  return selected.sort((a, b) => comparePaths(a.design.path, b.design.path))
 }
 
 function pairPriority(pair) {

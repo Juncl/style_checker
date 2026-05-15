@@ -14,8 +14,8 @@
  * 不过滤已匹配节点 —— 本 Pass 的本职是纠偏先前 Pass 的错配：
  * 把已匹配节点也纳入 list，让 list-index 的高 priority 在最终 selectOneToOnePairs 中覆盖旧配对。
  */
-import { computeIoU } from './matchGeometry.js'
-import { isMatchableNode } from './nodeVisibility.js'
+import { computeIoU } from '../utils/matchGeometry.js'
+import { isMatchableNode } from '../utils/nodeVisibility.js'
 import { makePair } from './matchStrategies.js'
 
 const ROW_TOLERANCE       = 0.005   // 同行 y 中心 / h / w 容差（normRect, 约 4vp）

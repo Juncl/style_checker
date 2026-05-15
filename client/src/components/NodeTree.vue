@@ -147,7 +147,7 @@ function pathKey(path) {
 const sortedNodes = computed(() =>
   (() => {
     const list = [...props.nodes]
-      .sort((a, b) => comparePaths(a.path, b.path) || (a.paintIndex ?? 0) - (b.paintIndex ?? 0))
+      .sort((a, b) => comparePaths(a.path, b.path))
       .map(n => {
         const path = normalizePath(n.path)
         return {

@@ -1,4 +1,4 @@
-import { normalizeFontWeight } from './textSemantics.js'
+import { normalizeFontWeight } from '../utils/textSemantics.js'
 
 export function textAttributeFingerprint(node) {
   const s = node?.style || {}

@@ -3,7 +3,7 @@
  *
  * - 不包含 root 节点本身（root 仅作树根容器）
  * - 去掉树构建期的内部字段（_raw / _prunedReason / children）
- * - 不再赋 paintIndex（用户决定移除该概念）
+ * - paintIndex 概念已移除：下游一律按 path 字典序（utils/pathOrder.js）排序
  */
 
 export function flattenDesignTree(root) {

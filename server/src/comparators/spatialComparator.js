@@ -1,4 +1,5 @@
-import { rectCenter } from '../matchers/matchGeometry.js'
+import { rectCenter } from '../utils/matchGeometry.js'
+import { comparePaths } from '../utils/pathOrder.js'
 
 /**
  * 空间关系差异
@@ -25,11 +26,7 @@ export function compareSpatialRelations(pairs) {
 
   const diffs = []
   for (const group of groups.values()) {
-    const siblings = [...group].sort((a, b) => {
-      const dp = (a.design.paintIndex ?? 0) - (b.design.paintIndex ?? 0)
-      if (dp !== 0) return dp
-      return (a.design.path?.length ?? 0) - (b.design.path?.length ?? 0)
-    })
+    const siblings = [...group].sort((a, b) => comparePaths(a.design.path, b.design.path))
 
     if (siblings.length >= 2) {
       diffs.push(...compareSiblingRelations(siblings))

@@ -20,15 +20,21 @@ const TOLERANCE = {
   colorDelta:    0,    // 颜色欧氏距离（0-442 范围）；0 表示完全精确匹配
 }
 
-const BACKGROUND_IGNORE_TYPES = new Set([
+// 硬豁免：节点 rawType 为 image / img 时，无论有无 backgroundColor 都不参与填充对比
+// （这类节点的填充语义在 ArkUI 是 fillColor / objectFit，不是 backgroundColor）
+const HARD_IGNORE_BACKGROUND_TYPES = new Set([
+  'image',
+  'img',
+])
+
+// 软豁免：仅当"该侧节点"本身没有填充值（缺失或透明）时，才跳过该侧驱动的填充对比
+const SOFT_IGNORE_BACKGROUND_TYPES = new Set([
   'button',
   'path',
   'divider',
   'progress',
   'swiperindicator',
   'icon',
-  'image',
-  'img',
   'video',
   'canvas',
 ])
@@ -305,18 +311,21 @@ function diffGradient(diffs, ctx, dGrad, aGrad, dv, av) {
 }
 
 function diffBackgroundColor(diffs, ctx, designNode, arkuiNode, dv, av) {
-  // 检查是否为渐变色
-  const dGrad = parseGradient(dv)
-  const aGrad = parseGradient(av)
+  // 规则 1：任一侧是 image / img → 无条件忽略填充对比
+  if (isHardIgnoreBackgroundNode(designNode) || isHardIgnoreBackgroundNode(arkuiNode)) {
+    return
+  }
 
-  // 规则：只有当 backgroundColor 无值或透明色，且节点类型在忽略列表中，才忽略比较
-  // 如果有值（包括渐变色），即使是忽略类型也要比较
   const dHasValue = dv && !isTransparentColor(dv)
   const aHasValue = av && !isTransparentColor(av)
 
-  if (!dHasValue && !aHasValue && (shouldIgnoreBackgroundColorNode(designNode) || shouldIgnoreBackgroundColorNode(arkuiNode))) {
-    return
-  }
+  // 规则 2：该侧是软豁免类型且该侧无填充值 → 跳过（按侧豁免）
+  if (isSoftIgnoreBackgroundNode(designNode) && !dHasValue) return
+  if (isSoftIgnoreBackgroundNode(arkuiNode) && !aHasValue) return
+
+  // 检查是否为渐变色
+  const dGrad = parseGradient(dv)
+  const aGrad = parseGradient(av)
 
   // 如果任一侧是渐变色，走渐变比较逻辑
   if (dGrad || aGrad) {
@@ -433,10 +442,14 @@ function isTitlebarType(node) {
   return normalizedNodeType(node) === 'titlebar'
 }
 
-function shouldIgnoreBackgroundColorNode(node) {
+function isHardIgnoreBackgroundNode(node) {
   if (!node) return false
-  const rawType = normalizedNodeType(node)
-  return BACKGROUND_IGNORE_TYPES.has(rawType)
+  return HARD_IGNORE_BACKGROUND_TYPES.has(normalizedNodeType(node))
+}
+
+function isSoftIgnoreBackgroundNode(node) {
+  if (!node) return false
+  return SOFT_IGNORE_BACKGROUND_TYPES.has(normalizedNodeType(node))
 }
 
 function normalizedNodeType(node) {

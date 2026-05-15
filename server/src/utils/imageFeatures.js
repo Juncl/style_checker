@@ -1,5 +1,5 @@
 import { decodePng } from './pngDecoder.js'
-import { isRenderableNonTextNode } from '../matchers/nodeVisibility.js'
+import { isRenderableNonTextNode } from './nodeVisibility.js'
 
 export function annotatePixelVisibility(nodes, imageBuffer, canvas, options = {}) {
   if (!imageBuffer || !nodes?.length || !canvas?.w || !canvas?.h) return { checked: 0, hidden: 0 }

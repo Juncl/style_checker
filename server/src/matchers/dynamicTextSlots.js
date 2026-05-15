@@ -1,4 +1,4 @@
-import { centerY, rectCenter, sizeRatio, xDistance } from './matchGeometry.js'
+import { centerY, rectCenter, sizeRatio, xDistance } from '../utils/matchGeometry.js'
 import { makePair } from './matchStrategies.js'
 import { candidatePool, regionAffinity } from './regionContext.js'
 import {
@@ -8,8 +8,8 @@ import {
   normalizeText,
   textFieldType,
   textStyleSimilarity,
-} from './textSemantics.js'
-import { isMatchableNode } from './nodeVisibility.js'
+} from '../utils/textSemantics.js'
+import { isMatchableNode } from '../utils/nodeVisibility.js'
 
 // Time / weekday are "value slots" whose displayed内容 may change between design
 // mock and runtime data while the layout relationship stays stable.

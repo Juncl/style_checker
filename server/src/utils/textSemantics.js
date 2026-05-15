@@ -1,5 +1,12 @@
 import { xDistance, yDistance, centerY } from './matchGeometry.js'
-import { setJaccard } from './regionContext.js'
+
+// 集合 Jaccard 相似度，被 textSemantics 内部和 matchers/regionContext 使用
+export function setJaccard(a, b) {
+  if (!a?.size && !b?.size) return 0
+  let inter = 0
+  for (const item of a) if (b.has(item)) inter += 1
+  return inter / (a.size + b.size - inter || 1)
+}
 
 // Text gates protect the matcher from pairing unrelated labels that merely share a slot.
 export function normalizeText(text) {

@@ -4,8 +4,8 @@ import { resolve } from 'node:path'
 import { createWorker, PSM } from 'tesseract.js'
 import chiSimData from '@tesseract.js-data/chi_sim'
 
-import { rectIntersectionArea } from '../matchers/matchGeometry.js'
-import { normalizeText } from '../matchers/textSemantics.js'
+import { rectIntersectionArea } from './matchGeometry.js'
+import { normalizeText } from './textSemantics.js'
 import { decodePng } from './pngDecoder.js'
 
 const OCR_CACHE_PATH = resolve(process.cwd(), '.cache', 'tesseract')
