@@ -23,6 +23,8 @@ const upload = multer({ storage: multer.memoryStorage() })
 // case 数据根目录（相对于项目位置动态解析）
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const CASES_DIR = resolve(__dirname, '../../../case')
+// 验证集目录（人工标注的匹配真值，与 case 数据分离）
+const VALIDATION_DIR = resolve(__dirname, '../../../test/case')
 const DEFAULT_MATCH_DIRECTION = process.env.STYLE_CHECKER_MATCH_DIRECTION || 'arkui'
 
 // ── 列出所有可用 case ─────────────────────────────────────────────────────────
@@ -80,7 +82,7 @@ router.post('/check/case/:caseId', async (req, res) => {
       arkuiImageBuffer: readFileSync(join(caseDir, 'arkui.png')),
       matchDirection: matchDirectionFromRequest(req),
     })
-    const validationPath = join(caseDir, 'matchValidation.json')
+    const validationPath = join(VALIDATION_DIR, caseId, 'matchValidation.json')
     if (existsSync(validationPath)) {
       result.matchValidation = JSON.parse(readFileSync(validationPath, 'utf-8'))
     }

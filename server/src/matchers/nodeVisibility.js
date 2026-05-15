@@ -48,7 +48,9 @@ export function isAcceptablePair(pair) {
     }
     return true
   }
-  if (isStructuralContainer(design)) return false
+  // list-index 已通过"同行/同尺寸/同类/不重叠/上下锚/首节点 IoU"多重几何验证，
+  // 比 isStructuralContainer 的视觉装饰检查更严格，故跳过此过滤。
+  if (matchType !== 'list-index' && isStructuralContainer(design)) return false
 
   const weakMatch = ['anchor-topology', 'rescue-iou', 'container-iou', 'container-geometry'].includes(matchType)
   if (!weakMatch) return true

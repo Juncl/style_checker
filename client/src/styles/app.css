@@ -373,18 +373,31 @@ body {
 
 .debugger-item {
   display: grid;
-  grid-template-columns: 10px 26px 1fr 10px 1fr;
+  grid-template-columns: 10px 26px repeat(4, 1fr);
   align-items: center;
-  gap: 5px;
+  gap: 3px;
   font-size: 10px;
   line-height: 1.35;
   color: var(--octo-text-secondary);
   border-radius: var(--octo-radius-sm);
-  padding: 1px 3px;
+  padding: 2px 3px;
   transition: filter 0.1s;
 }
 .debugger-item:hover {
   filter: brightness(0.92);
+}
+
+.debugger-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-size: 9px;
+}
+
+.debugger-confidence {
+  text-align: center;
+  font-weight: 600;
 }
 
 .debugger-swatch {
@@ -399,16 +412,6 @@ body {
   font-weight: 700;
 }
 
-.debugger-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.debugger-arrow {
-  text-align: center;
-  color: var(--octo-text-secondary);
-}
 
 @media (max-width: 1180px) {
   .app-body { overflow: auto; }

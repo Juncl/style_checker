@@ -38,6 +38,7 @@ import {
   formatRegionForOutput,
 } from './regionContext.js'
 import { matchAlignedTextRows, matchDynamicTextSlots } from './dynamicTextSlots.js'
+import { matchByListIndex } from './listIndexMatcher.js'
 
 /**
  * 节点匹配器
@@ -45,6 +46,7 @@ import { matchAlignedTextRows, matchDynamicTextSlots } from './dynamicTextSlots.
  * Pass 2: 匹配区域内文本节点全局最优匹配
  * Pass 3: 基于强锚点周边拓扑关系匹配弱节点
  * Pass 4: 文本位置回退匹配
+ * Pass 4.5: 同行同类 list 顺序匹配（rawType 严格相同 + 上下邻居互证 + 首节点 IoU）
  * Pass 5: 几何 IoU 匹配（容器节点）
  * Pass 6: 非文本视觉容器几何匹配
  * Pass 7: 低置信度兜底匹配
@@ -247,6 +249,19 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
       regionContext
     )
     for (const pair of topologyPairs) {
+      pairs.push(pair)
+      usedArkui.add(pair.arkui.id)
+      matchedDesignIds.add(pair.design.id)
+    }
+  }
+
+  // ── Pass 4.5: 同行同类 list 顺序匹配 ─────────────────────────────────────
+  // 两侧分别识别同行 + rawType 严格相同的 list（≥2 个），并通过
+  // y 接近 + 上下邻居互为同一 pair + 首节点 IoU 验证后，按 x 升序锁定前 N 对。
+  // 不看 IoU 分数，避免横向列表中"溢出节点"被 IoU 抢走匹配。
+  {
+    const listPairs = matchByListIndex(designNodes, arkuiNodes, pairs)
+    for (const pair of listPairs) {
       pairs.push(pair)
       usedArkui.add(pair.arkui.id)
       matchedDesignIds.add(pair.design.id)
@@ -571,6 +586,7 @@ function matchTypePriority(matchType) {
     'text-row-slot': 21,
     'text-position': 20,
     'numeric-slot': 19,
+    'list-index': 18.5,
     'container-iou': 18,
     'spatial-bracket': 16,
     'container-geometry': 14,

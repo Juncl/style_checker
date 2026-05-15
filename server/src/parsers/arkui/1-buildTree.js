@@ -96,7 +96,146 @@ function walk(node, resolution, canvasW, canvasH, path) {
     unified.children.push(walk(children[i], resolution, canvasW, canvasH, [...path, i]))
   }
 
+  // Button / TextInput：拆分出虚拟文本子节点（便于与设计侧匹配）
+  const splitText = maybeBuildSplitTextChild(unified, type, attrs, vpRect, resolution, canvasW, canvasH, path)
+  if (splitText) unified.children.push(splitText)
+
   return unified
+}
+
+/**
+ * 对 Button / TextInput 节点拆分出一个虚拟 Text 子节点
+ * - Button: $attrs.label 存在 → 用 label 作为内容，默认居中对齐
+ * - TextInput: $attrs.text 或 placeholder 存在 → 用 text || placeholder 作为内容，遵循 textAlign
+ */
+function maybeBuildSplitTextChild(parentUnified, type, attrs, vpRect, resolution, canvasW, canvasH, path) {
+  if (!vpRect || vpRect.w <= 0 || vpRect.h <= 0) return null
+
+  let content = ''
+  let textAlign = 'center'
+  let fontSize = null
+  let fontWeight = null
+  let fontColor = null
+  let fontFamily = null
+
+  if (type === 'Button') {
+    if (!attrs.label) return null
+    content = String(attrs.label)
+    fontSize = parseVp(attrs.fontSize)
+    fontWeight = attrs.fontWeight
+    fontColor = attrs.fontColor
+    fontFamily = attrs.fontFamily
+    textAlign = 'center'
+  } else if (type === 'TextInput') {
+    const textVal = attrs.text
+    const placeholder = attrs.placeholder
+    const hasText = textVal !== undefined && textVal !== null && String(textVal).length > 0
+    const hasPlaceholder = placeholder !== undefined && placeholder !== null && String(placeholder).length > 0
+    if (!hasText && !hasPlaceholder) return null
+    content = hasText ? String(textVal) : String(placeholder)
+    fontSize = parseVp(attrs.fontSize)
+    fontWeight = attrs.fontWeight
+    fontColor = hasText ? attrs.fontColor : (attrs.placeholderColor || attrs.fontColor)
+    fontFamily = attrs.fontFamily
+    textAlign = normalizeArkuiTextAlignRaw(attrs.textAlign) || 'start'
+  } else {
+    return null
+  }
+
+  if (!content || !fontSize || fontSize <= 0) return null
+
+  const textRect = computeTextRect(vpRect, content, fontSize, textAlign, attrs.padding)
+
+  const childPath = [...path, parentUnified.children.length]
+  const childStyle = {
+    width: textRect.w,
+    height: textRect.h,
+    fontSize,
+  }
+  const fw = normalizeArkuiFontWeight(fontWeight)
+  if (fw !== null) childStyle.fontWeight = fw
+  if (fontColor) childStyle.fontColor = normalizeArkuiColor(fontColor)
+  if (fontFamily) childStyle.fontFamily = fontFamily
+  childStyle.textAlign = normalizeTextAlign(textAlign === 'center' ? 'TextAlign.Center' : textAlign === 'end' ? 'TextAlign.End' : 'TextAlign.Start')
+
+  return {
+    id: `${parentUnified.id}:t`,
+    source: 'arkui',
+    type: 'text',
+    rawType: 'text',
+    name: 'Text',
+    path: childPath,
+    rect: { x: textRect.x, y: textRect.y, w: textRect.w, h: textRect.h },
+    normRect: {
+      x: textRect.x / canvasW,
+      y: textRect.y / canvasH,
+      w: textRect.w / canvasW,
+      h: textRect.h / canvasH,
+    },
+    visible: true,
+    style: childStyle,
+    textContent: content,
+    children: [],
+    _frameworkType: false,
+    _spanType: false,
+    _blankType: false,
+    _attrs: { content, fontSize: String(fontSize), fontColor, fontFamily, textAlign },
+    _rectRaw: { x: textRect.x * resolution, y: textRect.y * resolution, w: textRect.w * resolution, h: textRect.h * resolution },
+    _splitFromParent: true,
+  }
+}
+
+/**
+ * 估算文本宽度（vp）：中文字符按 fontSize 算，其他字符按 fontSize*0.55 算
+ */
+function estimateTextWidth(content, fontSize) {
+  let w = 0
+  for (const ch of String(content)) {
+    if (/[一-龥　-〿＀-￯]/.test(ch)) {
+      w += fontSize
+    } else {
+      w += fontSize * 0.55
+    }
+  }
+  return w
+}
+
+/**
+ * 计算文本子节点在父节点内的 rect（vp 单位、绝对坐标）
+ * - 文本垂直居中
+ * - 水平方向按 textAlign 对齐，考虑 padding（如有）
+ */
+function computeTextRect(parentRect, content, fontSize, textAlign, paddingRaw) {
+  const padding = parsePadding(paddingRaw) || { top: 0, right: 0, bottom: 0, left: 0 }
+  const innerLeft = parentRect.x + (padding.left || 0)
+  const innerRight = parentRect.x + parentRect.w - (padding.right || 0)
+  const innerWidth = Math.max(0, innerRight - innerLeft)
+
+  const textWidth = Math.min(estimateTextWidth(content, fontSize), innerWidth || parentRect.w)
+  const textHeight = fontSize
+
+  let x = innerLeft
+  if (textAlign === 'center') {
+    x = innerLeft + (innerWidth - textWidth) / 2
+  } else if (textAlign === 'end' || textAlign === 'right') {
+    x = innerRight - textWidth
+  }
+  const y = parentRect.y + (parentRect.h - textHeight) / 2
+
+  return { x, y, w: textWidth, h: textHeight }
+}
+
+/**
+ * 从 ArkUI 的 textAlign 枚举提取出简化值（start / center / end）
+ * 注：normalizeTextAlign 输出的是 left/center/right，这里只用作内部判断
+ */
+function normalizeArkuiTextAlignRaw(value) {
+  if (!value) return null
+  const v = String(value)
+  if (v.includes('Center')) return 'center'
+  if (v.includes('End') || v.includes('Right')) return 'end'
+  if (v.includes('Start') || v.includes('Left')) return 'start'
+  return null
 }
 
 function getArkuiTextContent(attrs) {

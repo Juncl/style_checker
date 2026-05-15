@@ -104,7 +104,7 @@ function convertToUnified(wrap, canvasW, canvasH) {
       h: (rect.h ?? 0) / canvasH,
     },
     visible: raw.state?.visible !== false,
-    style: extractDesignStyle(raw.type, style, layout, { hmSymbol }),
+    style: extractDesignStyle(raw.type, style, layout, { hmSymbol, rect }),
     children: [],
     _raw: raw,
   }
@@ -131,7 +131,7 @@ function isHmSymbolNode(node) {
 }
 
 function extractDesignStyle(nodeType, style, layout, options = {}) {
-  const { hmSymbol = false } = options
+  const { hmSymbol = false, rect = null } = options
   const result = {}
 
   if (style.opacity !== undefined) {
@@ -155,7 +155,18 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
   }
 
   if (Array.isArray(style.borderRadius) && style.borderRadius.some(v => v > 0)) {
-    result.borderRadius = parseDesignBorderRadius(style.borderRadius)
+    const br = parseDesignBorderRadius(style.borderRadius)
+    if (rect && rect.w > 0 && rect.h > 0) {
+      const maxBr = Math.min(rect.w, rect.h) / 2
+      result.borderRadius = {
+        topLeft:     Math.min(br.topLeft,     maxBr),
+        topRight:    Math.min(br.topRight,    maxBr),
+        bottomRight: Math.min(br.bottomRight, maxBr),
+        bottomLeft:  Math.min(br.bottomLeft,  maxBr),
+      }
+    } else {
+      result.borderRadius = br
+    }
   }
 
   const borders = Array.isArray(style.border) ? style.border : (style.border ? [style.border] : [])

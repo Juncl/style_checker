@@ -165,9 +165,10 @@
                   >
                     <span class="debugger-swatch" :style="{ background: item.color }"></span>
                     <span class="debugger-index">#{{ String(item.index + 1).padStart(2, '0') }}</span>
-                    <span class="debugger-text" :title="item.arkuiLabel">{{ item.arkuiLabel }}</span>
-                    <span class="debugger-arrow">↔</span>
-                    <span class="debugger-text" :title="item.designLabel">{{ item.designLabel }}</span>
+                    <span class="debugger-cell" :title="`Dev ID: ${item.arkuiId}`">{{ item.arkuiId || '-' }}</span>
+                    <span class="debugger-cell" :title="`Design ID: ${item.designId}`">{{ item.designId || '-' }}</span>
+                    <span class="debugger-cell" :title="`RawType: ${item.arkuiRawType}`">{{ item.arkuiRawType }}</span>
+                    <span class="debugger-cell debugger-confidence" :title="`Confidence: ${item.confidence}`">{{ item.confidence }}</span>
                   </div>
                 </div>
               </div>
@@ -374,44 +375,79 @@ const selectedArkuiDiffs = computed(() =>
 
 const debugPairItems = computed(() => {
   const validation = result.value?.matchValidation ?? null
-  const items = (result.value?.pairs ?? []).map((pair, index) => {
+  const pairs = result.value?.pairs ?? []
+  const items = []
+
+  if (!validation) {
+    // 无验证集时，按原逻辑显示所有pairs
+    pairs.forEach((pair, index) => {
+      const arkuiId = pair.arkui?.id ?? null
+      items.push({
+        key: `${pair.design?.id || 'd'}::${arkuiId || 'a'}::${index}`,
+        index,
+        color: DEBUG_COLORS[index % DEBUG_COLORS.length],
+        designId: pair.design?.id || null,
+        arkuiId,
+        arkuiRawType: pair.arkui?.rawType?.toLowerCase() || '-',
+        confidence: pair.confidence || '-',
+        validationStatus: null,
+      })
+    })
+    return items
+  }
+
+  // 从pairs出发，检查每个pair是否在validation中正确
+  const processedArkuiIds = new Set()
+
+  pairs.forEach((pair, index) => {
     const arkuiId = pair.arkui?.id ?? null
+    const designId = pair.design?.id ?? null
+
+    if (arkuiId) {
+      processedArkuiIds.add(arkuiId)
+    }
+
     let validationStatus = null
-    if (validation) {
-      if (arkuiId && arkuiId in validation) {
-        validationStatus = validation[arkuiId] === pair.design?.id ? 'ok' : 'wrong'
+    if (validation && arkuiId) {
+      // 检查validation中该arkuiId是否对应正确的designId
+      if (arkuiId in validation) {
+        validationStatus = validation[arkuiId] === designId ? 'ok' : 'wrong'
       } else {
+        // validation中没有该arkuiId，说明是多余的或错误的
         validationStatus = 'extra'
       }
     }
-    return {
-      key: `${pair.design?.id || 'd'}::${arkuiId || 'a'}::${index}`,
+
+    items.push({
+      key: `${designId || 'd'}::${arkuiId || 'a'}::${index}`,
       index,
       color: DEBUG_COLORS[index % DEBUG_COLORS.length],
-      designId: pair.design?.id || null,
+      designId,
       arkuiId,
-      designLabel: nodeDebugLabel(pair.design, true),
-      arkuiLabel: nodeDebugLabel(pair.arkui, true),
+      arkuiRawType: pair.arkui?.rawType?.toLowerCase() || '-',
+      confidence: pair.confidence || '-',
       validationStatus,
-    }
+    })
   })
+
+  // 处理validation中有但pairs中没有的（缺失）
   if (validation) {
-    const matchedArkuiIds = new Set(items.map(i => i.arkuiId).filter(Boolean))
     for (const [arkuiId, designId] of Object.entries(validation)) {
-      if (!matchedArkuiIds.has(arkuiId)) {
+      if (!processedArkuiIds.has(arkuiId)) {
         items.push({
           key: `missing::${arkuiId}`,
           index: null,
           color: '#999999',
           designId,
           arkuiId,
-          designLabel: designId,
-          arkuiLabel: arkuiId,
+          arkuiRawType: '-',
+          confidence: '-',
           validationStatus: 'missing',
         })
       }
     }
   }
+
   items.sort((a, b) => (parseInt(a.arkuiId) || 0) - (parseInt(b.arkuiId) || 0))
   items.forEach((item, i) => { item.index = i })
   return items
