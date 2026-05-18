@@ -33,7 +33,7 @@ const TEXT_TYPES = new Set(['Text'])
 const FRAMEWORK_TYPES = new Set([
   'root', 'JsView', 'Navigation', 'NavBar', 'NavigationContent',
   'Divider', 'ScrollBar', 'NavBarContent', 'NavigationMenu',
-  '__Common__', 'TitleBar', 'ToolBar', 'TabBar', 'BackButton',
+  '__Common__', 'TitleBar', 'ToolBar', 'BackButton',
 ])
 const SPAN_TYPES = new Set(['Span'])
 
@@ -54,11 +54,24 @@ export function buildArkuiTree(arkuiJson) {
   return { canvasWidthVp, canvasHeightVp, resolution, root }
 }
 
-function walk(node, resolution, canvasW, canvasH, path) {
+// clipRadius：最近一层 clip=true 祖先的 borderRadius，DFS 向下传播
+function walk(node, resolution, canvasW, canvasH, path, clipRadius = null) {
   const type = node['$type'] || ''
   const attrs = node['$attrs'] || {}
   const rectRaw = parseArkuiRect(node['$rect'])
   const vpRect = rectRaw ? toVpRect(rectRaw, resolution) : null
+
+  const style = extractArkuiStyle(type, attrs, resolution, vpRect)
+
+  // 当前节点是否产生新的 clip 上下文：clip=true 且自身有非零 borderRadius
+  const isClip = attrs.clip === 'true' || attrs.clip === true
+  const styleBrNonZero = style.borderRadius && Object.values(style.borderRadius).some(v => v > 0)
+  const nextClipRadius = (isClip && styleBrNonZero) ? style.borderRadius : clipRadius
+
+  // Image 节点：自身无圆角时，继承最近 clip 祖先的 borderRadius
+  if (type === 'Image' && !styleBrNonZero && nextClipRadius) {
+    style.borderRadius = { ...nextClipRadius }
+  }
 
   const unified = {
     id: String(node['$ID'] ?? `arkui:${path.join('.')}`),
@@ -79,7 +92,7 @@ function walk(node, resolution, canvasW, canvasH, path) {
       }
       : { x: 0, y: 0, w: 0, h: 0 },
     visible: true,
-    style: extractArkuiStyle(type, attrs, resolution, vpRect),
+    style,
     children: [],
     _frameworkType: FRAMEWORK_TYPES.has(type) || type === 'root',
     _spanType: SPAN_TYPES.has(type),
@@ -93,6 +106,14 @@ function walk(node, resolution, canvasW, canvasH, path) {
 
   const children = node['$children'] || []
   for (let i = 0; i < children.length; i++) {
+    if (nextClipRadius) {
+      const childRectRaw = parseArkuiRect(children[i]['$rect'])
+      const childVpRect = childRectRaw ? toVpRect(childRectRaw, resolution) : null
+      if (vpRect && childVpRect && clipRectsMatch(vpRect, childVpRect)) {
+        unified.children.push(walk(children[i], resolution, canvasW, canvasH, [...path, i], nextClipRadius))
+        continue
+      }
+    }
     unified.children.push(walk(children[i], resolution, canvasW, canvasH, [...path, i]))
   }
 
@@ -376,7 +397,22 @@ function extractArkuiStyle(type, attrs, resolution, vpRect) {
     }
   }
 
+  // Image 节点的 backgroundColor 是加载失败时的占位色，图片正常渲染时不显示，不参与样式比对
+  if (type === 'Image') {
+    delete s.backgroundColor
+  }
+
   return s
+}
+
+function clipRectsMatch(a, b) {
+  if (!a || !b) return false
+  return (
+    Math.abs(a.x - b.x) < 0.5 &&
+    Math.abs(a.y - b.y) < 0.5 &&
+    Math.abs(a.w - b.w) < 0.5 &&
+    Math.abs(a.h - b.h) < 0.5
+  )
 }
 
 function parseActualFontSize(value, resolution) {

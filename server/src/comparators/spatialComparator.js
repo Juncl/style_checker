@@ -6,7 +6,12 @@ import { comparePaths } from '../utils/pathOrder.js'
  * 只比较已经匹配成功的图层关系，优先看兄弟节点，其次看父子节点。
  * 返回的 diff 带有 relationRects，供前端高亮两层之间的空间。
  */
-export function compareSpatialRelations(pairs) {
+export function compareSpatialRelations(_pairs) {
+  return []
+}
+
+// eslint-disable-next-line no-unused-vars
+function _compareSpatialRelationsImpl(pairs) {
   const pairByDesignPath = new Map()
   const pairByArkuiPath = new Map()
 
@@ -63,34 +68,6 @@ function compareSiblingRelations(siblings) {
           : `兄弟节点纵向间距偏差 ${toVpDelta(d.gap - a.gap)}`,
         designValue: formatRelationValue(d),
         arkuiValue: formatRelationValue(a),
-        designNodeId: left.design.id,
-        arkuiNodeId: left.arkui.id,
-        relatedDesignNodeId: right.design.id,
-        relatedArkuiNodeId: right.arkui.id,
-        designName: left.design.name,
-        arkuiName: left.arkui.name,
-        relatedDesignName: right.design.name,
-        relatedArkuiName: right.arkui.name,
-        relationKind: 'sibling',
-        relationAxis: axis,
-        relationRects: {
-          design: [left.design.rect, right.design.rect],
-          arkui: [left.arkui.rect, right.arkui.rect],
-          axis,
-        },
-      }))
-    }
-
-    const alignDiff = Math.abs(d.crossOffset - a.crossOffset)
-    if (alignDiff > 0.03) {
-      diffs.push(makeSpatialDiff({
-        property: axis === 'horizontal' ? 'alignment.vertical' : 'alignment.horizontal',
-        severity: 'info',
-        description: axis === 'horizontal'
-          ? `兄弟节点纵向对齐偏差 ${toVpDelta(d.crossOffset - a.crossOffset)}`
-          : `兄弟节点横向对齐偏差 ${toVpDelta(d.crossOffset - a.crossOffset)}`,
-        designValue: formatAlignValue(d),
-        arkuiValue: formatAlignValue(a),
         designNodeId: left.design.id,
         arkuiNodeId: left.arkui.id,
         relatedDesignNodeId: right.design.id,

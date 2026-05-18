@@ -32,6 +32,7 @@ export function pruneDesignTree(root, canvasW, canvasH) {
   if (!root) return root
   hardPrune(root, canvasW, canvasH)
   semanticCollapse(root, canvasW, canvasH)
+  mergeFrameBackgroundRects(root)
   pruneBooleanOperationDescendants(root)
   softPrune(root)
   return root
@@ -231,4 +232,76 @@ function shouldUnwrap(node) {
   // 空文本 TEXT
   if (rawType === TEXT_TYPE && String(node.textContent || '').trim().length === 0) return true
   return false
+}
+
+// ─── 2b.5 背景节点同化 ─────────────────────────────────────────────────────────
+// 对每个 FRAME，倒序遍历 children，将 rect 完全一致的 FRAME/RECTANGLE 子节点同化：
+//   - 合并 child.style 进 frame.style（靠前的 child 最后合并，覆盖靠后的）
+//   - unwrap：把 child.children 提升到当前层（splice 替换），继续处理提升上来的节点
+// 自顶向下递归，每个节点最多被访问一次，O(N)。
+function mergeFrameBackgroundRects(root) {
+  absorbDescendants(root)
+}
+
+function absorbDescendants(node) {
+  if (String(node._raw?.type || '').toUpperCase() !== 'FRAME') {
+    for (const child of (node.children || [])) absorbDescendants(child)
+    return
+  }
+  // DFS 搜索子树，同化所有与 node 同 rect 的 FRAME/RECTANGLE 后代
+  absorbSameRectInSubtree(node, node.children)
+  // 对剩余子节点递归（子节点自身可能也是 FRAME）
+  for (const child of (node.children || [])) absorbDescendants(child)
+}
+
+// 在 children 列表中 DFS 寻找与 frameNode 同 rect 的 FRAME/RECTANGLE 后代：
+// - 同 rect FRAME：同化 style（有装饰时）+ unwrap，i 不变继续处理提升上来的节点
+// - 同 rect RECTANGLE：同化 style（有装饰时）+ 删除，停止（RECTANGLE 无后代）
+// - 其他节点：穿透，继续往下 DFS
+// 倒序遍历保证同层中 index 靠前的最后合并（靠前覆盖靠后）
+function absorbSameRectInSubtree(frameNode, children) {
+  let i = children.length - 1
+  while (i >= 0) {
+    const child = children[i]
+    if (!child) { i--; continue }
+    const ctype = String(child._raw?.type || '').toUpperCase()
+    if (rectsMatch(frameNode.rect, child.rect)) {
+      if (ctype === 'FRAME') {
+        if (childHasVisualDecoration(child)) {
+          frameNode.style = { ...frameNode.style, ...child.style }
+        }
+        children.splice(i, 1, ...(child.children || []))
+        // i 不变：继续处理提升上来的节点
+      } else if (ctype === 'RECTANGLE') {
+        if (childHasVisualDecoration(child)) {
+          frameNode.style = { ...frameNode.style, ...child.style }
+        }
+        children.splice(i, 1)
+        i--
+      } else {
+        // 同 rect 但非 FRAME/RECTANGLE（如 GROUP）：穿透继续
+        absorbSameRectInSubtree(frameNode, child.children || [])
+        i--
+      }
+    } else {
+      // 不同 rect：穿透继续
+      absorbSameRectInSubtree(frameNode, child.children || [])
+      i--
+    }
+  }
+}
+
+function childHasVisualDecoration(node) {
+  const s = node.style || {}
+  return !!(s.backgroundColor || s.borderRadius || s.border || s.shadow || s.backdropBlur || s.blur)
+}
+
+function rectsMatch(a, b) {
+  if (!a || !b || a.w <= 0 || a.h <= 0) return false
+  return (
+    Math.abs(a.x - b.x) < 0.5 &&
+    Math.abs(a.y - b.y) < 0.5 &&
+    Math.abs(a.w - b.w) < 0.5 &&
+    Math.abs(a.h - b.h) < 0.5
+  )
 }

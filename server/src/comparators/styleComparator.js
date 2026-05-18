@@ -8,10 +8,10 @@ import { isEquivalentFont } from '../utils/unitUtils.js'
 
 // 容差配置（单位 vp 或绝对值）
 const TOLERANCE = {
-  fontSize:      0.5,
+  fontSize:      0,    // 零容差：任何字号偏差都报
   lineHeight:    0.5,
   letterSpacing: 0.5,
-  borderRadius:  1.0,
+  borderRadius:  0,    // 零容差：任何圆角偏差都报
   padding:       1.0,
   opacity:       0.02,
   blur:          2.0,
@@ -64,7 +64,7 @@ export function compareStyles(pair) {
   // ── 文字节点属性 ──────────────────────────────────────────────────────────
   if (dn.type === 'text' && an.type === 'text') {
     if (!isTitlebarType(an)) {
-      diffNumber(diffs, ctx, 'fontSize', ds.fontSize, as_.fontSize, 'dp/vp', TOLERANCE.fontSize, '字号')
+      diffNumber(diffs, ctx, 'fontSize', ds.fontSize, as_.fontSize, 'dp/vp', TOLERANCE.fontSize, '字号', 2)
     }
     diffFontWeight(diffs, ctx, ds.fontWeight, as_.fontWeight)
     diffColor(diffs, ctx, 'fontColor',       ds.fontColor,   as_.fontColor,   '颜色')
@@ -105,12 +105,13 @@ export function compareAll(pairs) {
 // 各属性比较函数
 // ──────────────────────────────────────────────────────────────────────────────
 
-function diffNumber(diffs, ctx, prop, dv, av, unit, tol, label) {
+function diffNumber(diffs, ctx, prop, dv, av, unit, tol, label, errorThreshold) {
   if (dv === null || dv === undefined || av === null || av === undefined) return
   const delta = Math.abs(dv - av)
   if (delta > tol) {
+    const errThresh = errorThreshold !== undefined ? errorThreshold : tol * 3
     diffs.push(makeDiff(ctx, prop, `${dv}${unit}`, `${av}${unit}`,
-      delta > tol * 3 ? 'error' : 'warning',
+      delta > errThresh ? 'error' : 'warning',
       `${label}偏差 ${dv > av ? '+' : ''}${(dv - av).toFixed(1)}${unit}`))
   }
 }
@@ -225,7 +226,7 @@ function diffBorder(diffs, ctx, dv, av) {
     // 两边都没有描边宽度，按规则忽略。
   } else if (dw == null || aw == null) {
     diffs.push(makeDiff(ctx, 'borderWidth', formatBorderWidth(dv), formatBorderWidth(av), 'warning', '描边宽度：一侧缺失'))
-  } else if (widthDelta > 0.5) {
+  } else if (widthDelta > 0) {
     diffs.push(makeDiff(ctx, 'borderWidth', `${dw}dp`, `${aw}vp`,
       widthDelta > 2 ? 'error' : 'warning',
       `描边宽度偏差 ${(dw - aw).toFixed(1)}`))
@@ -323,6 +324,11 @@ function diffBackgroundColor(diffs, ctx, designNode, arkuiNode, dv, av) {
   if (isSoftIgnoreBackgroundNode(designNode) && !dHasValue) return
   if (isSoftIgnoreBackgroundNode(arkuiNode) && !aHasValue) return
 
+  // 规则 3：开发侧是 symbolglyph → 必须两侧均有非透明填充才对比，否则忽略
+  if (normalizedNodeType(arkuiNode) === 'symbolglyph') {
+    if (!dHasValue || !aHasValue) return
+  }
+
   // 检查是否为渐变色
   const dGrad = parseGradient(dv)
   const aGrad = parseGradient(av)
@@ -336,11 +342,7 @@ function diffBackgroundColor(diffs, ctx, designNode, arkuiNode, dv, av) {
   // 原有纯色逻辑
   const d = comparableBackground(dv)
   const a = comparableBackground(av)
-  if (!d && !a) return
-  if (!d || !a) {
-    diffs.push(makeDiff(ctx, 'backgroundColor', d || '—', a || '—', 'warning', '填充：一侧缺失'))
-    return
-  }
+  if (!d || !a) return
   const delta = colorDelta(d, a)
   if (delta > TOLERANCE.colorDelta) {
     const severity = delta > 40 ? 'error' : 'warning'
