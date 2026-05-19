@@ -7,12 +7,13 @@ export const fetchCases = () => http.get('/cases').then(r => r.data.cases)
 export const checkCase = (caseId) =>
   http.post(`/check/case/${caseId}`).then(r => r.data)
 
-export const checkUpload = (designJsonFile, arkuiJsonFile, designImageFile = null, arkuiImageFile = null) => {
+export const checkUpload = (designJsonFile, arkuiJsonFile, designImageFile = null, arkuiImageFile = null, deviceType = '鸿蒙-手机') => {
   const form = new FormData()
   form.append('designJson', designJsonFile)
   form.append('arkuiJson',  arkuiJsonFile)
   if (designImageFile) form.append('designImage', designImageFile)
   if (arkuiImageFile) form.append('arkuiImage', arkuiImageFile)
+  form.append('deviceType', deviceType)
   return http.post('/check/upload', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }).then(r => r.data)
