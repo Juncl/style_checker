@@ -87,7 +87,7 @@ export function isStructuralContainer(node) {
 }
 
 export function isComparableOutputNode(node) {
-  return isMatchableNode(node) && !isStructuralContainer(node)
+  return !isStructuralContainer(node)
 }
 
 export function approximateVisibleRatio(rect, blockers, viewport) {
@@ -125,41 +125,6 @@ export function isRenderableNonTextNode(node) {
 
 export function hasBackgroundColor(node) {
   return !!node?.style?.backgroundColor
-}
-
-export function isMatchableNode(node) {
-  return !!(
-    node?.visible &&
-    !isBlankNode(node) &&
-    !isHiddenByFramework(node) &&
-    !node.visualOccluded &&
-    node.rect?.w > 4 &&
-    node.rect?.h > 4 &&
-    !isRootSizedOrLargerNode(node)
-  )
-}
-
-function isHiddenByFramework(node) {
-  if (!node.hiddenFrameworkAncestor) return false
-  if (node.type === 'text') return true
-  if (node.pixelInvisible) return true
-  return (node.pixelVisibility?.visiblePixelRatio ?? 0) < 0.08
-}
-
-function isRootSizedOrLargerNode(node) {
-  const w = node?.normRect?.w
-  const h = node?.normRect?.h
-  if (!Number.isFinite(w) || !Number.isFinite(h)) return false
-
-  // Canvas-sized or larger nodes are usually wrappers/backgrounds and should not
-  // participate in candidate matching.
-  return w >= 0.999 && h >= 0.999
-}
-
-
-function isBlankNode(node) {
-  const type = String(node?.type || node?.name || '').trim().toLowerCase()
-  return type === 'blank'
 }
 
 export function isCompatibleType(designNode, arkuiNode) {

@@ -15,7 +15,6 @@
  * 把已匹配节点也纳入 list，让 list-index 的高 priority 在最终 selectOneToOnePairs 中覆盖旧配对。
  */
 import { computeIoU } from '../utils/matchGeometry.js'
-import { isMatchableNode } from '../utils/nodeVisibility.js'
 import { makePair } from './matchStrategies.js'
 
 const ROW_TOLERANCE       = 0.005   // 同行 y 中心 / h / w 容差（normRect, 约 4vp）
@@ -70,7 +69,7 @@ export function matchByListIndex(designNodes, arkuiNodes, pairs) {
 }
 
 function identifyLists(nodes) {
-  const candidates = nodes.filter(n => isMatchableNode(n) && n.type === 'container')
+  const candidates = nodes.filter(n => n.type === 'container')
 
   const rows = []
   for (const n of candidates) {

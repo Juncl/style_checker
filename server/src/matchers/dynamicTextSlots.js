@@ -9,7 +9,6 @@ import {
   textFieldType,
   textStyleSimilarity,
 } from '../utils/textSemantics.js'
-import { isMatchableNode } from '../utils/nodeVisibility.js'
 
 // Time / weekday are "value slots" whose displayed内容 may change between design
 // mock and runtime data while the layout relationship stays stable.
@@ -117,7 +116,6 @@ function slotCandidates(nodes, slotType, usedIds, localUsedIds) {
     .filter(n =>
       n.type === 'text' &&
       hasUsableText(n) &&
-      isMatchableNode(n) &&
       isSlotVisibleEnough(n) &&
       !usedIds.has(n.id) &&
       !localUsedIds.has(n.id) &&
@@ -132,7 +130,6 @@ function textRows(nodes, usedIds, localUsedIds) {
     .filter(n =>
       n.type === 'text' &&
       hasUsableText(n) &&
-      isMatchableNode(n) &&
       isSlotVisibleEnough(n) &&
       isRowSlotText(n) &&
       !usedIds.has(n.id) &&

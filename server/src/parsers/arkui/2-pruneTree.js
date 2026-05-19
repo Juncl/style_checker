@@ -4,11 +4,12 @@
  * 两个子操作（按顺序）：
  *   2a. 硬剪枝 hardPrune    —— 整棵子树删除
  *       visibility=Hidden / opacity=0 / out-of-bounds / leftarrow / rightarrow /
- *       零尺寸 / tooWide / 空文本 Text
+ *       no-rect / tooWide / 空文本 Text
  *
  *   2b. 软剪枝 softPrune    —— 删除自身、把 children 顶替到原位
  *       FRAMEWORK_TYPES（无背景色时）/ Span / Blank /
- *       透明 layout（jsview / stack / column / row / flex / list / ...）
+ *       透明 layout（jsview / stack / column / row / flex / list / ...）/
+ *       极小节点（w/h ≤ 4vp）/ 全屏包裹层（normRect.w/h ≥ 0.999）
  *
  * 注意：root 节点本身永远不会被 unwrap（它作为树根容器存在）。
  */
@@ -57,11 +58,8 @@ function hardPruneReason(node, canvasW, canvasH) {
   if (hasZeroOpacity(attrs.opacity)) return 'opacity-zero'
   if (rawType === 'leftarrow' || rawType === 'rightarrow') return 'special-component'
 
-  // 无 rect 或零尺寸：除框架节点外都剪掉（框架节点保留以便其子节点 unwrap 时不丢失）
+  // 无 rect：除框架节点外都剪掉（框架节点保留以便其子节点 unwrap 时不丢失）
   if (!node._rectRaw && !node._frameworkType && !node._spanType) return 'no-rect'
-  if (node.rect.w <= 0 || node.rect.h <= 0) {
-    if (!node._frameworkType && !node._spanType) return 'zero-size'
-  }
 
   if (isOutOfBoundsRect(node.rect, canvasW, canvasH)) return 'out-of-bounds'
 
@@ -121,6 +119,13 @@ function shouldUnwrap(node) {
   if (SELF_SKIP_LAYOUT_TYPES.has(rawType) && !hasBackgroundColor(node)) {
     return true
   }
+
+  // 极小节点（≤4vp）：保留子节点，只删自身；有背景色的细线/分割线保留
+  if (node.rect && (node.rect.w <= 4 || node.rect.h <= 4) && !hasBackgroundColor(node)) return true
+
+  // 全屏包裹层（normRect.w/h 均 ≥ 0.999）：保留子节点，只删自身；有背景色的底层蒙版保留
+  if (node.normRect && node.normRect.w >= 0.999 && node.normRect.h >= 0.999
+      && !hasBackgroundColor(node)) return true
 
   return false
 }

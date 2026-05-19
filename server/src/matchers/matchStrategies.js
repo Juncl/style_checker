@@ -17,7 +17,7 @@ import {
   textStyleSimilarity,
 } from '../utils/textSemantics.js'
 import { hasSameTextAttributeFingerprint } from './textFingerprints.js'
-import { hasBackgroundColor, isCompatibleType, isMatchableNode } from '../utils/nodeVisibility.js'
+import { hasBackgroundColor, isCompatibleType } from '../utils/nodeVisibility.js'
 import { candidatePool, regionAffinity } from './regionContext.js'
 import { comparePaths } from '../utils/pathOrder.js'
 
@@ -85,7 +85,6 @@ export function matchRegionTextOptimal(designNodes, arkuiNodes, usedArkui, match
     const designTexts = designNodes.filter(n =>
       n.type === 'text' &&
       hasUsableText(n) &&
-      isMatchableNode(n) &&
       !matchedDesignIds.has(n.id) &&
       !localMatchedDesign.has(n.id) &&
       regionContext.designNodeToRegion.get(n.id) === regionPair.designRegionId
@@ -93,7 +92,6 @@ export function matchRegionTextOptimal(designNodes, arkuiNodes, usedArkui, match
     const arkuiTexts = arkuiNodes.filter(n =>
       n.type === 'text' &&
       hasUsableText(n) &&
-      isMatchableNode(n) &&
       !usedArkui.has(n.id) &&
       !localUsedArkui.has(n.id) &&
       regionContext.arkuiNodeToRegion.get(n.id) === regionPair.arkuiRegionId
@@ -117,14 +115,12 @@ export function matchRegionTextOptimal(designNodes, arkuiNodes, usedArkui, match
   const remainingDesignTexts = designNodes.filter(n =>
     n.type === 'text' &&
     hasUsableText(n) &&
-    isMatchableNode(n) &&
     !matchedDesignIds.has(n.id) &&
     !localMatchedDesign.has(n.id)
   )
   const remainingArkuiTexts = arkuiNodes.filter(n =>
     n.type === 'text' &&
     hasUsableText(n) &&
-    isMatchableNode(n) &&
     !usedArkui.has(n.id) &&
     !localUsedArkui.has(n.id)
   )
@@ -317,7 +313,7 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
   const localUsedArkui = new Set()
   const localMatchedDesign = new Set()
   const candidateDesignNodes = designNodes
-    .filter(n => isMatchableNode(n) && !matchedDesignIds.has(n.id))
+    .filter(n => !matchedDesignIds.has(n.id))
     .filter(n => n.type !== 'text' || hasUsableText(n))
     .map(n => {
       const anchorsForNode = nearbyAnchors(n, anchors, 'design')
@@ -369,7 +365,6 @@ function bestTopologyCandidate(dn, arkuiNodes, nodeAnchors, unavailableArkui, re
   let bestAnchorDist = Number.POSITIVE_INFINITY
   let bestBackgroundScore = -1
   const regionCandidates = candidatePool(dn, arkuiNodes, regionContext, n =>
-    isMatchableNode(n) &&
     !unavailableArkui.has(n.id) &&
     isCompatibleType(dn, n)
   )

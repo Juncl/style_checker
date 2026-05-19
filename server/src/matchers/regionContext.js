@@ -1,11 +1,10 @@
 import { centerY, unionNormRect, sizeRatio } from '../utils/matchGeometry.js'
-import { hasVisualDecoration, isMatchableNode } from '../utils/nodeVisibility.js'
+import { hasVisualDecoration } from '../utils/nodeVisibility.js'
 import { normalizeText, setJaccard } from '../utils/textSemantics.js'
 
 // Regions provide coarse page structure before individual node matching runs.
 export function segmentRegions(nodes, source) {
   const matchable = nodes
-    .filter(isMatchableNode)
     .filter(n => n.normRect && Number.isFinite(n.normRect.y))
     .sort((a, b) => centerY(a.normRect) - centerY(b.normRect))
 
@@ -128,7 +127,7 @@ export function buildRegionContext(designRegions, arkuiRegions, anchors) {
 }
 
 export function candidatePool(designNode, arkuiNodes, regionContext, predicate) {
-  const all = arkuiNodes.filter(n => isMatchableNode(n)).filter(predicate)
+  const all = arkuiNodes.filter(predicate)
   if (!regionContext) return all
 
   const designRegionId = regionContext.designNodeToRegion.get(designNode.id)

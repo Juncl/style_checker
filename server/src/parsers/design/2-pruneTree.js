@@ -4,7 +4,7 @@
  * Design 侧的剪枝包含 4 个子操作（按顺序）：
  *
  *   2a. 硬剪枝 hardPrune       —— 整棵子树删除
- *       opacity=0 / out-of-bounds 自身或后代
+ *       opacity=0 / out-of-bounds
  *
  *   2b. 语义折叠 semanticCollapse
  *       icon / illustration 等小尺寸 FRAME/GROUP/VECTOR 折叠为单节点：
@@ -14,7 +14,8 @@
  *       BOOLEAN_OPERATION 节点本身保留，但其 children 全部清空。
  *
  *   2d. 软剪枝 softPrune       —— 删自身保子
- *       非 VISUAL_TYPES（理论上不会出现）/ 空文本 TEXT
+ *       非 VISUAL_TYPES（理论上不会出现）/ 空文本 TEXT /
+ *       极小节点（w/h ≤ 4dp）/ 全屏包裹层（normRect.w/h ≥ 0.999）
  *
  * 注意：design 根节点（path=[0]）永不 unwrap。
  */
@@ -231,6 +232,15 @@ function shouldUnwrap(node) {
   if (rawType && !VISUAL_TYPES.has(rawType)) return true
   // 空文本 TEXT
   if (rawType === TEXT_TYPE && String(node.textContent || '').trim().length === 0) return true
+  const s = node.style || {}
+  const hasDecoration = !!(s.backgroundColor || s.borderRadius || s.border)
+  // GROUP 无视觉装饰时软剪枝
+  if (rawType === 'GROUP' && !hasDecoration) return true
+  // 极小节点（≤4dp）：保留子节点，只删自身；有背景色的细线/分割线保留
+  if (node.rect && (node.rect.w <= 4 || node.rect.h <= 4) && !hasDecoration) return true
+  // 全屏包裹层（normRect.w/h 均 ≥ 0.999）：保留子节点，只删自身；有背景色的底层蒙版保留
+  if (node.normRect && node.normRect.w >= 0.999 && node.normRect.h >= 0.999
+      && !hasDecoration) return true
   return false
 }
 

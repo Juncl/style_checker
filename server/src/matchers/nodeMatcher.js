@@ -22,7 +22,6 @@ import {
   numericTextCompatible,
 } from '../utils/textSemantics.js'
 import {
-  isMatchableNode,
   isComparableOutputNode,
   isCompatibleType,
   isAcceptablePair,
@@ -128,10 +127,9 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   let regionContext = null
 
   // ── Pass 1: 文本内容精确匹配 ─────────────────────────────────────────────
-  const arkuiTextMap = buildTextIndex(arkuiNodes.filter(n => n.type === 'text' && isMatchableNode(n)))
+  const arkuiTextMap = buildTextIndex(arkuiNodes.filter(n => n.type === 'text'))
 
   for (const dn of designNodes) {
-    if (!isMatchableNode(dn)) continue
     if (dn.type !== 'text') continue
     const content = normalizeText(dn.textContent)
     if (!content) continue
@@ -224,7 +222,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
 
   // ── Pass 3.5: 文本语义角色匹配（动态标题/副标题内容不同，但组件槽位一致）────
   for (const dn of designNodes) {
-    if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id) || dn.type !== 'text' || !hasUsableText(dn)) continue
+    if (matchedDesignIds.has(dn.id) || dn.type !== 'text' || !hasUsableText(dn)) continue
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
       n.type === 'text' && hasUsableText(n) && !usedArkui.has(n.id)
     )
@@ -271,7 +269,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
 
   // ── Pass 5: 文本节点位置回退匹配（处理 mock 数据与真实数据不一致）──────────────
   for (const dn of designNodes) {
-    if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id) || dn.type !== 'text' || !hasUsableText(dn)) continue
+    if (matchedDesignIds.has(dn.id) || dn.type !== 'text' || !hasUsableText(dn)) continue
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
       n.type === 'text' && hasUsableText(n) && !usedArkui.has(n.id)
     )
@@ -287,7 +285,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
 
   // ── Pass 5b: 数字槽位匹配（mock 整数与实际整数数值不同，但位置与样式一致）─────
   for (const dn of designNodes) {
-    if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id) || dn.type !== 'text') continue
+    if (matchedDesignIds.has(dn.id) || dn.type !== 'text') continue
     if (textFieldType(normalizeText(dn.textContent)) !== 'number') continue
 
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
@@ -321,7 +319,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
 
   // ── Pass 5: 几何 IoU 匹配容器节点 ─────────────────────────────────────────
   for (const dn of designNodes) {
-    if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id)) continue
+    if (matchedDesignIds.has(dn.id)) continue
     if (dn.type !== 'container') continue
 
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
@@ -339,7 +337,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
 
   // ── Pass 6: 非文本视觉容器几何匹配 ────────────────────────────────────────
   for (const dn of designNodes) {
-    if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id)) continue
+    if (matchedDesignIds.has(dn.id)) continue
     if (!isRenderableNonTextNode(dn)) continue
 
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n => {
@@ -365,7 +363,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     const bracketCandidates = []
 
     for (const dn of designNodes) {
-      if (!isMatchableNode(dn) || previewUsedDesign.has(dn.id)) continue
+      if (previewUsedDesign.has(dn.id)) continue
       if (dn.type !== 'container') continue
 
       const dnCX = dn.normRect.x + dn.normRect.w / 2
@@ -402,7 +400,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
       if (Math.abs(blACY - brACY) > 0.06) continue
 
       for (const an of arkuiNodes) {
-        if (!isMatchableNode(an) || previewUsedArkui.has(an.id)) continue
+        if (previewUsedArkui.has(an.id)) continue
         if (an.type !== 'container') continue
         if (Math.min(sizeRatio(dn.normRect.w, an.normRect.w), sizeRatio(dn.normRect.h, an.normRect.h)) < 0.5) continue
 
@@ -447,7 +445,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
 
   // ── Pass 7: Rescue Pass，保留低置信度标签，供前端和评分识别 ────────────────
   for (const dn of designNodes) {
-    if (!isMatchableNode(dn) || matchedDesignIds.has(dn.id)) continue
+    if (matchedDesignIds.has(dn.id)) continue
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
       isCompatibleType(dn, n) &&
       (!(dn.type === 'text' && n.type === 'text') ||
