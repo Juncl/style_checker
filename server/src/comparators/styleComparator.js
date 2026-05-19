@@ -170,6 +170,7 @@ function diffOpacity(diffs, ctx, dv, av) {
 function diffBorderRadius(diffs, ctx, designNode, arkuiNode, dv, av) {
   if (!dv && !av) return
   if (isCircleOrEllipseLikeNode(designNode) && isCircleOrEllipseLikeNode(arkuiNode)) return
+  if (normalizedNodeType(arkuiNode) === 'symbolglyph') return
   if (!dv || !av) {
     diffs.push(makeDiff(ctx, 'borderRadius', formatRadius(dv), formatRadius(av), 'warning', '圆角：一侧缺失'))
     return
@@ -441,7 +442,7 @@ function isCircleOrEllipseLikeNode(node) {
 }
 
 function isTitlebarType(node) {
-  return normalizedNodeType(node) === 'titlebar'
+  return normalizedNodeType(node) === 'titlebar' || node?.compType === 'titlebar'
 }
 
 function isHardIgnoreBackgroundNode(node) {

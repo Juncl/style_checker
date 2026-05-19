@@ -55,7 +55,8 @@ export function buildArkuiTree(arkuiJson) {
 }
 
 // clipRadius：最近一层 clip=true 祖先的 borderRadius，DFS 向下传播
-function walk(node, resolution, canvasW, canvasH, path, clipRadius = null) {
+// compType：最近一层语义组件祖先的类型标记（如 'titlebar'），DFS 向下传播给所有后代
+function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compType = null) {
   const type = node['$type'] || ''
   const attrs = node['$attrs'] || {}
   const rectRaw = parseArkuiRect(node['$rect'])
@@ -72,6 +73,9 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null) {
   if (type === 'Image' && !styleBrNonZero && nextClipRadius) {
     style.borderRadius = { ...nextClipRadius }
   }
+
+  // TitleBar 节点本身不写 compType，但向其后代传播 'titlebar'
+  const nextCompType = type === 'TitleBar' ? 'titlebar' : compType
 
   const unified = {
     id: String(node['$ID'] ?? `arkui:${path.join('.')}`),
@@ -101,6 +105,8 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null) {
     _rectRaw: rectRaw,
   }
 
+  if (compType) unified.compType = compType
+
   const text = getArkuiTextContent(attrs)
   if (text) unified.textContent = text
 
@@ -110,16 +116,19 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null) {
       const childRectRaw = parseArkuiRect(children[i]['$rect'])
       const childVpRect = childRectRaw ? toVpRect(childRectRaw, resolution) : null
       if (vpRect && childVpRect && clipRectsMatch(vpRect, childVpRect)) {
-        unified.children.push(walk(children[i], resolution, canvasW, canvasH, [...path, i], nextClipRadius))
+        unified.children.push(walk(children[i], resolution, canvasW, canvasH, [...path, i], nextClipRadius, nextCompType))
         continue
       }
     }
-    unified.children.push(walk(children[i], resolution, canvasW, canvasH, [...path, i]))
+    unified.children.push(walk(children[i], resolution, canvasW, canvasH, [...path, i], null, nextCompType))
   }
 
   // Button / TextInput：拆分出虚拟文本子节点（便于与设计侧匹配）
   const splitText = maybeBuildSplitTextChild(unified, type, attrs, vpRect, resolution, canvasW, canvasH, path)
-  if (splitText) unified.children.push(splitText)
+  if (splitText) {
+    if (nextCompType) splitText.compType = nextCompType
+    unified.children.push(splitText)
+  }
 
   return unified
 }
