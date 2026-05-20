@@ -280,22 +280,28 @@ body {
 }
 
 /* 检查报告外部容器 */
-.report-cols {
+.report-container {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  background: var(--octo-surface-page);
+  overflow: hidden;
+}
+
+/* 报告列 */
+.report-col {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--octo-surface-page);
+  min-width: 0;
+  min-height: 0;
   overflow: auto;
+  border-right: 1px solid var(--octo-border-default);
 }
 
-/* 双图并排 */
-.image-row {
-  display: flex;
-  gap: 20px;
-  padding: clamp(32px, 6vh, 72px) clamp(48px, 8vw, 120px);
-  align-items: flex-start;
-  flex: 1;
-  min-height: min-content;
+.report-col:last-child {
+  border-right: none;
 }
 
 /* ── Debugger 悬浮框 ── */
@@ -1096,6 +1102,38 @@ body {
   border-right: 1px solid rgba(80, 70, 130, 0.16);
 }
 
+/* 报告列标题栏 */
+.report-col-title {
+  background: #FFFFFF;
+  height: 48px;
+  padding: 0 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--octo-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--octo-border-default);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.report-col-title > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-col-title-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+  flex-shrink: 0;
+}
+
 .upload-col-title {
   background: #FFFFFF;
   height: 48px;
@@ -1357,18 +1395,33 @@ body {
 .rpa-link {
   background: none;
   border: none;
-  color: var(--octo-text-secondary);
+  color: var(--octo-primary);
   font-size: 12px;
   cursor: pointer;
-  padding: 3px 7px;
-  border-radius: var(--octo-radius-sm);
-  transition: color 150ms ease, background 150ms ease;
+  padding: 0;
+  border-radius: 0;
   white-space: nowrap;
 }
 
 .rpa-link:hover {
   color: var(--octo-primary);
-  background: var(--octo-surface-selected);
+  background: none;
+}
+
+.upload-col-reupload {
+  background: none;
+  border: none;
+  color: var(--octo-primary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.upload-col-reupload:hover {
+  color: var(--octo-primary);
+  background: none;
 }
 
 .rpa-recheck-btn {

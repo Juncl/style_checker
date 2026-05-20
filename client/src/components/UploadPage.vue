@@ -101,12 +101,6 @@
         </div>
       </div>
     </div>
-
-    <!-- 加载态 -->
-    <div v-else class="center-placeholder">
-      <el-icon class="spin" size="48"><Loading /></el-icon>
-      <p>正在分析…</p>
-    </div>
   </main>
 
   <!-- ── 右侧面板 ── -->

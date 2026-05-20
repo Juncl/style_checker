@@ -86,10 +86,35 @@
 
   <!-- ── 中间主区 ── -->
   <main class="center-panel">
-    <div class="report-cols">
-      <div class="image-row">
+    <!-- 节点选中说明条 -->
+    <transition name="fade">
+      <div v-if="selectedPair" class="highlight-bar node-bar">
+        <el-icon><Crop /></el-icon>
+        已选中实机节点：<b>{{ selectedPair.arkui?.textContent || selectedPair.arkui?.name || selectedPair.design?.textContent || selectedPair.design?.name }}</b>
+        <el-tag size="small" effect="plain" style="margin-left:4px">{{ selectedPair.matchType }}</el-tag>
+        <el-tag
+          v-if="selectedPair.confidence"
+          size="small"
+          effect="plain"
+          :type="confidenceTagType(selectedPair.confidence)"
+        >
+          {{ confidenceText(selectedPair.confidence) }}
+        </el-tag>
+        <el-button link size="small" style="margin-left:auto" @click="$emit('clear-pair')">✕ 取消</el-button>
+      </div>
+    </transition>
+
+    <div class="report-container">
+      <!-- 开发侧列 -->
+      <div class="report-col">
+        <div class="report-col-title">
+          <div>
+            <img :src="iconDev" alt="" class="report-col-title-icon" />
+            <span>开发环境</span>
+          </div>
+          <button class="upload-col-reupload" @click="$emit('reupload')">重新上传</button>
+        </div>
         <ImagePanel
-          label="实机截图"
           :src="arkuiImgSrc"
           :highlight="!selectedPair && activeDiff?.arkuiRect || null"
           :highlight-pair="!selectedPair && activeDiff?.relationRects?.arkui ? { rects: activeDiff.relationRects.arkui, axis: activeDiff.relationRects.axis } : null"
@@ -105,8 +130,18 @@
           :debug-pair-map="debugPairMap"
           @node-click="$emit('arkui-node-click', $event)"
         />
+      </div>
+
+      <!-- 设计侧列 -->
+      <div class="report-col">
+        <div class="report-col-title">
+          <div>
+            <img :src="iconDesign" alt="" class="report-col-title-icon" />
+            <span>设计页面</span>
+          </div>
+          <button class="upload-col-reupload" @click="$emit('reupload')">重新上传</button>
+        </div>
         <ImagePanel
-          label="设计稿"
           :src="designImgSrc"
           :highlight="!selectedPair && activeDiff?.designRect || null"
           :highlight-pair="!selectedPair && activeDiff?.relationRects?.design ? { rects: activeDiff.relationRects.design, axis: activeDiff.relationRects.axis } : null"
@@ -134,7 +169,7 @@
       <span class="right-panel-title">差异报告</span>
       <button class="rpa-link" @click="$emit('share')">分享</button>
       <button class="rpa-link">历史预览</button>
-      <el-button type="primary" class="rpa-recheck-btn" @click="$emit('recheck')">重新对比</el-button>
+      <button class="rpa-link" @click="$emit('recheck')">重新对比</button>
     </div>
 
     <!-- 标签页 + 内容 -->
@@ -196,6 +231,8 @@ import { Location, Crop } from '@element-plus/icons-vue'
 import DiffReport from './DiffReport.vue'
 import ImagePanel from './ImagePanel.vue'
 import NodeTree from './NodeTree.vue'
+import iconDev from '../assets/a4.png'
+import iconDesign from '../assets/a5.png'
 
 const props = defineProps({
   result: {

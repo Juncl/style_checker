@@ -1,13 +1,5 @@
 <template>
   <AppLayout>
-    <template #header-actions>
-      <template v-if="result">
-        <button class="hdr-link-btn" @click="handleShare">分享</button>
-        <el-button type="primary" class="hdr-primary-btn" @click="resetResult">重新对比</el-button>
-      </template>
-      <el-button v-else class="hdr-ghost-btn" @click="triggerPicker">重新上传</el-button>
-    </template>
-
     <UploadPage
       v-if="!result"
       ref="uploadPageRef"
