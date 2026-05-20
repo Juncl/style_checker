@@ -24,7 +24,7 @@ const upload = multer({ storage: multer.memoryStorage() })
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const CASES_DIR = resolve(__dirname, '../../../case')
 // 验证集目录（人工标注的匹配真值，与 case 数据分离）
-const VALIDATION_DIR = resolve(__dirname, '../../../test/case')
+const VALIDATION_DIR = resolve(__dirname, '../../../matchTest/matchCase')
 const DEFAULT_MATCH_DIRECTION = process.env.STYLE_CHECKER_MATCH_DIRECTION || 'arkui'
 
 // ── 列出所有可用 case ─────────────────────────────────────────────────────────
