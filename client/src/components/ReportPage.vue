@@ -53,19 +53,6 @@
     </div>
   </div>
 
-  <!-- 高亮说明条：diff 选中 -->
-  <transition name="fade">
-    <div v-if="activeDiff && !selectedPair" class="highlight-bar">
-      <el-icon><Location /></el-icon>
-      正在高亮：<b>{{ activeDiff.relatedDesignName ? `${activeDiff.designName} ↔ ${activeDiff.relatedDesignName}` : (activeDiff.textContent || activeDiff.designName) }}</b>
-      的 <code>{{ activeDiff.property }}</code>
-      <el-tag v-if="activeDiff.confidence" size="small" effect="plain" :type="confidenceTagType(activeDiff.confidence)">
-        {{ confidenceText(activeDiff.confidence) }}
-      </el-tag>
-      <el-button link size="small" @click="$emit('clear-diff')">✕ 取消</el-button>
-    </div>
-  </transition>
-
   <!-- ── 中间主区 ── -->
   <main class="center-panel">
     <div class="report-container">
@@ -97,8 +84,8 @@
         </div>
         <ImagePanel
           :src="arkuiImgSrc"
-          :highlight="!selectedPair && activeDiff?.arkuiRect || null"
-          :highlight-pair="!selectedPair && activeDiff?.relationRects?.arkui ? { rects: activeDiff.relationRects.arkui, axis: activeDiff.relationRects.axis } : null"
+          :highlight="null"
+          :highlight-pair="null"
           :canvas-w="result.canvas.arkui.w"
           :canvas-h="result.canvas.arkui.h"
           :nodes="arkuiNodes"
@@ -124,8 +111,8 @@
         </div>
         <ImagePanel
           :src="designImgSrc"
-          :highlight="!selectedPair && activeDiff?.designRect || null"
-          :highlight-pair="!selectedPair && activeDiff?.relationRects?.design ? { rects: activeDiff.relationRects.design, axis: activeDiff.relationRects.axis } : null"
+          :highlight="null"
+          :highlight-pair="null"
           :canvas-w="result.canvas.design.w"
           :canvas-h="result.canvas.design.h"
           :nodes="designNodes"
@@ -154,7 +141,7 @@
     </div>
 
     <!-- 标签页 + 内容 -->
-    <div class="right-tabs">
+    <div v-if="debugMode" class="right-tabs">
       <button
         :class="['rtab', { active: rightTab === 'diff' }]"
         @click="rightTab = 'diff'"
@@ -164,7 +151,6 @@
         <span class="rtab-badge warning">{{ result.stats.warningCount }}</span>
       </button>
       <button
-        v-if="debugMode"
         :class="['rtab', { active: rightTab === 'tree' }]"
         @click="rightTab = 'tree'"
       >
@@ -174,7 +160,7 @@
     </div>
 
     <DiffReport
-      v-show="rightTab === 'diff'"
+      v-show="!debugMode || rightTab === 'diff'"
       :diffs="result.diffs"
       :unmatched="result.unmatchedDesignNodes"
       @select="$emit('diff-select', $event)"
