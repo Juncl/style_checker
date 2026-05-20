@@ -9,8 +9,8 @@
       :loading="loading"
       :case-names="CASE_NAMES"
       :is-drag-over="isDragOver && !loading"
-      :current-upload-type="currentUploadType"
-      @files-picked="onFilesPicked"
+      :debug-mode="debugMode"
+      @step-picked="onStepPicked"
       @drag-over="isDragOver = $event"
       @drop="onDrop"
       @run-upload="runUpload"
@@ -85,7 +85,6 @@ const selectedPair   = ref(null)
 const lockedNodeIds  = ref(new Set())
 const isDragOver     = ref(false)
 const uploadPageRef = ref(null)
-const currentUploadType = ref(null)
 const debugMode      = ref(false)
 const debugPipelineOn = ref(false)
 const debugOverlayOn = ref(false)
@@ -230,35 +229,24 @@ function revokeBlobUrls() {
 }
 onUnmounted(revokeBlobUrls)
 
-function triggerPicker(uploadType = 'mixed') {
-  currentUploadType.value = uploadType
-  uploadPageRef.value?.triggerFilePicker()
-}
-
-function onFilesPicked(e) {
-  const files = [...e.target.files]
-  let filteredFiles = files
-
-  if (currentUploadType.value === 'arkuiJson') {
-    const jsonFiles = files.filter(f => f.name.endsWith('.json') || f.name.endsWith('.dump'))
-    if (jsonFiles.length === 0) {
-      ElMessage.error('请上传 .json 或 .dump 文件')
-      e.target.value = ''
-      return
-    }
-    filteredFiles = [jsonFiles[0]]
-  } else if (currentUploadType.value === 'arkuiImage') {
-    const imageFiles = files.filter(f => f.type.startsWith('image/') || ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'].some(ext => f.name.endsWith(ext)))
-    if (imageFiles.length === 0) {
-      ElMessage.error('请上传图片文件')
-      e.target.value = ''
-      return
-    }
-    filteredFiles = [imageFiles[0]]
+function onStepPicked({ type, file }) {
+  if (!file) return
+  const next = { ...uploadFiles.value }
+  if (type === 'arkuiJson') {
+    next.arkuiJson = file
+  } else if (type === 'arkuiImage') {
+    next.arkuiImage = file
+  } else if (type === 'designJson') {
+    next.designJson = file
+  } else if (type === 'designImage') {
+    next.designImage = file
   }
+  selectedCase.value = ''
+  uploadFiles.value = next
 
-  assignFiles(filteredFiles)
-  e.target.value = ''
+  revokeBlobUrls()
+  if (next.designImage) blobUrls.value.design = URL.createObjectURL(next.designImage)
+  if (next.arkuiImage)  blobUrls.value.arkui  = URL.createObjectURL(next.arkuiImage)
 }
 
 function onDrop(e) {
@@ -270,30 +258,24 @@ function assignFiles(files) {
   const next = { ...uploadFiles.value }
   const unmatched = []
 
-  if (currentUploadType.value === 'arkuiJson') {
-    if (files[0]) next.arkuiJson = files[0]
-  } else if (currentUploadType.value === 'arkuiImage') {
-    if (files[0]) next.arkuiImage = files[0]
-  } else {
-    // 混合上传模式（从设计稿或拖拽）
-    for (const f of files) {
-      const slot = FILE_SLOTS.find(s => s.match(f))
-      if (slot) {
-        next[slot.key] = f
-      } else {
-        unmatched.push(f.name)
-      }
+  // 混合上传模式（从设计稿或拖拽）
+  for (const f of files) {
+    const slot = FILE_SLOTS.find(s => s.match(f))
+    if (slot) {
+      next[slot.key] = f
+    } else {
+      unmatched.push(f.name)
     }
-
-    const jsonFallback  = files.filter(f => f.name.endsWith('.json'))
-    const imageFallback = files.filter(f => f.type.startsWith('image/'))
-    if (!next.designJson  && jsonFallback[0]) next.designJson = jsonFallback[0]
-    if (!next.arkuiJson   && jsonFallback[1]) next.arkuiJson  = jsonFallback[1]
-    if (!next.designImage && imageFallback[0]) next.designImage = imageFallback[0]
-    if (!next.arkuiImage  && imageFallback[1]) next.arkuiImage  = imageFallback[1]
-
-    if (unmatched.length) ElMessage.info(`以下文件未能识别：${unmatched.join(', ')}`)
   }
+
+  const jsonFallback  = files.filter(f => f.name.endsWith('.json'))
+  const imageFallback = files.filter(f => f.type.startsWith('image/'))
+  if (!next.designJson  && jsonFallback[0]) next.designJson = jsonFallback[0]
+  if (!next.arkuiJson   && jsonFallback[1]) next.arkuiJson  = jsonFallback[1]
+  if (!next.designImage && imageFallback[0]) next.designImage = imageFallback[0]
+  if (!next.arkuiImage  && imageFallback[1]) next.arkuiImage  = imageFallback[1]
+
+  if (unmatched.length) ElMessage.info(`以下文件未能识别：${unmatched.join(', ')}`)
 
   selectedCase.value = ''
   uploadFiles.value  = next

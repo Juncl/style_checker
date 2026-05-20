@@ -1270,6 +1270,23 @@ body {
   background: rgba(82, 196, 26, 0.06);
 }
 
+.step-drop.is-disabled {
+  border-color: var(--octo-border-default);
+  background: var(--octo-surface-disabled);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.step-drop.is-disabled:hover {
+  border-color: var(--octo-border-default);
+  background: var(--octo-surface-disabled);
+}
+
+.step-drop.is-disabled .step-link {
+  color: var(--octo-text-disabled);
+  cursor: not-allowed;
+}
+
 .step-drop-img {
   width: 56px;
   height: 56px;
@@ -1635,4 +1652,30 @@ body {
 /* 右侧面板整体调整为始终显示 */
 .right-panel {
   width: 280px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* Debugger 模式：upload-right-pane 内部状态切换 */
+/* ═══════════════════════════════════════════════════════════════════════ */
+
+.debug-inline-toggle {
+  background: none;
+  border: none;
+  color: var(--octo-primary);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--octo-radius-sm);
+  transition: background 150ms ease, color 150ms ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.debug-inline-toggle:hover {
+  background: rgba(0, 103, 209, 0.1);
+  color: var(--octo-primary-hover);
+}
+
+.debug-inline-toggle:active {
+  background: rgba(0, 103, 209, 0.2);
 }
