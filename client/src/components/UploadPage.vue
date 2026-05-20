@@ -107,7 +107,7 @@
   <aside class="right-panel">
     <!-- 标题栏 -->
     <div class="right-panel-header">
-      <span class="right-panel-title">试用案例</span>
+      <span class="right-panel-title">差异报告</span>
     </div>
 
     <!-- 空状态 + 案例列表 -->
@@ -136,7 +136,10 @@
     <div class="right-cases-section">
       <div class="right-cases-header">
         <span class="cases-title">试用案例</span>
-        <span class="cases-hint">点击下方方案即可体验~</span>
+        <span class="cases-hint">
+          <img :src="iconClap" alt="" class="cases-hint-icon" />
+          点击下方案例即刻体验～
+        </span>
       </div>
       <div v-if="!cases.length" class="cases-loading">加载中…</div>
       <div class="right-case-list">
@@ -166,11 +169,12 @@
 import { ref, computed, watch } from 'vue'
 import { CircleCheck, Loading } from '@element-plus/icons-vue'
 import { imageUrl } from '../api/index.js'
-import iconJson from '../assets/a1.png'
-import iconImage from '../assets/a2.png'
-import iconEmpty from '../assets/a3.png'
-import iconDev from '../assets/a4.png'
-import iconDesign from '../assets/a5.png'
+const iconJson = '/src/assets/a1.png'
+const iconImage = '/src/assets/a2.png'
+const iconEmpty = '/src/assets/a3.png'
+const iconDev = '/src/assets/a4.png'
+const iconDesign = '/src/assets/a5.png'
+const iconClap = '/src/assets/a6.png'
 
 const props = defineProps({
   uploadFiles: {

@@ -1533,8 +1533,17 @@ body {
 }
 
 .cases-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
   color: var(--octo-primary);
+}
+
+.cases-hint-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 .cases-loading {

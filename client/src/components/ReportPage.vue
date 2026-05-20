@@ -212,8 +212,9 @@ import { Location, Crop } from '@element-plus/icons-vue'
 import DiffReport from './DiffReport.vue'
 import ImagePanel from './ImagePanel.vue'
 import NodeTree from './NodeTree.vue'
-import iconDev from '../assets/a4.png'
-import iconDesign from '../assets/a5.png'
+
+const iconDev = '/src/assets/a4.png'
+const iconDesign = '/src/assets/a5.png'
 
 const props = defineProps({
   result: {
