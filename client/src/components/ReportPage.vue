@@ -66,45 +66,26 @@
     </div>
   </transition>
 
-  <!-- 节点选中说明条 -->
-  <transition name="fade">
-    <div v-if="selectedPair" class="highlight-bar node-bar">
-      <el-icon><Crop /></el-icon>
-      已选中实机节点：<b>{{ selectedPair.arkui?.textContent || selectedPair.arkui?.name || selectedPair.design?.textContent || selectedPair.design?.name }}</b>
-      <el-tag size="small" effect="plain" style="margin-left:4px">{{ selectedPair.matchType }}</el-tag>
-      <el-tag
-        v-if="selectedPair.confidence"
-        size="small"
-        effect="plain"
-        :type="confidenceTagType(selectedPair.confidence)"
-      >
-        {{ confidenceText(selectedPair.confidence) }}
-      </el-tag>
-      <el-button link size="small" style="margin-left:auto" @click="$emit('clear-pair')">✕ 取消</el-button>
-    </div>
-  </transition>
-
   <!-- ── 中间主区 ── -->
   <main class="center-panel">
-    <!-- 节点选中说明条 -->
-    <transition name="fade">
-      <div v-if="selectedPair" class="highlight-bar node-bar">
-        <el-icon><Crop /></el-icon>
-        已选中实机节点：<b>{{ selectedPair.arkui?.textContent || selectedPair.arkui?.name || selectedPair.design?.textContent || selectedPair.design?.name }}</b>
-        <el-tag size="small" effect="plain" style="margin-left:4px">{{ selectedPair.matchType }}</el-tag>
-        <el-tag
-          v-if="selectedPair.confidence"
-          size="small"
-          effect="plain"
-          :type="confidenceTagType(selectedPair.confidence)"
-        >
-          {{ confidenceText(selectedPair.confidence) }}
-        </el-tag>
-        <el-button link size="small" style="margin-left:auto" @click="$emit('clear-pair')">✕ 取消</el-button>
-      </div>
-    </transition>
-
     <div class="report-container">
+      <!-- 节点选中说明条 -->
+      <transition name="fade">
+        <div v-if="selectedPair" class="highlight-bar node-bar">
+          <el-icon><Crop /></el-icon>
+          已选中实机节点：<b>{{ selectedPair.arkui?.textContent || selectedPair.arkui?.name || selectedPair.design?.textContent || selectedPair.design?.name }}</b>
+          <el-tag size="small" effect="plain" style="margin-left:4px">{{ selectedPair.matchType }}</el-tag>
+          <el-tag
+            v-if="selectedPair.confidence"
+            size="small"
+            effect="plain"
+            :type="confidenceTagType(selectedPair.confidence)"
+          >
+            {{ confidenceText(selectedPair.confidence) }}
+          </el-tag>
+          <el-button link size="small" style="margin-left:auto" @click="$emit('clear-pair')">✕ 取消</el-button>
+        </div>
+      </transition>
       <!-- 开发侧列 -->
       <div class="report-col">
         <div class="report-col-title">

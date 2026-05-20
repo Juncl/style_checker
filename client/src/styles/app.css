@@ -228,6 +228,10 @@ body {
 
 /* 高亮提示条 */
 .highlight-bar {
+  position: absolute;
+  top: 48px;
+  left: 0;
+  right: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -236,7 +240,7 @@ body {
   border-bottom: 1px solid #f4dfb8;
   font-size: 12px;
   color: var(--octo-text-secondary);
-  flex-shrink: 0;
+  z-index: 5;
 }
 .highlight-bar code { font-size: 11px; background: var(--octo-surface-selected); padding: 1px 4px; border-radius: var(--octo-radius-sm); color: var(--octo-primary); }
 .node-bar { background: var(--octo-surface-selected); border-bottom-color: #c9dcff; }
@@ -287,6 +291,7 @@ body {
   min-height: 0;
   background: var(--octo-surface-page);
   overflow: hidden;
+  position: relative;
 }
 
 /* 报告列 */
@@ -296,8 +301,9 @@ body {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   border-right: 1px solid var(--octo-border-default);
+  padding: 0 24px;
 }
 
 .report-col:last-child {
@@ -1119,6 +1125,9 @@ body {
   position: sticky;
   top: 0;
   z-index: 10;
+  margin: 0 -24px 0 -24px;
+  padding-left: 42px;
+  padding-right: 42px;
 }
 
 .report-col-title > div {

@@ -1,6 +1,5 @@
 <template>
   <div class="img-panel" ref="panelRef">
-    <div class="img-label" ref="labelRef">{{ label }}</div>
     <div class="img-wrapper" ref="wrapperRef">
       <img :src="src" ref="imgRef" :alt="label" @load="onImgLoad" />
       <canvas
@@ -222,7 +221,8 @@ function onMouseLeave() {
 function draw() {
   const canvas = canvasRef.value
   const img    = imgRef.value
-  if (!canvas || !img) return
+  const wrapper = wrapperRef.value
+  if (!canvas || !img || !wrapper) return
 
   const W = img.clientWidth
   const H = img.clientHeight
@@ -230,6 +230,15 @@ function draw() {
 
   canvas.width  = W
   canvas.height = H
+
+  // 计算图片在 wrapper 中的偏移
+  const imgRect = img.getBoundingClientRect()
+  const wrapperRect = wrapper.getBoundingClientRect()
+  const offsetX = imgRect.left - wrapperRect.left
+  const offsetY = imgRect.top - wrapperRect.top
+
+  canvas.style.left = offsetX + 'px'
+  canvas.style.top = offsetY + 'px'
 
   const ctx = canvas.getContext('2d')
   ctx.clearRect(0, 0, W, H)
@@ -289,7 +298,7 @@ function draw() {
   // 选中节点（蓝色实线）
   if (props.selectedId) {
     const n = props.nodes.find(n => n.id === props.selectedId)
-    if (n) drawNodeRect(ctx, n.rect, sx, sy, 'rgba(64,158,255,0.18)', '#409eff', 2, [])
+    if (n) drawNodeRect(ctx, n.rect, sx, sy, 'rgba(64,158,255,0.18)', '#409eff', 1, [])
   }
 
   // diff 高亮（橙色）
@@ -387,10 +396,19 @@ function updateInspectorPos() {
 
   const { rect } = props.inspectorNode
   const img      = imgRef.value
+  const wrapper  = wrapperRef.value
+  if (!wrapper) return
+
   const imgW     = img.clientWidth
   const imgH     = img.clientHeight
-  const wrapTop  = wrapperRef.value.offsetTop   // 相对于 .img-panel
-  const wrapLeft = wrapperRef.value.offsetLeft
+
+  // 计算图片在 wrapper 中的实际偏移（与 draw() 中保持一致）
+  const imgRect = img.getBoundingClientRect()
+  const wrapperRect = wrapper.getBoundingClientRect()
+  const panelRect = panelRef.value.getBoundingClientRect()
+
+  const imgOffsetX = imgRect.left - wrapperRect.left
+  const imgOffsetY = imgRect.top - wrapperRect.top
 
   const nx = rect.x / props.canvasW * imgW
   const ny = rect.y / props.canvasH * imgH
@@ -400,16 +418,16 @@ function updateInspectorPos() {
   const inspectorW = inspectorRef.value?.offsetWidth || 190
   const inspectorH = inspectorRef.value?.offsetHeight || 220
   const nodeBox = {
-    left: wrapLeft + nx,
-    top: wrapTop + ny,
-    right: wrapLeft + nx + nw,
-    bottom: wrapTop + ny + nh,
+    left: imgOffsetX + nx,
+    top: imgOffsetY + ny,
+    right: imgOffsetX + nx + nw,
+    bottom: imgOffsetY + ny + nh,
   }
 
   const gap = 8
   const candidates = [
-    { left: nodeBox.right + gap, top: nodeBox.top + (nh - inspectorH) / 2 },
-    { left: nodeBox.left - inspectorW - gap, top: nodeBox.top + (nh - inspectorH) / 2 },
+    { left: nodeBox.right + gap, top: nodeBox.top },
+    { left: nodeBox.left - inspectorW - gap, top: nodeBox.top },
     { left: nodeBox.left + (nw - inspectorW) / 2, top: nodeBox.bottom + gap },
     { left: nodeBox.left + (nw - inspectorW) / 2, top: nodeBox.top - inspectorH - gap },
   ].map(pos => clampInspectorPosition(pos.left, pos.top))
@@ -421,7 +439,8 @@ function updateInspectorPos() {
 function chooseInspectorPosition(candidates, nodeBox, inspectorW, inspectorH) {
   let best = candidates[0]
   let bestOverlap = Infinity
-  for (const pos of candidates) {
+  for (let i = 0; i < candidates.length; i++) {
+    const pos = candidates[i]
     const box = {
       left: pos.left,
       top: pos.top,
@@ -429,8 +448,10 @@ function chooseInspectorPosition(candidates, nodeBox, inspectorW, inspectorH) {
       bottom: pos.top + inspectorH,
     }
     const overlap = intersectionArea(box, nodeBox)
+    // 优先不重叠的位置，且偏好第一个候选（右侧）
     if (overlap === 0) return pos
-    if (overlap < bestOverlap) {
+    // 如果有多个同样重叠量的位置，优先右侧
+    if (overlap < bestOverlap || (overlap === bestOverlap && i === 0)) {
       best = pos
       bestOverlap = overlap
     }
@@ -502,10 +523,32 @@ function clampInspectorPosition(left, top) {
 }
 
 function toInspectorStyle(left, top) {
+  const panel = panelRef.value
+  const inspector = inspectorRef.value
+  if (!panel || !inspector) {
+    return {
+      left: `${left}px`,
+      top: `${top}px`,
+      width: '190px',
+    }
+  }
+
+  const panelH = panel.clientHeight || 0
+  const inspectorH = inspector.offsetHeight || 220
+  const defaultMaxH = 260
+
+  // 检查是否会被底部裁剪
+  let maxHeight = defaultMaxH
+  const bottomSpace = panelH - top
+  if (bottomSpace < inspectorH) {
+    maxHeight = Math.max(40, bottomSpace - 8)
+  }
+
   return {
     left: `${left}px`,
     top: `${top}px`,
     width: '190px',
+    maxHeight: `${maxHeight}px`,
   }
 }
 
