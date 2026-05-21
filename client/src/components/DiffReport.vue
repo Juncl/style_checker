@@ -1,107 +1,94 @@
 <template>
   <div class="diff-panel">
+    <!-- 工具栏：筛选标签 + 搜索 + 低置信开关 -->
     <div class="diff-toolbar">
-      <div class="issue-tabs">
+      <div class="diff-tabs">
         <button
           v-for="group in issueGroups"
           :key="group.key"
-          :class="['issue-tab', { active: activeIssue === group.key }]"
+          :class="['diff-tab', { active: activeIssue === group.key }]"
           @click="selectIssue(group.key)"
         >
-          {{ group.label }}
-          <span class="badge">{{ issueCounts[group.key] || 0 }}</span>
+          {{ group.label }}({{ issueCounts[group.key] || 0 }})
         </button>
       </div>
-      <div class="toolbar-row">
-        <div class="severity-summary">
-          <span v-for="s in severitySummary" :key="s.key" :class="['severity-chip', s.key]">
-            {{ s.label }} {{ s.count }}
-          </span>
-        </div>
-        <label class="confidence-toggle">
+      <div class="diff-tools">
+        <el-input
+          v-model="search"
+          placeholder="搜索差异项"
+          clearable
+          class="diff-search"
+        >
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
+        <label class="diff-lowconf">
           <span>低置信</span>
-          <el-switch v-model="showLowConfidence" size="small" />
+          <el-switch v-model="showLowConfidence" />
         </label>
       </div>
-      <el-input
-        v-model="search"
-        size="small"
-        placeholder="搜索..."
-        clearable
-        class="search-input"
-      >
-        <template #prefix><el-icon><Search /></el-icon></template>
-      </el-input>
     </div>
 
-    <div class="diff-list" ref="listRef">
-      <template v-if="filteredDiffs.length === 0">
-        <div class="empty-state">
-          <el-icon size="36" color="#c0c4cc"><CircleCheck /></el-icon>
-          <p>无差异项</p>
-        </div>
-      </template>
+    <!-- 差异卡片列表 -->
+    <div class="diff-cards" ref="listRef">
+      <div v-if="filteredDiffs.length === 0" class="diff-empty">
+        <el-icon size="40"><CircleCheck /></el-icon>
+        <p>无差异项</p>
+      </div>
 
       <div
         v-for="(d, idx) in filteredDiffs"
-        :key="`${d.designNodeId}-${d.property}-${idx}`"
-        :class="['diff-item', d.severity, { selected: selectedIdx === idx }]"
+        :key="`${d.designNodeId}-${d.arkuiNodeId}-${d.property}-${idx}`"
+        :class="['diff-card', { selected: selectedIdx === idx }]"
         @click="selectItem(d, idx)"
       >
-        <div class="diff-body">
-          <div class="diff-meta">
-            <span class="issue-badge">{{ issueLabel(d.property) }}</span>
-            <span class="prop-tag">{{ d.property }}</span>
-            <span :class="['confidence-badge', d.confidence || 'medium']">
-              {{ confidenceLabel(d.confidence) }}
-            </span>
-            <span class="match-tag">{{ d.matchType }}</span>
-            <span v-if="d.relatedDesignName" class="relation-tag">
-              {{ d.designName }} ↔ {{ d.relatedDesignName }}
-            </span>
-            <span v-if="d.textContent" class="text-snippet">「{{ truncate(d.textContent, 12) }}」</span>
+        <!-- 卡片头 -->
+        <div class="diff-card-head">
+          <span class="diff-card-name" :title="cardName(d)">{{ cardName(d) }}</span>
+          <span class="diff-card-ops">
+            <el-icon class="diff-card-more"><MoreFilled /></el-icon>
+            <el-icon class="diff-card-fold" @click.stop="toggleFold(foldKey(d))">
+              <ArrowUp v-if="!isFolded(foldKey(d))" />
+              <ArrowDown v-else />
+            </el-icon>
+          </span>
+        </div>
+
+        <!-- 卡片体 -->
+        <div v-show="!isFolded(foldKey(d))" class="diff-card-body">
+          <div class="diff-prop-row">
+            <span class="diff-prop-key">类型</span>
+            <span class="diff-prop-val">{{ issueLabel(d.property) }}</span>
           </div>
 
-          <div class="diff-values">
-            <div class="val-block arkui">
-              <span class="val-label">开发</span>
-              <ColorDot v-if="isColorProp(d.property)" :hex="extractHex(d.arkuiValue)" />
-              <span class="val-text" :title="d.arkuiValue">{{ displayValue(d.property, d.arkuiValue) }}</span>
+          <div class="diff-cmp">
+            <div class="diff-cmp-row">
+              <span class="diff-cmp-key">开发</span>
+              <span v-if="isEmptyVal(d.arkuiValue)" class="diff-cmp-none">无</span>
+              <span v-else class="diff-cmp-val diff-cmp-val--dev">
+                <ColorDot v-if="isColorProp(d.property)" :hex="extractHex(d.arkuiValue)" />
+                <span class="diff-val-text" :title="String(d.arkuiValue)">{{ displayValue(d.property, d.arkuiValue) }}</span>
+              </span>
             </div>
-            <el-icon class="arrow"><ArrowRight /></el-icon>
-            <div class="val-block design">
-              <span class="val-label">设计</span>
-              <ColorDot v-if="isColorProp(d.property)" :hex="extractHex(d.designValue)" />
-              <span class="val-text" :title="d.designValue">{{ displayValue(d.property, d.designValue) }}</span>
+            <div class="diff-cmp-row">
+              <span class="diff-cmp-key">设计</span>
+              <span v-if="isEmptyVal(d.designValue)" class="diff-cmp-none">无</span>
+              <span v-else class="diff-cmp-val diff-cmp-val--design">
+                <ColorDot v-if="isColorProp(d.property)" :hex="extractHex(d.designValue)" />
+                <span class="diff-val-text" :title="String(d.designValue)">{{ displayValue(d.property, d.designValue) }}</span>
+              </span>
             </div>
           </div>
 
-          <div class="diff-desc">{{ d.description }}</div>
+          <div v-if="d.description" class="diff-card-desc">{{ d.description }}</div>
         </div>
       </div>
-
-      <template v-if="unmatched.length > 0">
-        <div v-show="false">
-          <div class="section-divider">
-            设计稿未匹配节点 ({{ filteredUnmatched.length }}/{{ unmatched.length }})
-          </div>
-          <div class="unmatched-chips">
-            <el-tag
-              v-for="n in filteredUnmatched"
-              :key="n.id"
-              type="warning" effect="plain" size="small"
-            >
-              {{ n.textContent ? truncate(n.textContent, 14) : truncate(n.name, 14) }}
-            </el-tag>
-          </div>
-        </div>
-      </template>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, defineComponent, h } from 'vue'
+import { Search, CircleCheck, MoreFilled, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 
 const ColorDot = defineComponent({
   props: { hex: String },
@@ -144,6 +131,7 @@ const showLowConfidence = ref(false)
 const search      = ref('')
 const selectedIdx = ref(-1)
 const listRef     = ref(null)
+const folded      = ref(new Set())
 
 const visibleDiffs = computed(() =>
   showLowConfidence.value ? props.diffs : props.diffs.filter(d => d.confidence !== 'low')
@@ -161,11 +149,6 @@ const issueCounts = computed(() => {
   }
   return counts
 })
-const severitySummary = computed(() => [
-  { key: 'error', label: 'Error', count: visibleDiffs.value.filter(d => d.severity === 'error').length },
-  { key: 'warning', label: 'Warning', count: visibleDiffs.value.filter(d => d.severity === 'warning').length },
-  { key: 'info', label: 'Info', count: visibleDiffs.value.filter(d => d.severity === 'info').length },
-])
 const filteredDiffs = computed(() => {
   const q = search.value.trim().toLowerCase()
   let list = activeIssue.value === 'all'
@@ -176,6 +159,7 @@ const filteredDiffs = computed(() => {
       d.property.toLowerCase().includes(q) ||
       issueLabel(d.property).includes(q) ||
       (d.textContent || '').includes(q) ||
+      (d.designName || '').includes(q) ||
       d.description.toLowerCase().includes(q)
     )
   }
@@ -187,15 +171,7 @@ const filteredDiffs = computed(() => {
     return (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9)
   })
 })
-const filteredUnmatched = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  if (!q) return props.unmatched
-  return props.unmatched.filter(n =>
-    (n.name || '').toLowerCase().includes(q) ||
-    (n.textContent || '').toLowerCase().includes(q) ||
-    (n.type || '').toLowerCase().includes(q)
-  )
-})
+
 function selectIssue(key) {
   activeIssue.value = key
   selectedIdx.value = -1
@@ -211,6 +187,28 @@ function selectItem(d, idx) {
   }
 }
 
+// ── 折叠状态（按节点+属性的稳定 key）──
+function foldKey(d) {
+  return `${d.designNodeId || ''}|${d.arkuiNodeId || ''}|${d.property}`
+}
+function isFolded(key) {
+  return folded.value.has(key)
+}
+function toggleFold(key) {
+  const next = new Set(folded.value)
+  next.has(key) ? next.delete(key) : next.add(key)
+  folded.value = next
+}
+
+// ── 卡片头节点名 ──
+function cardName(d) {
+  return d.textContent || d.designName || d.relatedDesignName || d.name || '节点'
+}
+function isEmptyVal(val) {
+  const s = String(val ?? '').trim()
+  return s === '' || s === '无' || s === 'none' || s === 'null'
+}
+
 const COLOR_PROPS = new Set(['fontColor', 'backgroundColor', 'border.color', 'borderColor', 'shadow.color'])
 function isColorProp(p)  { return COLOR_PROPS.has(p) }
 function extractHex(val) { return (String(val || '').match(/#[0-9A-Fa-f]{6,8}/) || [''])[0] }
@@ -222,12 +220,6 @@ function displayValue(prop, val) {
     return text
   }
   return extractHex(text) || text.replace(/\s*\(rgba\([^)]+\)\)/i, '')
-}
-function truncate(s, n)  { return s.length > n ? s.slice(0, n) + '…' : s }
-function confidenceLabel(confidence) {
-  if (confidence === 'high') return '高'
-  if (confidence === 'low') return '低'
-  return '中'
 }
 function issueKey(property = '') {
   const p = String(property)
@@ -263,246 +255,257 @@ function issueLabel(property) {
   min-height: 0;
 }
 
+/* ── 工具栏 ── */
 .diff-toolbar {
-  padding: 10px 12px 8px;
-  border-bottom: 1px solid #e5e5e5;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.diff-tabs {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  flex-shrink: 0;
-  background: #fff;
 }
 
-.issue-tabs {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.issue-tab {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
-  border-radius: 12px;
-  border: 1.5px solid transparent;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  background: #f5f5f5;
-  color: #737373;
-  transition: all .15s;
-}
-.issue-tab.active {
-  border-color: #0a59f7;
-  color: #0a59f7;
-  background: #f3f7ff;
-}
-
-.badge {
-  background: #fff;
-  color: currentColor;
-  border: 1px solid currentColor;
+.diff-tab {
+  height: 28px;
+  padding: 3px 8px;
+  border: none;
   border-radius: 8px;
-  padding: 0 5px;
-  font-size: 10px;
-  line-height: 16px;
-  min-width: 16px;
-  text-align: center;
-  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  background: rgba(25, 25, 25, 0.05);
+  color: var(--octo-text-primary);
+  transition: background 150ms ease, color 150ms ease;
 }
 
-.severity-summary {
-  display: none;
-  gap: 6px;
-  flex-wrap: wrap;
+.diff-tab.active {
+  background: var(--octo-primary-subtle);
+  color: var(--octo-primary);
+}
+
+.diff-tools {
+  display: flex;
   align-items: center;
+  gap: 12px;
+}
+
+.diff-search {
+  flex: 1;
   min-width: 0;
 }
-.severity-chip {
-  font-size: 10px;
-  font-weight: 700;
-  border-radius: 10px;
-  padding: 2px 7px;
-}
-.severity-chip.error   { background: #fff3f2; color: #d93026; }
-.severity-chip.warning { background: #fff8e8; color: #9a5b00; }
-.severity-chip.info    { background: #f5f5f5; color: #737373; }
 
-.toolbar-row {
+.diff-search :deep(.el-input__wrapper) {
+  height: 32px;
+  border-radius: 4px;
+}
+
+.diff-search :deep(.el-input__inner) {
+  font-size: 13px;
+}
+
+.diff-search :deep(.el-input__inner::placeholder) {
+  color: var(--octo-text-placeholder);
+}
+
+.diff-lowconf {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.confidence-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
-  font-size: 12px;
-  color: #5f6d82;
+  font-size: 14px;
+  color: var(--octo-text-secondary);
+  cursor: pointer;
 }
 
-.search-input { font-size: 12px; }
-
-.diff-list {
+/* ── 卡片列表 ── */
+.diff-cards {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 6px 0;
+  padding: 0 16px 16px;
 }
 
-.diff-item {
-  display: flex;
-  align-items: stretch;
-  padding: 0;
-  margin: 4px 8px;
-  border-radius: 8px;
-  border: 1px solid #e5e5e5;
-  background: #fff;
-  cursor: pointer;
-  transition: all .15s;
-}
-.diff-item:hover { border-color: #d8d8d8; background: #fafafa; }
-.diff-item.selected { border-color: #0a59f7; background: #f3f7ff; box-shadow: 0 0 0 2px rgba(10,89,247,.10); }
-
-.diff-body { padding: 8px 10px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
-
-.diff-meta { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-
-.prop-tag {
-  font-size: 11px;
-  font-family: monospace;
-  background: #f5f5f5;
-  color: #0a59f7;
-  padding: 1px 5px;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-
-.issue-badge {
-  font-size: 10px;
-  font-weight: 700;
-  color: #0a59f7;
-  background: #eef4ff;
-  border: 1px solid #d8e6ff;
-  border-radius: 4px;
-  padding: 1px 5px;
-  flex-shrink: 0;
-}
-
-.match-tag {
-  font-size: 10px;
-  color: #909399;
-  background: #fafafa;
-  border: 1px solid #ebeef5;
-  border-radius: 3px;
-  padding: 0 4px;
-  flex-shrink: 0;
-}
-
-.relation-tag {
-  font-size: 10px;
-  color: #8a5c00;
-  background: #fff7ea;
-  border: 1px solid #f0d8aa;
-  border-radius: 3px;
-  padding: 0 5px;
-  flex-shrink: 0;
-}
-
-.confidence-badge {
-  font-size: 10px;
-  font-weight: 700;
-  border-radius: 4px;
-  padding: 1px 5px;
-  flex-shrink: 0;
-}
-.confidence-badge.high   { background: #eef8f1; color: #1f8f45; }
-.confidence-badge.medium { background: #f0f3f7; color: #4d6073; }
-.confidence-badge.low    { background: #fff8e8; color: #9a5b00; }
-
-.text-snippet {
-  font-size: 11px;
-  color: #909399;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.diff-values {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  font-size: 11px;
-}
-
-.val-block {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
-  padding: 4px 6px;
-  border: 1px solid #ebeef5;
-  border-radius: 5px;
-  background: #fafafa;
-}
-.val-block.design { border-color: #dce6f7; background: #f8fbff; }
-.val-block.arkui  { border-color: #e4e7ed; background: #fbfbfc; }
-
-.val-label {
-  flex-shrink: 0;
-  font-size: 10px;
-  line-height: 16px;
-  padding: 0 4px;
-  border-radius: 3px;
-  font-weight: 700;
-}
-.val-block.arkui  .val-label { color: #4e5969; background: #eef0f3; }
-.val-block.design .val-label { color: #0a59f7; background: #eef4ff; }
-
-.val-text {
-  word-break: break-all;
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.val-block.arkui  .val-text { color: #303133; }
-.val-block.design .val-text { color: #0a59f7; }
-
-.arrow { flex-shrink: 0; color: #c0c4cc; font-size: 12px; margin-top: 1px; }
-
-:deep(.color-dot) {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  border: 1px solid rgba(0,0,0,.12);
-  flex-shrink: 0;
-}
-
-.diff-desc { font-size: 11px; color: #909399; line-height: 1.4; }
-
-.section-divider {
-  margin: 10px 8px 6px;
-  font-size: 11px;
-  color: #909399;
-  padding-top: 10px;
-  border-top: 1px dashed #e4e7ed;
-}
-.unmatched-chips { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 8px 10px; }
-
-.empty-state {
+.diff-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 48px 0;
-  color: #c0c4cc;
   gap: 8px;
-  font-size: 13px;
+  color: var(--octo-text-disabled);
+  font-size: 14px;
+}
+
+.diff-empty p {
+  margin: 0;
+}
+
+/* ── 差异卡片 ── */
+.diff-card {
+  background: var(--octo-bg-canvas);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.diff-card:last-child {
+  margin-bottom: 0;
+}
+
+.diff-card:hover {
+  background: var(--octo-surface-hover);
+  border-color: var(--octo-border-default);
+}
+
+.diff-card.selected {
+  background: var(--octo-surface-selected);
+  border-color: var(--octo-primary);
+}
+
+.diff-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 36px;
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.diff-card-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--octo-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-card-ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  color: var(--octo-text-primary);
+}
+
+.diff-card-more {
+  font-size: 16px;
+}
+
+.diff-card-fold {
+  font-size: 16px;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.diff-card-fold:hover {
+  color: var(--octo-primary);
+}
+
+.diff-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 8px 8px;
+}
+
+/* 属性类型行 */
+.diff-prop-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 36px;
+  padding: 0 8px;
+}
+
+.diff-prop-key {
+  font-size: 14px;
+  color: var(--octo-text-secondary);
+  flex-shrink: 0;
+}
+
+.diff-prop-val {
+  font-size: 14px;
+  color: var(--octo-text-primary);
+}
+
+/* 开发 / 设计对比 */
+.diff-cmp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diff-cmp-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 36px;
+  padding: 7px 8px;
+  background: var(--octo-surface-page);
+  border-radius: 8px;
+}
+
+.diff-cmp-key {
+  font-size: 14px;
+  color: var(--octo-text-secondary);
+  flex-shrink: 0;
+}
+
+.diff-cmp-none {
+  font-size: 14px;
+  color: var(--octo-text-primary);
+}
+
+.diff-cmp-val {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.diff-cmp-val--dev {
+  color: var(--report-dev-color);
+  background: var(--report-dev-bg);
+}
+
+.diff-cmp-val--design {
+  color: var(--report-design-color);
+  background: var(--report-design-bg);
+}
+
+.diff-val-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 底部说明 */
+.diff-card-desc {
+  font-size: 14px;
+  color: var(--octo-text-secondary);
+  padding: 0 8px;
+  line-height: 22px;
+}
+
+:deep(.color-dot) {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
 }
 </style>

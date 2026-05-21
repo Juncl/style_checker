@@ -53,94 +53,87 @@
     </div>
   </div>
 
-  <!-- ── 中间主区 ── -->
-  <main class="center-panel">
-    <div class="report-container">
-      <!-- 节点选中说明条 -->
-      <transition name="fade">
-        <div v-if="selectedPair" class="highlight-bar node-bar">
-          <el-icon><Crop /></el-icon>
-          已选中实机节点：<b>{{ selectedPair.arkui?.textContent || selectedPair.arkui?.name || selectedPair.design?.textContent || selectedPair.design?.name }}</b>
-          <el-tag size="small" effect="plain" style="margin-left:4px">{{ selectedPair.matchType }}</el-tag>
-          <el-tag
-            v-if="selectedPair.confidence"
-            size="small"
-            effect="plain"
-            :type="confidenceTagType(selectedPair.confidence)"
-          >
-            {{ confidenceText(selectedPair.confidence) }}
-          </el-tag>
-          <el-button link size="small" style="margin-left:auto" @click="$emit('clear-pair')">✕ 取消</el-button>
+  <!-- ── 中间主区：开发侧 + 设计侧 ── -->
+  <main class="center-panel up-board">
+    <div class="up-columns">
+      <!-- 开发侧 -->
+      <section class="up-col up-col--dev">
+        <div class="up-tabbar up-tabbar--soft">
+          <img :src="iconDev" alt="" class="up-tab-icon" />
+          <span class="up-tab-text">开发环境</span>
+          <span class="up-tab-sep">/</span>
+          <span class="up-tab-text">20260306 10:50:15</span>
+          <el-icon class="up-tab-arrow"><ArrowRight /></el-icon>
+          <button class="up-tab-action" @click="$emit('recheck')">重新上传</button>
         </div>
-      </transition>
-      <!-- 开发侧列 -->
-      <div class="report-col">
-        <div class="report-col-title">
-          <div>
-            <img :src="iconDev" alt="" class="report-col-title-icon" />
-            <span>开发环境</span>
-          </div>
-          <button class="upload-col-reupload" @click="$emit('reupload')">重新上传</button>
+        <div class="up-stage up-stage--report">
+          <ImagePanel
+            :src="arkuiImgSrc"
+            :highlight="null"
+            :highlight-pair="null"
+            :canvas-w="result.canvas.arkui.w"
+            :canvas-h="result.canvas.arkui.h"
+            :nodes="arkuiNodes"
+            :selected-id="selectedPair?.arkui?.id || null"
+            :inspector-node="selectedPair?.arkui || null"
+            :style-diffs="selectedArkuiDiffs"
+            :debug-mode="debugMode"
+            :debug-pipeline-visible="debugPipelineOn"
+            :debug-visible="debugOverlayOn"
+            :debug-pair-map="debugPairMap"
+            @node-click="$emit('arkui-node-click', $event)"
+          />
         </div>
-        <ImagePanel
-          :src="arkuiImgSrc"
-          :highlight="null"
-          :highlight-pair="null"
-          :canvas-w="result.canvas.arkui.w"
-          :canvas-h="result.canvas.arkui.h"
-          :nodes="arkuiNodes"
-          :selected-id="selectedPair?.arkui?.id || null"
-          :inspector-node="selectedPair?.arkui || null"
-          :style-diffs="selectedArkuiDiffs"
-          :debug-mode="debugMode"
-          :debug-pipeline-visible="debugPipelineOn"
-          :debug-visible="debugOverlayOn"
-          :debug-pair-map="debugPairMap"
-          @node-click="$emit('arkui-node-click', $event)"
-        />
-      </div>
+      </section>
 
-      <!-- 设计侧列 -->
-      <div class="report-col">
-        <div class="report-col-title">
-          <div>
-            <img :src="iconDesign" alt="" class="report-col-title-icon" />
-            <span>设计页面</span>
-          </div>
-          <button class="upload-col-reupload" @click="$emit('reupload')">重新上传</button>
+      <!-- 设计侧 -->
+      <section class="up-col up-col--design">
+        <div class="up-tabbar">
+          <img :src="iconDesign" alt="" class="up-tab-icon" />
+          <span class="up-tab-text">设计页面</span>
+          <span class="up-tab-sep">/</span>
+          <span class="up-tab-text">主题购买页面示例</span>
+          <el-icon class="up-tab-arrow"><ArrowRight /></el-icon>
+          <button class="up-tab-action" @click="$emit('recheck')">重新上传</button>
         </div>
-        <ImagePanel
-          :src="designImgSrc"
-          :highlight="null"
-          :highlight-pair="null"
-          :canvas-w="result.canvas.design.w"
-          :canvas-h="result.canvas.design.h"
-          :nodes="designNodes"
-          :selected-id="selectedPair?.design?.id || null"
-          :inspector-node="selectedPair?.design || null"
-          :style-diffs="selectedDesignDiffs"
-          :locked-ids="lockedNodeIds"
-          :debug-mode="debugMode"
-          :debug-pipeline-visible="debugPipelineOn"
-          :debug-visible="debugOverlayOn"
-          :debug-pair-map="debugPairMap"
-          @node-click="$emit('design-node-click', $event)"
-        />
-      </div>
+        <div class="up-stage up-stage--report">
+          <ImagePanel
+            :src="designImgSrc"
+            :highlight="null"
+            :highlight-pair="null"
+            :canvas-w="result.canvas.design.w"
+            :canvas-h="result.canvas.design.h"
+            :nodes="designNodes"
+            :selected-id="selectedPair?.design?.id || null"
+            :inspector-node="selectedPair?.design || null"
+            :style-diffs="selectedDesignDiffs"
+            :locked-ids="lockedNodeIds"
+            :debug-mode="debugMode"
+            :debug-pipeline-visible="debugPipelineOn"
+            :debug-visible="debugOverlayOn"
+            :debug-pair-map="debugPairMap"
+            @node-click="$emit('design-node-click', $event)"
+          />
+        </div>
+      </section>
     </div>
   </main>
 
-  <!-- ── 右侧面板 ── -->
-  <aside class="right-panel">
-    <!-- 标题栏 -->
-    <div class="right-panel-header">
-      <span class="right-panel-title">差异报告</span>
-      <button class="rpa-link" @click="$emit('share')">分享</button>
-      <button class="rpa-link">历史预览</button>
-      <button class="rpa-link" @click="$emit('recheck')">重新对比</button>
+  <!-- ── 右侧差异报告面板 ── -->
+  <aside class="right-panel up-right-panel">
+    <!-- 标签栏 -->
+    <div class="up-tabbar up-tabbar--report">
+      <span class="report-tab-title">差异报告</span>
+      <div class="report-links">
+        <button class="report-link" @click="$emit('share')">分享</button>
+        <span class="report-link-sep"></span>
+        <button class="report-link">历史报告</button>
+        <span class="report-link-sep"></span>
+        <button class="report-link" @click="$emit('recheck')">重新对比</button>
+      </div>
     </div>
 
-    <!-- 标签页 + 内容 -->
+    <!-- debugger 模式：差异 / 节点树 切换 -->
     <div v-if="debugMode" class="right-tabs">
       <button
         :class="['rtab', { active: rightTab === 'diff' }]"
@@ -194,13 +187,13 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { Location, Crop } from '@element-plus/icons-vue'
+import { ArrowRight } from '@element-plus/icons-vue'
 import DiffReport from './DiffReport.vue'
 import ImagePanel from './ImagePanel.vue'
 import NodeTree from './NodeTree.vue'
 
-const iconDev = '/src/assets/a4.png'
-const iconDesign = '/src/assets/a5.png'
+const iconDev = '/src/assets/icon-dev.png'
+const iconDesign = '/src/assets/icon-design.png'
 
 const props = defineProps({
   result: {
@@ -296,18 +289,6 @@ const treeSelectedId = computed(() =>
     ? props.selectedPair?.design?.id || null
     : props.selectedPair?.arkui?.id || null
 )
-
-function confidenceText(confidence) {
-  if (confidence === 'high') return '高置信'
-  if (confidence === 'low') return '低置信'
-  return '中置信'
-}
-
-function confidenceTagType(confidence) {
-  if (confidence === 'high') return 'success'
-  if (confidence === 'low') return 'warning'
-  return 'primary'
-}
 
 function validationBg(status) {
   if (status === 'wrong')   return 'rgba(239, 68, 68, 0.18)'

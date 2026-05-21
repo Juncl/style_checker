@@ -275,30 +275,30 @@ function draw() {
     }
   }
 
-  // 锁定节点（红色虚线，仅轮廓）
+  // 锁定节点（红色虚线，仅轮廓）— 红色对齐设计稿 color-error #E02128
   for (const n of props.nodes) {
     if (n.visible === false || n.visualOccluded || !n.rect) continue
     if (!props.lockedIds.has(n.id)) continue
-    drawNodeRect(ctx, n.rect, sx, sy, 'rgba(245,108,108,0.06)', '#f56c6c', 1, [3, 3])
+    drawNodeRect(ctx, n.rect, sx, sy, 'rgba(224,33,40,0.06)', '#E02128', 1, [3, 3])
     // 左上角小锁标
     const lx = n.rect.x * sx, ly = n.rect.y * sy
-    ctx.fillStyle = 'rgba(245,108,108,0.75)'
+    ctx.fillStyle = 'rgba(224,33,40,0.75)'
     ctx.fillRect(lx, ly, 14, 14)
     ctx.fillStyle = '#fff'
     ctx.font = 'bold 10px sans-serif'
     ctx.fillText('🔒', lx + 1, ly + 11)
   }
 
-  // 悬停节点（蓝色虚线，排除锁定层）
+  // 悬停节点（红色虚线 + 浅红背景，排除锁定层）
   if (hoveredId.value && hoveredId.value !== props.selectedId && !props.lockedIds.has(hoveredId.value)) {
     const n = props.nodes.find(n => n.id === hoveredId.value)
-    if (n) drawNodeRect(ctx, n.rect, sx, sy, 'rgba(64,158,255,0.10)', '#409eff', 1.5, [4, 3])
+    if (n) drawNodeRect(ctx, n.rect, sx, sy, 'rgba(224,33,40,0.10)', '#E02128', 1, [4, 3])
   }
 
-  // 选中节点（蓝色实线）
+  // 选中节点（红色实线 + 红色背景，对齐设计稿差异标注 #E02128）
   if (props.selectedId) {
     const n = props.nodes.find(n => n.id === props.selectedId)
-    if (n) drawNodeRect(ctx, n.rect, sx, sy, 'rgba(64,158,255,0.18)', '#409eff', 1, [])
+    if (n) drawNodeRect(ctx, n.rect, sx, sy, 'rgba(224,33,40,0.20)', '#E02128', 1, [])
   }
 
   // diff 高亮（橙色）
