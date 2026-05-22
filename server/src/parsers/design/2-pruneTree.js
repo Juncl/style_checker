@@ -4,7 +4,7 @@
  * Design 侧的剪枝包含 4 个子操作（按顺序）：
  *
  *   2a. 硬剪枝 hardPrune       —— 整棵子树删除
- *       opacity=0 / out-of-bounds
+ *       opacity=0 / out-of-bounds / status-bar（系统状态栏整组件）
  *
  *   2b. 语义折叠 semanticCollapse
  *       icon / illustration 等小尺寸 FRAME/GROUP/VECTOR 折叠为单节点：
@@ -57,6 +57,7 @@ function hardPruneReason(node, canvasW, canvasH) {
   const raw = node._raw || {}
   if (hasZeroOpacity(raw.style?.opacity)) return 'opacity-zero'
   if (isOutOfBoundsRect(node.rect, canvasW, canvasH)) return 'out-of-bounds'
+  if (isStatusBarComp(node)) return 'status-bar'
   return null
 }
 
@@ -72,6 +73,43 @@ function isOutOfBoundsRect(rect, canvasW, canvasH) {
     rect.y > canvasH ||
     rect.x + rect.w <= 0 ||
     rect.y + rect.h <= 0
+}
+
+// 系统状态栏整组件硬剪枝（参考 test/isStatusBarComp.js）
+// 设计稿顶部的状态栏（时间/信号/电量）属于系统级 UI，不参与还原度比对，
+// 命中后整棵子树硬剪掉。判定四要素全部满足：
+//   1. name / componentData 标识为 StatusBar
+//   2. 贴左上角：x === 0 且 y <= 2（容忍 1-2px 设计稿偏移）
+//   3. 矮条：h < 50
+//   4. 子树中存在时间格式文本（^\d{1,2}:\d{2}$，如 08:08 / 9:41）
+const TIME_TEXT_RE = /^\d{1,2}:\d{2}$/
+
+function isStatusBarComp(node) {
+  if (!node) return false
+  const cd = node._raw?.componentData || {}
+  const name = String(node.name || '')
+  const namedStatusBar =
+    cd.componentDescription === 'StatusBar' ||
+    String(cd.componentName || '').includes('StatusBar') ||
+    name.includes('StatusBar')
+  if (!namedStatusBar) return false
+  const r = node.rect || {}
+  if (!(r.x === 0 && r.y <= 2 && r.h < 50)) return false
+  return hasTimeTextDescendant(node)
+}
+
+// 递归遍历整棵子树，查找时间格式的文本节点
+function hasTimeTextDescendant(node) {
+  if (!node) return false
+  if (node.type === 'text' && TIME_TEXT_RE.test(String(node.textContent || '').trim())) {
+    return true
+  }
+  if (Array.isArray(node.children)) {
+    for (const c of node.children) {
+      if (hasTimeTextDescendant(c)) return true
+    }
+  }
+  return false
 }
 
 // ─── 2b. 语义折叠 ─────────────────────────────────────────────────────────────
