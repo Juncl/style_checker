@@ -304,8 +304,8 @@ function diffGradient(diffs, ctx, dGrad, aGrad, dv, av) {
 
   if (issues.length > 0) {
     diffs.push(makeDiff(ctx, 'backgroundColor',
-      `linear-gradient(${dGrad.angle}deg, ...)`,
-      `linear-gradient(${aGrad.angle}deg, ...)`,
+      dv,
+      av,
       'warning',
       `渐变不匹配: ${issues.join('; ')}`
     ))

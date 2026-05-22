@@ -531,7 +531,6 @@ function toInspectorStyle(left, top) {
     return {
       left: `${left}px`,
       top: `${top}px`,
-      width: '190px',
     }
   }
 
@@ -549,7 +548,6 @@ function toInspectorStyle(left, top) {
   return {
     left: `${left}px`,
     top: `${top}px`,
-    width: '190px',
     maxHeight: `${maxHeight}px`,
   }
 }

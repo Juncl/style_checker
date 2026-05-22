@@ -1,6 +1,4 @@
 import {
-  buildTextIndex,
-  bestExactTextCandidate,
   makePair,
   matchRegionTextOptimal,
   matchByAnchorTopology,
@@ -8,11 +6,10 @@ import {
   bestTextPositionMatch,
   bestIoUMatch,
 } from './matchStrategies.js'
+import { matchAllTextNodes } from './allTextMatcher.js'
 import { yDistance, xDistance, computeIoU, sizeRatio } from '../utils/matchGeometry.js'
 import {
   textStyleSimilarity,
-  isAmbiguousUnitText,
-  isAmbiguousShortNumberText,
   hasUsableText,
   isStrongTitleSlotMatch,
   textSemanticSimilarity,
@@ -42,7 +39,7 @@ import { matchByListIndex } from './listIndexMatcher.js'
 
 /**
  * 节点匹配器
- * Pass 1: 文本内容精确匹配，并识别强锚点文本
+ * Pass 1: 全文本节点加权匹配（matchAllTextNodes），可信文本视为强锚点
  * Pass 2: 匹配区域内文本节点全局最优匹配
  * Pass 3: 基于强锚点周边拓扑关系匹配弱节点
  * Pass 4: 文本位置回退匹配
@@ -54,66 +51,13 @@ import { matchByListIndex } from './listIndexMatcher.js'
 
 /**
  * 主入口：将 design 节点与 arkui 节点两两配对
+ *
+ * Pass 1 起以 ArkUI 为主序的全文本加权匹配，方向固定；不再支持 design-first /
+ * arkui-first 双向切换（matchDirection 参数与 STYLE_CHECKER_MATCH_DIRECTION 已失效）。
  * @returns {{ pairs: MatchPair[], unmatchedDesign: Node[], unmatchedArkui: Node[] }}
  */
 export function matchNodes(designNodes, arkuiNodes, options = {}) {
-  if (options.primarySource === 'arkui') {
-    return matchNodesArkuiFirst(designNodes, arkuiNodes, options)
-  }
   return matchNodesDesignFirst(designNodes, arkuiNodes, options)
-}
-
-function matchNodesArkuiFirst(designNodes, arkuiNodes, options = {}) {
-  const primaryResult = matchNodesDesignFirst(arkuiNodes, designNodes, {
-    ...options,
-    primarySource: 'design',
-  })
-
-  const primaryPairs = primaryResult.pairs
-    .map(pair => ({
-      ...pair,
-      design: pair.arkui,
-      arkui: pair.design,
-      designRegionId: pair.arkuiRegionId,
-      arkuiRegionId: pair.designRegionId,
-    }))
-    .filter(isAcceptablePair)
-  const fallbackResult = matchNodesDesignFirst(designNodes, arkuiNodes, {
-    ...options,
-    primarySource: 'design',
-  })
-
-  const usedDesign = new Set(primaryPairs.map(p => p.design.id))
-  const usedArkui = new Set(primaryPairs.map(p => p.arkui.id))
-  const fallbackPairs = fallbackResult.pairs.filter(pair => {
-    if (usedDesign.has(pair.design.id) || usedArkui.has(pair.arkui.id)) return false
-    usedDesign.add(pair.design.id)
-    usedArkui.add(pair.arkui.id)
-    return true
-  })
-  const pairs = selectOneToOnePairs([...primaryPairs, ...fallbackPairs].filter(isAcceptablePair))
-
-  const matchedDesignSet = new Set(pairs.map(p => p.design.id))
-  const matchedArkuiSet = new Set(pairs.map(p => p.arkui.id))
-  const comparableDesignNodes = designNodes.filter(isComparableOutputNode)
-  const comparableArkuiNodes = arkuiNodes.filter(isComparableOutputNode)
-
-  return {
-    pairs,
-    unmatchedDesign: comparableDesignNodes.filter(n => !matchedDesignSet.has(n.id)),
-    unmatchedArkui: comparableArkuiNodes.filter(n => !matchedArkuiSet.has(n.id)),
-    comparableDesignCount: comparableDesignNodes.length,
-    comparableArkuiCount: comparableArkuiNodes.length,
-    regions: {
-      design: fallbackResult.regions?.design || [],
-      arkui: fallbackResult.regions?.arkui || [],
-      pairs: (primaryResult.regions?.pairs || []).map(pair => ({
-        ...pair,
-        designRegionId: pair.arkuiRegionId,
-        arkuiRegionId: pair.designRegionId,
-      })),
-    },
-  }
 }
 
 function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
@@ -126,53 +70,15 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   const arkuiRegions = segmentRegions(arkuiNodes, 'arkui')
   let regionContext = null
 
-  // ── Pass 1: 文本内容精确匹配 ─────────────────────────────────────────────
-  const arkuiTextMap = buildTextIndex(arkuiNodes.filter(n => n.type === 'text'))
-
-  for (const dn of designNodes) {
-    if (dn.type !== 'text') continue
-    const content = normalizeText(dn.textContent)
-    if (!content) continue
-    if (isWeakPixelDuplicate(dn, designNodes, content)) continue
-
-    const candidates = (arkuiTextMap.get(content) || []).filter(n => !usedArkui.has(n.id))
-    if (candidates.length === 0) continue
-
-    // 精确同文本优先看局部位置和样式；只按 y 选会在楼层偏移时漏掉同名文本。
-    const best = bestExactTextCandidate(dn, candidates)
-    const dist = yDistance(dn.normRect, best.normRect)
-
-    const styleScore = textStyleSimilarity(dn, best)
-    const xDist = xDistance(dn.normRect, best.normRect)
-    const uniqueExactText = (arkuiTextMap.get(content) || []).length === 1 &&
-      designNodes.filter(n => n.type === 'text' && normalizeText(n.textContent) === normalizeText(content)).length === 1
-
-    const ambiguousShortNumber = isAmbiguousShortNumberText(content)
-
-    // 短单位/短数字在页面中重复率高，必须更贴近才算强匹配。
-    const yThreshold = isAmbiguousUnitText(content)
-      ? 0.035
-      : ambiguousShortNumber
-        ? 0.045
-      : uniqueExactText && styleScore >= 0.70
-        ? 0.34
-        : xDist < 0.08 && styleScore >= 0.70
-          ? 0.22
-          : 0.14
-    const xThreshold = ambiguousShortNumber ? 0.10 : Infinity
-    if (dist < yThreshold && xDist < xThreshold) {
-      const isStrongAnchor = !ambiguousShortNumber && dist < 0.05 && styleScore >= 0.78
-      const pair = makePair(dn, best, 'text-content', {
-        confidence: isStrongAnchor ? 'high' : 'medium',
-        topologyScore: styleScore,
-        isAnchor: isStrongAnchor,
-      })
-      pairs.push(pair)
-      usedArkui.add(best.id)
-      matchedDesignIds.add(dn.id)
-      if (isTrustedTopologyAnchor(pair, dist, styleScore)) topologyAnchors.push(pair)
-      if (isStrongAnchor) strongAnchors.push(pair)
-    }
+  // ── Pass 1: 全文本节点加权匹配（ArkUI 主序，可信文本 ≥0.9 视为强锚点）──────────
+  const textMatchResult = matchAllTextNodes(designNodes, arkuiNodes)
+  for (const pair of textMatchResult.pairs) {
+    pairs.push(pair)
+    usedArkui.add(pair.arkui.id)
+    matchedDesignIds.add(pair.design.id)
+    // 可信文本即强锚点，同时驱动区域切割（strongAnchors）和拓扑匹配（topologyAnchors）
+    strongAnchors.push(pair)
+    topologyAnchors.push(pair)
   }
 
   regionContext = buildRegionContext(designRegions, arkuiRegions, strongAnchors)
@@ -489,6 +395,12 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
       arkui: arkuiRegions.map(formatRegionForOutput),
       pairs: regionContext?.regionPairs || [],
     },
+    // 新版 Pass 1 全文本加权匹配明细，供后续前端可视化 / 调试使用
+    textMatch: {
+      textHmMapPix: textMatchResult.textHmMapPix,
+      textHmMapPixCredible: textMatchResult.textHmMapPixCredible,
+      textHmMapPixDetail: textMatchResult.textHmMapPixDetail,
+    },
   }
 }
 
@@ -499,17 +411,6 @@ function isTrustedTopologyAnchor(pair, dist, score) {
   if (pair.isAnchor) return true
   if ((score ?? 0) < 0.68) return false
   return dist == null || dist < 0.12
-}
-
-function isWeakPixelDuplicate(node, nodes, content) {
-  const ratio = node.pixelVisibility?.visiblePixelRatio
-  if (ratio == null || ratio >= 0.08) return false
-  return nodes.some(other =>
-    other.id !== node.id &&
-    other.type === 'text' &&
-    normalizeText(other.textContent) === normalizeText(content) &&
-    (other.pixelVisibility?.visiblePixelRatio ?? 0) >= 0.10
-  )
 }
 
 function isWeakVisibleTextNode(node) {

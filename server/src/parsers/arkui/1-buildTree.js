@@ -37,6 +37,18 @@ const FRAMEWORK_TYPES = new Set([
 ])
 const SPAN_TYPES = new Set(['Span'])
 
+// ArkUI GradientDirection 枚举 → CSS linear-gradient 角度（deg）
+const GRADIENT_DIRECTION_DEG = {
+  'GradientDirection.Top': 0,
+  'GradientDirection.RightTop': 45,
+  'GradientDirection.Right': 90,
+  'GradientDirection.RightBottom': 135,
+  'GradientDirection.Bottom': 180,
+  'GradientDirection.LeftBottom': 225,
+  'GradientDirection.Left': 270,
+  'GradientDirection.LeftTop': 315,
+}
+
 /**
  * @param {object} arkuiJson 原始 arkui.json
  * @returns {{ canvasWidthVp, canvasHeightVp, resolution, root }} root 为树根
@@ -56,11 +68,30 @@ export function buildArkuiTree(arkuiJson) {
 
 // clipRadius：最近一层 clip=true 祖先的 borderRadius，DFS 向下传播
 // compType：最近一层语义组件祖先的类型标记（如 'titlebar'），DFS 向下传播给所有后代
-function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compType = null) {
+// rotationChain：祖先链上所有 rotate 的纯旋转（外到内），把布局矩形旋转到真实渲染位置
+// layoutRect：当前节点的布局矩形；在旋转影响区内时由父容器布局规则推断，否则为 null
+function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compType = null, rotationChain = null, layoutRect = null) {
   const type = node['$type'] || ''
   const attrs = node['$attrs'] || {}
   const rectRaw = parseArkuiRect(node['$rect'])
-  const vpRect = rectRaw ? toVpRect(rectRaw, resolution) : null
+  const rawVpRect = rectRaw ? toVpRect(rectRaw, resolution) : null
+
+  // 旋转修正：ArkUI 对受 rotate 影响的节点导出的 $rect 不可信（位置偏移、w/h 也错）。
+  // 由于 rotate 不影响布局，节点真实的布局矩形由父容器布局规则递归推断（layoutRect，
+  // 来自下方 children 循环的 inferChildLayoutRect）；最终渲染位置 = 布局矩形应用旋转链。
+  const baseRect = layoutRect || rawVpRect
+  const ownRotation = parseOwnRotation(attrs.rotate, baseRect)
+  const nextRotationChain = ownRotation
+    ? [...(rotationChain || []), ownRotation]
+    : rotationChain
+  let vpRect = baseRect
+  if (vpRect && nextRotationChain && nextRotationChain.length > 0) {
+    vpRect = applyRotationChain(baseRect, nextRotationChain)
+  }
+  // 修正后同步 _rectRaw（step2 以 _rectRaw 判定 no-rect）
+  const effectiveRectRaw = (vpRect !== rawVpRect && vpRect && rectRaw)
+    ? { ...rectRaw, x: vpRect.x * resolution, y: vpRect.y * resolution, w: vpRect.w * resolution, h: vpRect.h * resolution }
+    : rectRaw
 
   const style = extractArkuiStyle(type, attrs, resolution, vpRect)
 
@@ -102,7 +133,7 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compT
     _spanType: SPAN_TYPES.has(type),
     _blankType: type === 'Blank',
     _attrs: attrs,
-    _rectRaw: rectRaw,
+    _rectRaw: effectiveRectRaw,
   }
 
   if (compType) unified.compType = compType
@@ -111,16 +142,25 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compT
   if (text) unified.textContent = text
 
   const children = node['$children'] || []
+  // 旋转影响区：当前节点在旋转链内，其整棵子树的 $rect 都被 ArkUI 污染。
+  const inRotatedZone = !!(nextRotationChain && nextRotationChain.length > 0)
   for (let i = 0; i < children.length; i++) {
+    const childAttrs = children[i]['$attrs'] || {}
+    const childAngle = parseFloat(childAttrs.rotate?.angle)
+    const childSelfRotated = Number.isFinite(childAngle) && childAngle !== 0
+    // 子节点 $rect 被污染（在旋转区内，或自身带 rotate）时，递归推断其布局矩形
+    const childLayoutRect = (inRotatedZone || childSelfRotated)
+      ? inferChildLayoutRect(type, baseRect, attrs, childAttrs)
+      : null
     if (nextClipRadius) {
       const childRectRaw = parseArkuiRect(children[i]['$rect'])
       const childVpRect = childRectRaw ? toVpRect(childRectRaw, resolution) : null
       if (vpRect && childVpRect && clipRectsMatch(vpRect, childVpRect)) {
-        unified.children.push(walk(children[i], resolution, canvasW, canvasH, [...path, i], nextClipRadius, nextCompType))
+        unified.children.push(walk(children[i], resolution, canvasW, canvasH, [...path, i], nextClipRadius, nextCompType, nextRotationChain, childLayoutRect))
         continue
       }
     }
-    unified.children.push(walk(children[i], resolution, canvasW, canvasH, [...path, i], null, nextCompType))
+    unified.children.push(walk(children[i], resolution, canvasW, canvasH, [...path, i], null, nextCompType, nextRotationChain, childLayoutRect))
   }
 
   // Button / TextInput：拆分出虚拟文本子节点（便于与设计侧匹配）
@@ -131,6 +171,110 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compT
   }
 
   return unified
+}
+
+// ─── 旋转修正 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 解析节点自身的 rotate 属性，返回纯旋转 { cx, cy, angle }（旋转中心绝对坐标 vp）。
+ * 仅处理绕 z 轴的 2D 旋转；angle 为 0 或 3D 旋转（x/y 非 0）时返回 null。
+ * 旋转中心 centerX/centerY 是相对节点布局矩形 baseRect 的百分比。
+ */
+function parseOwnRotation(rotateAttr, baseRect) {
+  if (!rotateAttr || typeof rotateAttr !== 'object' || !baseRect) return null
+  const angle = parseFloat(rotateAttr.angle)
+  if (!Number.isFinite(angle) || angle === 0) return null
+  const ax = parseFloat(rotateAttr.x) || 0
+  const ay = parseFloat(rotateAttr.y) || 0
+  if (ax !== 0 || ay !== 0) return null   // 3D 旋转不处理
+
+  const cxPct = parseRotateCenterPercent(rotateAttr.centerX)
+  const cyPct = parseRotateCenterPercent(rotateAttr.centerY)
+  return {
+    cx: baseRect.x + baseRect.w * cxPct,
+    cy: baseRect.y + baseRect.h * cyPct,
+    angle,
+  }
+}
+
+// rotate 的 centerX/centerY，形如 "50.00%"，解析为 0-1 比例（缺省 0.5）
+function parseRotateCenterPercent(val) {
+  if (typeof val === 'string' && val.trim().endsWith('%')) {
+    const n = parseFloat(val)
+    if (Number.isFinite(n)) return n / 100
+  }
+  return 0.5
+}
+
+// ArkUI Alignment 枚举 → [水平比例, 垂直比例]
+const ALIGNMENT_RATIOS = {
+  'Alignment.TopStart': [0, 0],
+  'Alignment.Top': [0.5, 0],
+  'Alignment.TopEnd': [1, 0],
+  'Alignment.Start': [0, 0.5],
+  'Alignment.Center': [0.5, 0.5],
+  'Alignment.End': [1, 0.5],
+  'Alignment.BottomStart': [0, 1],
+  'Alignment.Bottom': [0.5, 1],
+  'Alignment.BottomEnd': [1, 1],
+}
+
+/**
+ * 推断带旋转子节点的未旋转布局位置。
+ * rotate 不影响 ArkUI 布局，子节点布局位置由父容器布局规则决定 ——
+ * 与父容器（不旋转、$rect 可信）的 contentRect、子 size/margin、对齐方式相关，
+ * 不依赖任何兄弟节点。目前仅支持父为 Stack（层叠布局）：
+ * 子节点连同自身 margin 组成 margin-box，按父 Stack 的 alignContent 对齐。
+ */
+function inferChildLayoutRect(parentType, parentRect, parentAttrs, childAttrs) {
+  if (parentType !== 'Stack' || !parentRect) return null
+  const childW = childAttrs?.size ? parseVp(childAttrs.size.width) : null
+  const childH = childAttrs?.size ? parseVp(childAttrs.size.height) : null
+  if (childW == null || childH == null || childW <= 0 || childH <= 0) return null
+  const pad = parsePadding(parentAttrs?.padding) || { top: 0, right: 0, bottom: 0, left: 0 }
+  const mar = parsePadding(childAttrs?.margin) || { top: 0, right: 0, bottom: 0, left: 0 }
+  // 父 Stack 的 contentRect（扣父 padding）
+  const cx0 = parentRect.x + (pad.left || 0)
+  const cy0 = parentRect.y + (pad.top || 0)
+  const cw = parentRect.w - (pad.left || 0) - (pad.right || 0)
+  const ch = parentRect.h - (pad.top || 0) - (pad.bottom || 0)
+  const [hRatio, vRatio] = ALIGNMENT_RATIOS[parentAttrs?.alignContent] || [0.5, 0.5]
+  // 子节点连同 margin 组成 margin-box，按对齐放置后子节点在 box 内偏移 margin
+  const mboxW = childW + (mar.left || 0) + (mar.right || 0)
+  const mboxH = childH + (mar.top || 0) + (mar.bottom || 0)
+  return {
+    x: cx0 + (cw - mboxW) * hRatio + (mar.left || 0),
+    y: cy0 + (ch - mboxH) * vRatio + (mar.top || 0),
+    w: childW,
+    h: childH,
+  }
+}
+
+// 把点 (px,py) 绕 (cx,cy) 旋转 angleDeg（ArkUI rotate 正角度方向，取负号对齐）
+function rotatePoint(px, py, cx, cy, angleDeg) {
+  const rad = -angleDeg * Math.PI / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const dx = px - cx
+  const dy = py - cy
+  return {
+    x: cx + dx * cos - dy * sin,
+    y: cy + dx * sin + dy * cos,
+  }
+}
+
+// 依次应用旋转链修正 rect：保持 w/h，把中心点绕各级旋转中心旋转后回填 xy
+// chain 自外向内排列，点变换需自内向外应用（从末尾向前）
+function applyRotationChain(rect, chain) {
+  let cx = rect.x + rect.w / 2
+  let cy = rect.y + rect.h / 2
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const r = chain[i]
+    const p = rotatePoint(cx, cy, r.cx, r.cy, r.angle)
+    cx = p.x
+    cy = p.y
+  }
+  return { x: cx - rect.w / 2, y: cy - rect.h / 2, w: rect.w, h: rect.h }
 }
 
 /**
@@ -290,6 +434,11 @@ function extractArkuiStyle(type, attrs, resolution, vpRect) {
   if (bgColor && !isTransparent(bgColor)) {
     s.backgroundColor = normalizeArkuiColor(bgColor)
   }
+  // 渐变填充：无有效纯色背景时，提取 linearGradient 为 linear-gradient 字符串
+  if (!s.backgroundColor) {
+    const grad = buildLinearGradient(attrs.linearGradient)
+    if (grad) s.backgroundColor = grad
+  }
 
   // 尺寸信息
   let sizeWidth = null
@@ -412,6 +561,28 @@ function extractArkuiStyle(type, attrs, resolution, vpRect) {
   }
 
   return s
+}
+
+/**
+ * 把 ArkUI linearGradient 属性转为 CSS linear-gradient 字符串，与设计侧渐变格式对齐。
+ * 返回 null 表示无有效渐变（空对象 / 无 colors）。
+ */
+function buildLinearGradient(lg) {
+  if (!lg || typeof lg !== 'object' || !Array.isArray(lg.colors) || lg.colors.length === 0) {
+    return null
+  }
+  const deg = GRADIENT_DIRECTION_DEG[lg.direction] ?? 180
+  const stops = []
+  for (const c of lg.colors) {
+    if (!Array.isArray(c) || c.length === 0) continue
+    const color = normalizeArkuiColor(c[0])
+    if (!color) continue
+    const posNum = parseFloat(c[1])
+    const pos = Number.isFinite(posNum) ? `${+(posNum * 100).toFixed(2)}%` : '0%'
+    stops.push(`${color} ${pos}`)
+  }
+  if (stops.length === 0) return null
+  return `linear-gradient(${deg}deg, ${stops.join(', ')})`
 }
 
 function clipRectsMatch(a, b) {
