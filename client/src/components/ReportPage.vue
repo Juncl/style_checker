@@ -1,8 +1,9 @@
 <template>
   <!-- ── Debugger 悬浮框 ── -->
-  <div v-if="debugMode" class="debugger-float">
+  <div v-if="debugMode" class="debugger-float"
+    :style="debugFloatX !== null ? { left: debugFloatX + 'px', right: 'auto' } : {}">
     <div class="debugger-head">
-      <div class="debugger-title">
+      <div class="debugger-title drag-handle" @mousedown="startDrag($event, 'debug')">
         <span>Debugger</span>
         <small>映射 {{ debugPairItems.length }} 对</small>
       </div>
@@ -53,6 +54,29 @@
     </div>
   </div>
 
+  <!-- ── 节点选中说明条（悬浮，左上角）── -->
+  <transition name="fade">
+    <div v-if="debugMode && selectedPair" class="node-bar" :style="{ left: nodeBarX + 'px' }">
+      <div class="node-bar-head drag-handle" @mousedown="startDrag($event, 'nodebar')">
+        <span>已选中实机节点</span>
+        <button class="node-bar-close" @click.stop="$emit('clear-pair')">✕</button>
+      </div>
+      <div class="node-bar-body">
+        <el-icon class="node-bar-icon"><Crop /></el-icon>
+        <b class="node-bar-name">{{ selectedPair.arkui?.textContent || selectedPair.arkui?.name || selectedPair.design?.textContent || selectedPair.design?.name }}</b>
+        <div class="node-bar-tags">
+          <el-tag size="small" effect="plain">{{ selectedPair.matchType }}</el-tag>
+          <el-tag
+            v-if="selectedPair.confidence"
+            size="small"
+            effect="plain"
+            :type="confidenceTagType(selectedPair.confidence)"
+          >{{ confidenceText(selectedPair.confidence) }}</el-tag>
+        </div>
+      </div>
+    </div>
+  </transition>
+
   <!-- ── 中间主区：开发侧 + 设计侧 ── -->
   <main class="center-panel up-board">
     <div class="up-columns">
@@ -82,6 +106,7 @@
             :debug-visible="debugOverlayOn"
             :debug-pair-map="debugPairMap"
             @node-click="$emit('arkui-node-click', $event)"
+            @bg-click="$emit('clear-pair')"
           />
         </div>
       </section>
@@ -113,6 +138,7 @@
             :debug-visible="debugOverlayOn"
             :debug-pair-map="debugPairMap"
             @node-click="$emit('design-node-click', $event)"
+            @bg-click="$emit('clear-pair')"
           />
         </div>
       </section>
@@ -187,7 +213,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { ArrowRight } from '@element-plus/icons-vue'
+import { ArrowRight, Crop } from '@element-plus/icons-vue'
 import DiffReport from './DiffReport.vue'
 import ImagePanel from './ImagePanel.vue'
 import NodeTree from './NodeTree.vue'
@@ -280,6 +306,29 @@ const treeSide = ref('design')
 const debugMappingExpanded = ref(false)
 const emptyLockedIds = new Set()
 
+// 拖拽位置（null = 使用 CSS 默认值）
+const debugFloatX = ref(null)
+const nodeBarX = ref(10)
+
+function startDrag(e, which) {
+  e.preventDefault()
+  const startMouseX = e.clientX
+  const startX = which === 'debug'
+    ? (debugFloatX.value ?? (window.innerWidth - 280 - 10))
+    : nodeBarX.value
+  const onMove = (ev) => {
+    const newX = Math.max(0, Math.min(window.innerWidth - 280, startX + ev.clientX - startMouseX))
+    if (which === 'debug') debugFloatX.value = newX
+    else nodeBarX.value = newX
+  }
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
+
 const treeNodes = computed(() =>
   (treeSide.value === 'design' ? props.designNodes : props.allArkuiNodes)
 )
@@ -289,6 +338,20 @@ const treeSelectedId = computed(() =>
     ? props.selectedPair?.design?.id || null
     : props.selectedPair?.arkui?.id || null
 )
+
+function confidenceText(c) {
+  if (c === 'high')   return '高置信'
+  if (c === 'medium') return '中置信'
+  if (c === 'low')    return '低置信'
+  return c
+}
+
+function confidenceTagType(c) {
+  if (c === 'high')   return 'success'
+  if (c === 'medium') return 'warning'
+  if (c === 'low')    return 'danger'
+  return 'info'
+}
 
 function validationBg(status) {
   if (status === 'wrong')   return 'rgba(239, 68, 68, 0.18)'

@@ -1,6 +1,6 @@
 <template>
   <div class="img-panel" ref="panelRef">
-    <div class="img-wrapper" ref="wrapperRef">
+    <div class="img-wrapper" ref="wrapperRef" @click.self="emit('bg-click')">
       <img :src="src" ref="imgRef" :alt="label" @load="onImgLoad" />
       <canvas
         ref="canvasRef"
@@ -74,7 +74,7 @@ const props = defineProps({
   debugPairMap:  { type: Object,  default: () => ({}) },
 })
 
-const emit = defineEmits(['node-click'])
+const emit = defineEmits(['node-click', 'bg-click'])
 
 const panelRef     = ref(null)
 const labelRef     = ref(null)
@@ -179,6 +179,8 @@ function onCanvasClick(e) {
   if (hit) {
     localSelectedId.value = hit.id   // 同步更新本地状态，dblclick 可立即读到
     emit('node-click', hit.id)
+  } else {
+    emit('bg-click')
   }
 }
 
