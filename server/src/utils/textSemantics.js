@@ -284,8 +284,8 @@ function cjkCommonSuffixBoost(a, b) {
 }
 
 export function colorDistance(c1, c2) {
-  const p1 = parseArgb(c1)
-  const p2 = parseArgb(c2)
+  const p1 = parseArgb(extractMainTone(c1))
+  const p2 = parseArgb(extractMainTone(c2))
   if (!p1 || !p2) return 180
   return Math.sqrt(
     (p1.a - p2.a) ** 2 +
@@ -305,6 +305,40 @@ export function parseArgb(hex) {
     g: parseInt(h.slice(4, 6), 16),
     b: parseInt(h.slice(6, 8), 16),
   }
+}
+
+/**
+ * 提取颜色「主色调」用于文本字色对比打分：
+ * - 纯色 hex（#AARRGGBB / #RRGGBB）原样返回
+ * - linear-gradient(...) 字符串 → 所有 stop 颜色 ARGB 等权平均后的 #AARRGGBB
+ * - 解析不到颜色 → 原样返回（由下游 parseArgb 判定无效）
+ * 使渐变色能与纯色（或另一段渐变）取得可比较的分数，而不是因解析失败丢失整段权重。
+ */
+export function extractMainTone(value) {
+  if (!value || typeof value !== 'string') return value
+  const s = value.trim()
+  if (!/^linear-gradient/i.test(s)) return value
+  const hexes = s.match(/#[0-9a-fA-F]{6,8}/g)
+  if (!hexes || hexes.length === 0) return value
+  let sumA = 0, sumR = 0, sumG = 0, sumB = 0, count = 0
+  for (const m of hexes) {
+    const h = m.slice(1)
+    if (h.length === 8) {
+      sumA += parseInt(h.slice(0, 2), 16)
+      sumR += parseInt(h.slice(2, 4), 16)
+      sumG += parseInt(h.slice(4, 6), 16)
+      sumB += parseInt(h.slice(6, 8), 16)
+    } else if (h.length === 6) {
+      sumA += 255
+      sumR += parseInt(h.slice(0, 2), 16)
+      sumG += parseInt(h.slice(2, 4), 16)
+      sumB += parseInt(h.slice(4, 6), 16)
+    } else { continue }
+    count++
+  }
+  if (count === 0) return value
+  const toHex = n => Math.round(n / count).toString(16).padStart(2, '0').toUpperCase()
+  return `#${toHex(sumA)}${toHex(sumR)}${toHex(sumG)}${toHex(sumB)}`
 }
 
 export function hasUsableText(node) {

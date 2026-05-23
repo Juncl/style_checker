@@ -219,6 +219,14 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
         if (solidFill?.color) {
           result.fontColor = normalizeDesignColor(solidFill.color)
         }
+        const gradient = t.data.find(d => d.type === 'GRADIENT_LINEAR')
+        if (gradient && Array.isArray(gradient.data) && gradient.data.length > 0) {
+          const angle = gradient.angle ?? 0
+          const stops = gradient.data
+            .map(stop => `${normalizeDesignColor(stop.color)} ${stop.position ?? '0%'}`)
+            .join(', ')
+          result.fontColor = `linear-gradient(${angle}deg, ${stops})`
+        }
       }
     }
   }

@@ -1,5 +1,5 @@
 import { makePair } from './matchStrategies.js'
-import { normalizeText, textSemanticSimilarity, parseArgb } from '../utils/textSemantics.js'
+import { normalizeText, textSemanticSimilarity, parseArgb, extractMainTone } from '../utils/textSemantics.js'
 
 /**
  * 新版 Pass 1：全文本节点加权匹配
@@ -100,8 +100,8 @@ function blendOnWhite(argb) {
  * 任一侧无颜色值 → 视为不构成差异，返回 1
  */
 function getSimilarityColor(c1, c2) {
-  const p1 = parseArgb(c1)
-  const p2 = parseArgb(c2)
+  const p1 = parseArgb(extractMainTone(c1))
+  const p2 = parseArgb(extractMainTone(c2))
   if (!p1 || !p2) return 1
 
   const b1 = blendOnWhite(p1)

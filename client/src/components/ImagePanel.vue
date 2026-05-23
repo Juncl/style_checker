@@ -574,7 +574,10 @@ const displayStyle = computed(() => {
   if (s.lineHeight    != null) add('lineHeight',    `${s.lineHeight}vp`, null, '行高')
   if (s.letterSpacing != null) add('letterSpacing', `${s.letterSpacing}px`, null, '字间距')
   if (s.backgroundColor)       add('backgroundColor', s.backgroundColor, s.backgroundColor, '填充')
-  if (s.opacity != null && s.opacity !== 1) add('opacity', s.opacity, null, '不透明度')
+  // 任一侧 opacity ≠ 1 都在两侧详情框显示（对方 ≠ 1 会产生 opacity diff，本侧据此感知）
+  if ((s.opacity != null && s.opacity !== 1) || diffForStyleKey('opacity')) {
+    add('opacity', s.opacity ?? 1, null, '不透明度')
+  }
   if (s.borderRadius) {
     const br = s.borderRadius
     const v  = [br.topLeft, br.topRight, br.bottomRight, br.bottomLeft]
