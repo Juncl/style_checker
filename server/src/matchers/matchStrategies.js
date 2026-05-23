@@ -163,7 +163,6 @@ export function maxWeightTextMatching(designTexts, arkuiTexts, regionScore) {
         Math.abs(rectCenter(dn.normRect).x - rectCenter(an.normRect).x) <= 0.06
       if (!passesTextSemanticGate(dn.textContent, an.textContent, semantic) && roleScore < 0.85 && !fingerprintGeometryOk) continue
       if (isAmbiguousUnitText(dn.textContent) && Math.abs(centerY(dn.normRect) - centerY(an.normRect)) > 0.04) continue
-      if (isAmbiguousShortNumberText(dn.textContent) && !isNearSameLineSlot(dn, an, 0.10, 0.045)) continue
 
       const geom = localTextGeometryScore(dn.normRect, an.normRect)
       const style = textStyleSimilarity(dn, an)
