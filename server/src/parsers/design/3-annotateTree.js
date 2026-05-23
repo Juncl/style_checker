@@ -38,6 +38,8 @@ function isOccludingNode(node) {
   if (opacity < 0.70) return false
   // 特殊混合模式（非 0）表示该节点以合成方式叠加，不是普通覆盖层，不视为遮挡物
   if (s.blendMode != null && s.blendMode !== 0) return false
+  // 设计侧专有规则：FRAME 节点无背景色时不视为遮挡物（空壳 FRAME 不应压盖后面的有色节点）
+  if (String(node.rawType || '').toLowerCase() === 'frame' && !s.backgroundColor) return false
   return true
 }
 

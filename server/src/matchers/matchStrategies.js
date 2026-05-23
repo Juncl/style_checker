@@ -329,6 +329,10 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
     .sort((a, b) => {
       if (b.bestScore !== a.bestScore) return b.bestScore - a.bestScore
       if (a.bestAnchorDist !== b.bestAnchorDist) return a.bestAnchorDist - b.bestAnchorDist
+      // 分数相同时有背景色的设计侧节点优先，避免空壳节点抢占有视觉内容节点的匹配机会
+      const aHasBg = !!a.node.style?.backgroundColor
+      const bHasBg = !!b.node.style?.backgroundColor
+      if (aHasBg !== bHasBg) return bHasBg ? 1 : -1
       return comparePaths(a.node.path, b.node.path)
     })
 
