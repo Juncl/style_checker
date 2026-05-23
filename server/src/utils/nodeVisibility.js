@@ -9,11 +9,7 @@ import {
 } from './matchGeometry.js'
 import {
   hasUsableText,
-  isAmbiguousShortNumberText,
-  isNearSameLineSlot,
   normalizeText,
-  numericTextCompatible,
-  textFieldType,
 } from './textSemantics.js'
 
 const INTRINSIC_VISUAL_RAW_TYPES = new Set([
@@ -34,18 +30,9 @@ export function isAcceptablePair(pair) {
   const { design, arkui, matchType, confidence } = pair
   if (design.type === 'text') {
     if (arkui.type !== 'text') return false
-    const designType = textFieldType(normalizeText(design.textContent))
-    const arkuiType = textFieldType(normalizeText(arkui.textContent))
-    if (designType === 'number' || arkuiType === 'number') {
-      if (matchType === 'dynamic-number-slot' || matchType === 'numeric-slot') {
-        return designType === arkuiType
-      }
-      if (
-        (isAmbiguousShortNumberText(design.textContent) || isAmbiguousShortNumberText(arkui.textContent)) &&
-        !isNearSameLineSlot(design, arkui, 0.10, 0.045)
-      ) return false
-      return designType === arkuiType && numericTextCompatible(design.textContent, arkui.textContent)
-    }
+    const dLen = (design.textContent ?? '').length
+    const aLen = (arkui.textContent ?? '').length
+    if ((dLen < 6 || aLen < 6) && Math.abs(dLen - aLen) > 20) return false
     return true
   }
   // list-index 已通过"同行/同尺寸/同类/不重叠/上下锚/首节点 IoU"多重几何验证，

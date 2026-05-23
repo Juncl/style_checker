@@ -61,6 +61,7 @@ export function matchNodes(designNodes, arkuiNodes, options = {}) {
 }
 
 function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
+  const { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight } = options
   const usedArkui = new Set()
   const pairs = []
   const matchedDesignIds = new Set()
@@ -71,7 +72,9 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   let regionContext = null
 
   // ── Pass 1: 全文本节点加权匹配（ArkUI 主序，可信文本 ≥0.9 视为强锚点）──────────
-  const textMatchResult = matchAllTextNodes(designNodes, arkuiNodes)
+  const textMatchResult = matchAllTextNodes(designNodes, arkuiNodes, {
+    canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight,
+  })
   for (const pair of textMatchResult.pairs) {
     pairs.push(pair)
     usedArkui.add(pair.arkui.id)

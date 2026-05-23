@@ -158,6 +158,10 @@ async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
     arkuiVisibleNodes,
     {
       primarySource: assets.matchDirection || DEFAULT_MATCH_DIRECTION,
+      canvasWidthVp: arkuiResult.canvasWidthVp,
+      canvasHeightVp: arkuiResult.canvasHeightVp,
+      canvasWidth: designResult.canvasWidth,
+      canvasHeight: designResult.canvasHeight,
     }
   )
 

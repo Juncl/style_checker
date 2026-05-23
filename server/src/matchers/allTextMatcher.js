@@ -8,16 +8,11 @@ import { normalizeText, textSemanticSimilarity, parseArgb, extractMainTone } fro
  * 用 5 个子评分（内容/颜色/字号/字重/位置）加权出 finalScore，取最高分候选。
  * finalScore ≥ 可信阈值的匹配视为「可信文本」，转成强锚点 MatchPair。
  *
- * 入口：matchAllTextNodes(designNodes, arkuiNodes)
+ * 入口：matchAllTextNodes(designNodes, arkuiNodes, options)
  */
 
 // 可信文本阈值：finalScore ≥ 此值视为高置信匹配，转成 pair
 const CREDIBLE_THRESHOLD = 0.9
-
-// 位置子分参数：以归一化坐标系下画布对角线（√2）为基准
-const DIAGONAL = Math.SQRT2
-const PLACE_POINT = { x: 0.2 * DIAGONAL, y: 0.5 } // 中心距 = 对角线 20% 时得 0.5
-const PLACE_DIFFMAX = 0.5 * DIAGONAL              // 中心距 ≥ 对角线一半时截断为 0
 
 // ─── 抛物线-高斯分段曲线 ───────────────────────────────────────────────────────
 /**
@@ -78,8 +73,10 @@ function textSimilar(c1, c2) {
   if (!t1 || !t2) return 0
   if (t1 === t2) return 1
 
-  const maxLen = Math.max(t1.length, t2.length)
-  const editScore = maxLen > 0 ? 1 - levenshtein(t1, t2) / maxLen : 0
+  const t1n = t1.replace(/\d+/g, '0')
+  const t2n = t2.replace(/\d+/g, '0')
+  const editMaxLen = Math.max(t1n.length, t2n.length)
+  const editScore = editMaxLen > 0 ? 1 - levenshtein(t1n, t2n) / editMaxLen : 0
   const semanticScore = textSemanticSimilarity(c1, c2)
   return Math.max(editScore, semanticScore)
 }
@@ -130,16 +127,31 @@ function getWeightScore(w1, w2) {
 }
 
 /**
- * 子评分5 · 位置相似度：normRect 中心点欧氏距离套抛物线-高斯曲线
- * 中心距 = 对角线 20% 时得 0.5，≥ 对角线一半时截断为 0
+ * 子评分5 · 位置相似度：rect 绝对坐标中心点欧氏距离，双向计算取较高分
+ * - 左上角对齐：两节点中心点直接做欧氏距离
+ * - 左下角对齐：各自用"距画布底边的中心距离"做欧氏距离（适配 design 画布比 arkui 更长的场景）
+ * - 参考对角线 diagonal = 两侧画布对角线均值；中心距 = 对角线 20% 时得 0.5，≥ 50% 截断为 0
  */
-function getPlaceScore(n1, n2) {
-  const c1x = n1.normRect.x + n1.normRect.w / 2
-  const c1y = n1.normRect.y + n1.normRect.h / 2
-  const c2x = n2.normRect.x + n2.normRect.w / 2
-  const c2y = n2.normRect.y + n2.normRect.h / 2
-  const dist = Math.hypot(c1x - c2x, c1y - c2y)
-  return gaussianCurveParabola(0, dist, PLACE_POINT, PLACE_DIFFMAX)
+function getPlaceScore(hmNode, deNode, diagonal, canvasHeightHm, canvasHeightDe) {
+  const hmCx = hmNode.rect.x + hmNode.rect.w / 2
+  const hmCy = hmNode.rect.y + hmNode.rect.h / 2
+  const deCx = deNode.rect.x + deNode.rect.w / 2
+  const deCy = deNode.rect.y + deNode.rect.h / 2
+
+  const point = { x: 0.2 * diagonal, y: 0.5 }
+  const diffmax = 0.5 * diagonal
+
+  // 左上角对齐
+  const topDist = Math.hypot(hmCx - deCx, hmCy - deCy)
+  const topScore = gaussianCurveParabola(0, topDist, point, diffmax)
+
+  // 左下角对齐（各自距底边）
+  const hmCyBot = canvasHeightHm - hmNode.rect.y - hmNode.rect.h / 2
+  const deCyBot = canvasHeightDe - deNode.rect.y - deNode.rect.h / 2
+  const botDist = Math.hypot(hmCx - deCx, hmCyBot - deCyBot)
+  const botScore = gaussianCurveParabola(0, botDist, point, diffmax)
+
+  return Math.max(topScore, botScore)
 }
 
 /**
@@ -162,6 +174,7 @@ function getTextFinalScore(content, color, size, weight, place) {
  * 全文本节点加权匹配
  * @param {UnifiedNode[]} designNodes 设计侧节点（pix）
  * @param {UnifiedNode[]} arkuiNodes  开发侧节点（hm）
+ * @param {{ canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight }} options 画布尺寸（用于位置子分）
  * @returns {{
  *   pairs: MatchPair[],            // 可信文本（≥阈值）去重后的强锚点 pair
  *   textHmMapPix: object,          // 全部 hm→de 最高分映射（含 <阈值）
@@ -169,7 +182,14 @@ function getTextFinalScore(content, color, size, weight, place) {
  *   textHmMapPixDetail: object,    // 每个 hm 的完整比对详情
  * }}
  */
-export function matchAllTextNodes(designNodes, arkuiNodes) {
+export function matchAllTextNodes(designNodes, arkuiNodes, options = {}) {
+  const {
+    canvasWidthVp = 376, canvasHeightVp = 809,
+    canvasWidth = 360, canvasHeight = 947,
+  } = options
+  const diagHm = Math.hypot(canvasWidthVp, canvasHeightVp)
+  const diagDe = Math.hypot(canvasWidth, canvasHeight)
+  const diagonal = (diagHm + diagDe) / 2
   const hmTextNodes = arkuiNodes.filter(
     n => n.type === 'text' && normalizeText(n.textContent)
   )
@@ -199,7 +219,7 @@ export function matchAllTextNodes(designNodes, arkuiNodes) {
       const colorScore = getSimilarityColor(hm.style?.fontColor, de.style?.fontColor)
       const sizeScore = getSimilaritySize(hm.style?.fontSize, de.style?.fontSize)
       const weightScore = getWeightScore(hm.style?.fontWeight, de.style?.fontWeight)
-      const placeScore = getPlaceScore(hm, de)
+      const placeScore = getPlaceScore(hm, de, diagonal, canvasHeightVp, canvasHeight)
       const finalScore = getTextFinalScore(
         contentScore, colorScore, sizeScore, weightScore, placeScore
       )
@@ -258,6 +278,8 @@ export function matchAllTextNodes(designNodes, arkuiNodes) {
     pair.matchSource = 'creText'
     pairs.push(pair)
   }
+
+  
 
   return { pairs, textHmMapPix, textHmMapPixCredible, textHmMapPixDetail }
 }
