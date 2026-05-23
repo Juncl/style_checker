@@ -274,8 +274,8 @@ function shouldUnwrap(node) {
   const hasDecoration = !!(s.backgroundColor || s.borderRadius || s.border)
   // GROUP 无视觉装饰时软剪枝
   if (rawType === 'GROUP' && !hasDecoration) return true
-  // 极小节点（≤4dp）：保留子节点，只删自身；有背景色的细线/分割线保留
-  if (node.rect && (node.rect.w <= 4 || node.rect.h <= 4) && !hasDecoration) return true
+  // 极小节点（≤4dp）：保留子节点，只删自身
+  if (node.rect && (node.rect.w <= 4 || node.rect.h <= 4)) return true
   // 全屏包裹层（normRect.w/h 均 ≥ 0.999）：保留子节点，只删自身；有背景色的底层蒙版保留
   if (node.normRect && node.normRect.w >= 0.999 && node.normRect.h >= 0.999
       && !hasDecoration) return true
