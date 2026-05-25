@@ -1703,6 +1703,12 @@ body {
   width: 100%;
 }
 
+.tag-unmatched.el-tag {
+  background: #EBEBEB !important;
+  border-color: transparent !important;
+  color: #595959 !important;
+}
+
 .node-bar-close {
   background: none;
   border: none;
@@ -1725,6 +1731,150 @@ body {
 .drag-handle {
   cursor: ew-resize;
   user-select: none;
+}
+
+/* ── Case 列表悬浮框 ── */
+.case-list-float {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  width: 220px;
+  z-index: 10000;
+  pointer-events: auto;
+  background: var(--octo-surface-page);
+  border: 1px solid var(--octo-border-default);
+  border-radius: var(--octo-radius-lg);
+  box-shadow: 0 10px 28px rgba(18, 30, 52, 0.12);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+
+.clf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 9px 9px 7px;
+  border-bottom: 1px solid var(--octo-border-default);
+}
+
+.clf-head-left {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.clf-title {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--octo-text-primary);
+  line-height: 1.2;
+}
+
+.clf-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--octo-text-secondary);
+  background: var(--octo-surface-disabled);
+  border-radius: var(--octo-radius-sm);
+  padding: 0 4px;
+  height: 14px;
+  min-width: 14px;
+}
+
+.clf-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--octo-radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--octo-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  line-height: 1;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.clf-chevron:hover {
+  background: var(--octo-surface-hover);
+  color: var(--octo-text-primary);
+}
+
+.clf-body {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.clf-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--octo-radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  text-align: center;
+  width: 100%;
+  transition: background 150ms ease, border-color 150ms ease, transform 100ms ease;
+}
+
+.clf-row:hover {
+  background: var(--octo-surface-selected);
+  border-color: rgba(0, 103, 209, 0.2);
+}
+
+.clf-row:active {
+  transform: translateY(1px);
+  background: var(--octo-primary-subtle);
+}
+
+.clf-row--active {
+  background: var(--octo-surface-selected);
+  border-color: var(--octo-primary);
+}
+
+.clf-thumb {
+  width: 100%;
+  height: 30px;
+  border-radius: var(--octo-radius-sm);
+  overflow: hidden;
+  background: var(--octo-bg-light);
+}
+
+.clf-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+  display: block;
+}
+
+.clf-name {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--octo-text-secondary);
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+.clf-row--active .clf-name {
+  color: var(--octo-primary);
+  font-weight: 600;
 }
 
 /* Vue transition：fade */

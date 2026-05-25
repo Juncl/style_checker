@@ -17,7 +17,7 @@ import {
   textStyleSimilarity,
 } from '../utils/textSemantics.js'
 import { hasSameTextAttributeFingerprint } from './textFingerprints.js'
-import { hasBackgroundColor, isCompatibleType } from '../utils/nodeVisibility.js'
+import { hasBackgroundColor, isCompatibleType, isRenderableNonTextNode } from '../utils/nodeVisibility.js'
 import { candidatePool, regionAffinity } from './regionContext.js'
 import { comparePaths } from '../utils/pathOrder.js'
 
@@ -307,7 +307,8 @@ export function localTextGeometryScore(a, b) {
   return xScore * 0.40 + yScore * 0.60
 }
 
-export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArkui, matchedDesignIds, regionContext) {
+export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArkui, matchedDesignIds, regionContext, options = {}) {
+  const { diagonal = 1, diagDe = diagonal, diagHm = diagonal, canvasHeightVp, canvasHeight } = options
   const result = []
   const localUsedArkui = new Set()
   const localMatchedDesign = new Set()
@@ -315,8 +316,8 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
     .filter(n => !matchedDesignIds.has(n.id))
     .filter(n => n.type !== 'text' || hasUsableText(n))
     .map(n => {
-      const anchorsForNode = nearbyAnchors(n, anchors, 'design')
-      const best = bestTopologyCandidate(n, arkuiNodes, anchorsForNode, usedArkui, regionContext)
+      const anchorsForNode = nearbyAnchors(n, anchors, 'design', diagDe)
+      const best = bestTopologyCandidate(n, arkuiNodes, anchorsForNode, usedArkui, regionContext, diagonal, diagDe, diagHm, canvasHeightVp, canvasHeight)
       return {
         node: n,
         anchors: anchorsForNode,
@@ -343,7 +344,12 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
       arkuiNodes,
       nodeAnchors,
       new Set([...usedArkui, ...localUsedArkui]),
-      regionContext
+      regionContext,
+      diagonal,
+      diagDe,
+      diagHm,
+      canvasHeightVp,
+      canvasHeight
     )
 
     if (best && best.score > 0.58) {
@@ -360,13 +366,14 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
   return result
 }
 
-function bestTopologyCandidate(dn, arkuiNodes, nodeAnchors, unavailableArkui, regionContext) {
+function bestTopologyCandidate(dn, arkuiNodes, nodeAnchors, unavailableArkui, regionContext, diagonal = 1, diagDe = diagonal, diagHm = diagonal, canvasHeightVp, canvasHeight) {
   if (!nodeAnchors.length) return null
 
   let best = null
   let bestScore = 0
   let bestAnchorDist = Number.POSITIVE_INFINITY
   let bestBackgroundScore = -1
+  let bestVisualScore = -1
   const regionCandidates = candidatePool(dn, arkuiNodes, regionContext, n =>
     !unavailableArkui.has(n.id) &&
     isCompatibleType(dn, n)
@@ -374,16 +381,23 @@ function bestTopologyCandidate(dn, arkuiNodes, nodeAnchors, unavailableArkui, re
 
   for (const an of regionCandidates) {
     for (const anchor of nodeAnchors) {
-      const designRelation = relationToAnchor(dn, anchor.pair.design)
-      const arkuiRelation = relationToAnchor(an, anchor.pair.arkui)
+      const designRelation = relationToAnchor(dn, anchor.pair.design, diagDe)
+      const arkuiRelation = relationToAnchor(an, anchor.pair.arkui, diagHm)
       const relDist = distanceBetweenRelations(designRelation, arkuiRelation)
       if (relDist > 0.24) continue
 
-      const score = topologyMatchScore(dn, an, designRelation, arkuiRelation, regionContext)
+      const score = topologyMatchScore(dn, an, designRelation, arkuiRelation, regionContext, diagonal, canvasHeightVp, canvasHeight)
       const backgroundScore = backgroundPresenceScore(dn, an)
-      if (score > bestScore + SCORE_TIE_EPSILON || (Math.abs(score - bestScore) <= SCORE_TIE_EPSILON && backgroundScore > bestBackgroundScore)) {
+      const visualScore = isRenderableNonTextNode(an) ? 1 : 0
+      const isBetter = score > bestScore + SCORE_TIE_EPSILON ||
+        (Math.abs(score - bestScore) <= SCORE_TIE_EPSILON && (
+          backgroundScore > bestBackgroundScore ||
+          (backgroundScore === bestBackgroundScore && visualScore > bestVisualScore)
+        ))
+      if (isBetter) {
         bestScore = score
         bestBackgroundScore = backgroundScore
+        bestVisualScore = visualScore
         bestAnchorDist = anchor.dist
         best = { node: an, score, iou: computeIoU(dn.normRect, an.normRect), anchorDist: anchor.dist }
       }
@@ -393,62 +407,65 @@ function bestTopologyCandidate(dn, arkuiNodes, nodeAnchors, unavailableArkui, re
   return best ? { ...best, bestScore, bestAnchorDist } : null
 }
 
-export function nearestAnchor(node, anchors, side) {
+export function nearestAnchor(node, anchors, side, diagSide = 1) {
   let best = null
   for (const pair of anchors) {
     const anchorNode = pair[side]
-    const dist = centerDistance(node.normRect, anchorNode.normRect)
+    const dist = absDistRect(node.rect, anchorNode.rect) / diagSide
     if (!best || dist < best.dist) best = { pair, dist }
   }
   return best
 }
 
-function nearbyAnchors(node, anchors, side) {
-  if (!(node.type === 'text' && isShortCjkLabel(node.textContent))) {
-    const anchor = nearestAnchor(node, anchors, side)
+function nearbyAnchors(node, anchors, side, diagSide = 1) {
+  if (node.type === 'text' && !isShortCjkLabel(node.textContent)) {
+    // 普通文本节点：只取最近 1 个锚点，且 dist < 0.35
+    const anchor = nearestAnchor(node, anchors, side, diagSide)
     return anchor && anchor.dist < 0.35 ? [anchor] : []
   }
+  // 容器节点 + 短 CJK 标签：取 dist < 0.70 内所有锚点（不限数量）
+  // relDist 门控（> 0.24 跳过）在 bestTopologyCandidate 中自然过滤低质量锚点
   return anchors
-    .map(pair => ({ pair, dist: centerDistance(node.normRect, pair[side].normRect) }))
+    .map(pair => ({ pair, dist: absDistRect(node.rect, pair[side].rect) / diagSide }))
     .filter(item => item.dist < 0.70)
     .sort((a, b) => a.dist - b.dist)
-    .slice(0, 6)
 }
 
-export function relationToAnchor(node, anchorNode) {
-  const nr = node.normRect
-  const ar = anchorNode.normRect
+export function relationToAnchor(node, anchorNode, diagonal = 1) {
+  const nr = node.rect
+  const ar = anchorNode.rect
   const nc = rectCenter(nr)
   const ac = rectCenter(ar)
   return {
-    dx: nc.x - ac.x,
-    dy: nc.y - ac.y,
+    dx: (nc.x - ac.x) / diagonal,
+    dy: (nc.y - ac.y) / diagonal,
     w: nr.w,
     h: nr.h,
   }
 }
 
-export function topologyMatchScore(dn, an, designRelation, arkuiRelation, regionContext) {
+export function topologyMatchScore(dn, an, designRelation, arkuiRelation, regionContext, diagonal = 1, canvasHeightDe, canvasHeightHm) {
   const semantic = dn.type === 'text' && an.type === 'text'
     ? textSemanticSimilarity(dn.textContent, an.textContent)
     : 1
   const roleScore = dn.type === 'text' && an.type === 'text' ? textRoleMatchScore(dn, an) : 0
+  // relDist 已在 relationToAnchor 中各自除以 diagonal 归一化，不再重复除
   const relDist = distanceBetweenRelations(designRelation, arkuiRelation)
   const slotFallback = dn.type === 'text' && an.type === 'text' &&
     isShortCjkLabelPair(dn.textContent, an.textContent) &&
-    isTopologySlotCompatible(dn, an, relDist, roleScore)
+    isTopologySlotCompatible(dn, an, relDist, roleScore, diagonal, canvasHeightDe, canvasHeightHm)
   if (!passesTextSemanticGate(dn.textContent, an.textContent, semantic) && roleScore < 0.85 && !slotFallback) return 0
   if (
     dn.type === 'text' &&
     an.type === 'text' &&
     isAmbiguousUnitText(dn.textContent) &&
-    Math.abs(centerY(dn.normRect) - centerY(an.normRect)) > 0.04
+    absYDistNormDual(dn.rect, an.rect, diagonal, canvasHeightDe, canvasHeightHm) > 0.04
   ) return 0
   if (
     dn.type === 'text' &&
     an.type === 'text' &&
     isAmbiguousShortNumberText(dn.textContent) &&
-    !isNearSameLineSlot(dn, an, 0.10, 0.045)
+    !isNearSameLineSlotAbs(dn, an, diagonal, canvasHeightDe, canvasHeightHm, 0.10, 0.045)
   ) return 0
 
   const relScore = Math.max(0, 1 - relDist / 0.22)
@@ -469,10 +486,12 @@ export function topologyMatchScore(dn, an, designRelation, arkuiRelation, region
   return relScore * 0.38 + sizeScore * 0.18 + typeScore * 0.10 + textScore * 0.10 + semanticScore * 0.14 + iou * 0.06 + regionScore * 0.04
 }
 
-function isTopologySlotCompatible(dn, an, relDist, roleScore) {
+function isTopologySlotCompatible(dn, an, relDist, roleScore, diagonal = 1, canvasHeightDe, canvasHeightHm) {
   const style = textStyleSimilarity(dn, an)
+  // x 方向两侧画布宽度相近，用 normRect 比较偏差可接受
   const absoluteX = Math.abs(rectCenter(dn.normRect).x - rectCenter(an.normRect).x)
-  const absoluteY = Math.abs(centerY(dn.normRect) - centerY(an.normRect))
+  // y 方向设计稿可能更高，用绝对坐标 + 顶/底双向对齐 + diagonal 归一化
+  const absoluteY = absYDistNormDual(dn.rect, an.rect, diagonal, canvasHeightDe, canvasHeightHm)
   const maxRelDist = roleScore >= 0.72 ? 0.22 : 0.16
   return relDist <= maxRelDist &&
     style >= 0.72 &&
@@ -482,6 +501,29 @@ function isTopologySlotCompatible(dn, an, relDist, roleScore) {
 
 export function distanceBetweenRelations(a, b) {
   return Math.hypot(a.dx - b.dx, a.dy - b.dy)
+}
+
+// 用 rect 绝对坐标计算两节点左上角点欧氏距离（同侧比较，不涉及跨侧换算）
+function absDistRect(rectA, rectB) {
+  return Math.hypot(rectA.x - rectB.x, rectA.y - rectB.y)
+}
+
+// 跨侧 y 距离：同时考虑顶部对齐和底部对齐，取最小值后除以 diagonal
+// 适配设计稿比开发侧更高的场景（底部固定区域从底端量起更准确）
+function absYDistNormDual(rectA, rectB, diagonal, canvasHeightA, canvasHeightB) {
+  const cya = rectA.y + rectA.h / 2
+  const cyb = rectB.y + rectB.h / 2
+  const topDist = Math.abs(cya - cyb)
+  if (!canvasHeightA || !canvasHeightB) return topDist / diagonal
+  const botDist = Math.abs((canvasHeightA - cya) - (canvasHeightB - cyb))
+  return Math.min(topDist, botDist) / diagonal
+}
+
+// 跨侧同行检测：用绝对坐标/diagonal 替代 normRect，y 方向支持顶/底双向对齐
+function isNearSameLineSlotAbs(dn, an, diagonal, canvasHeightDe, canvasHeightHm, maxXNorm = 0.10, maxYNorm = 0.045) {
+  const xDist = Math.abs((dn.rect.x + dn.rect.w / 2) - (an.rect.x + an.rect.w / 2)) / diagonal
+  const yDist = absYDistNormDual(dn.rect, an.rect, diagonal, canvasHeightDe, canvasHeightHm)
+  return xDist <= maxXNorm && yDist <= maxYNorm
 }
 
 export function bestIoUMatch(targetRect, candidates, targetNode = null, regionContext = null) {

@@ -1,4 +1,32 @@
 <template>
+  <!-- ── Case 列表悬浮框 ── -->
+  <div v-if="debugMode" class="case-list-float"
+    :style="{ left: caseListX + 'px' }">
+    <div class="clf-head drag-handle" @mousedown="startDrag($event, 'caselist')">
+      <div class="clf-head-left">
+        <span class="clf-title">Cases</span>
+        <span class="clf-count">{{ cases.length }}</span>
+      </div>
+      <button class="clf-chevron" @click.stop="caseListExpanded = !caseListExpanded">
+        {{ caseListExpanded ? '▾' : '▸' }}
+      </button>
+    </div>
+    <div v-if="caseListExpanded" class="clf-body">
+      <button
+        v-for="c in cases"
+        :key="c.id"
+        class="clf-row"
+        :class="{ 'clf-row--active': selectedCase === c.id }"
+        @click="$emit('select-case', c.id)"
+      >
+        <div class="clf-thumb">
+          <img :src="caseImageUrl(c.id)" class="clf-thumb-img" alt="" />
+        </div>
+        <span class="clf-name">{{ c.id }}</span>
+      </button>
+    </div>
+  </div>
+
   <!-- ── Debugger 悬浮框 ── -->
   <div v-if="debugMode" class="debugger-float"
     :style="debugFloatX !== null ? { left: debugFloatX + 'px', right: 'auto' } : {}">
@@ -65,7 +93,16 @@
         <el-icon class="node-bar-icon"><Crop /></el-icon>
         <b class="node-bar-name">{{ selectedPair.arkui?.textContent || selectedPair.arkui?.name || selectedPair.design?.textContent || selectedPair.design?.name }}</b>
         <div class="node-bar-tags">
-          <el-tag size="small" effect="plain">{{ selectedPair.matchType }}</el-tag>
+          <el-tag
+            size="small"
+            effect="plain"
+            :type="matchTypePass(selectedPair.matchType) ? 'primary' : ''"
+            :class="{ 'tag-unmatched': !matchTypePass(selectedPair.matchType) }"
+          >
+            {{ matchTypePass(selectedPair.matchType)
+              ? matchTypePass(selectedPair.matchType) + ': ' + selectedPair.matchType
+              : selectedPair.matchType }}
+          </el-tag>
           <el-tag
             v-if="selectedPair.confidence"
             size="small"
@@ -217,6 +254,7 @@ import { ArrowRight, Crop } from '@element-plus/icons-vue'
 import DiffReport from './DiffReport.vue'
 import ImagePanel from './ImagePanel.vue'
 import NodeTree from './NodeTree.vue'
+import { imageUrl } from '../api/index.js'
 
 const iconDev = '/src/assets/icon-dev.png'
 const iconDesign = '/src/assets/icon-design.png'
@@ -285,6 +323,18 @@ const props = defineProps({
   selectedArkuiDiffs: {
     type: Array,
     default: () => []
+  },
+  cases: {
+    type: Array,
+    default: () => []
+  },
+  selectedCase: {
+    type: String,
+    default: ''
+  },
+  caseNames: {
+    type: Object,
+    default: () => ({})
   }
 })
 
@@ -298,7 +348,8 @@ defineEmits([
   'diff-select',
   'toggle-lock',
   'update:debug-pipeline-on',
-  'update:debug-overlay-on'
+  'update:debug-overlay-on',
+  'select-case',
 ])
 
 const rightTab = ref('diff')
@@ -307,18 +358,24 @@ const debugMappingExpanded = ref(false)
 const emptyLockedIds = new Set()
 
 // 拖拽位置（null = 使用 CSS 默认值）
-const debugFloatX = ref(null)
-const nodeBarX = ref(10)
+const debugFloatX  = ref(null)
+const nodeBarX     = ref(240)
+const caseListX    = ref(10)
+const caseListExpanded = ref(false)
 
 function startDrag(e, which) {
   e.preventDefault()
   const startMouseX = e.clientX
+  const W = which === 'caselist' ? 220 : 280
   const startX = which === 'debug'
-    ? (debugFloatX.value ?? (window.innerWidth - 280 - 10))
-    : nodeBarX.value
+    ? (debugFloatX.value ?? (window.innerWidth - W - 10))
+    : which === 'caselist'
+      ? caseListX.value
+      : nodeBarX.value
   const onMove = (ev) => {
-    const newX = Math.max(0, Math.min(window.innerWidth - 280, startX + ev.clientX - startMouseX))
+    const newX = Math.max(0, Math.min(window.innerWidth - W, startX + ev.clientX - startMouseX))
     if (which === 'debug') debugFloatX.value = newX
+    else if (which === 'caselist') caseListX.value = newX
     else nodeBarX.value = newX
   }
   const onUp = () => {
@@ -351,6 +408,32 @@ function confidenceTagType(c) {
   if (c === 'medium') return 'warning'
   if (c === 'low')    return 'danger'
   return 'info'
+}
+
+const MATCH_TYPE_PASS = {
+  'text-content':              'Pass 1',
+  'dynamic-text-slot':         'Pass 2',
+  'dynamic-number-slot':       'Pass 2',
+  'text-row-slot':             'Pass 2',
+  'region-text-optimal':       'Pass 3',
+  'region-text-global-rescue': 'Pass 3',
+  'text-role':                 'Pass 3.5',
+  'anchor-topology':           'Pass 4',
+  'list-index':                'Pass 4.5',
+  'text-position':             'Pass 5',
+  'numeric-slot':              'Pass 5b',
+  'container-iou':             'Pass 5',
+  'container-geometry':        'Pass 6',
+  'spatial-bracket':           'Pass 6.5',
+  'rescue-iou':                'Pass 7',
+}
+
+function matchTypePass(matchType) {
+  return MATCH_TYPE_PASS[matchType] ?? null
+}
+
+function caseImageUrl(caseId) {
+  return imageUrl(caseId, 'design')
 }
 
 function validationBg(status) {

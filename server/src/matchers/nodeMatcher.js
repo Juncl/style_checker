@@ -148,13 +148,17 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
 
   // ── Pass 4: 强锚点周边拓扑匹配（用局部相对位置匹配 mock 文本、图标、形状）──────
   if (topologyAnchors.length > 0) {
+    const diagHm = Math.hypot(canvasWidthVp ?? 376, canvasHeightVp ?? 809)
+    const diagDe = Math.hypot(canvasWidth ?? 360, canvasHeight ?? 947)
+    const diagonal = (diagHm + diagDe) / 2
     const topologyPairs = matchByAnchorTopology(
       designNodes,
       arkuiNodes,
       topologyAnchors,
       usedArkui,
       matchedDesignIds,
-      regionContext
+      regionContext,
+      { diagonal, diagDe, diagHm, canvasHeightVp: canvasHeightVp ?? 809, canvasHeight: canvasHeight ?? 947 }
     )
     for (const pair of topologyPairs) {
       pairs.push(pair)
