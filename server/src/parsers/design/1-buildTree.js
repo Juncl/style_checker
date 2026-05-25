@@ -117,6 +117,8 @@ function convertToUnified(wrap, canvasW, canvasH) {
     unified.children.push(convertToUnified(childWrap, canvasW, canvasH))
   }
 
+  applyMaskClip(unified.children, canvasW, canvasH)
+
   return unified
 }
 
@@ -166,6 +168,19 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
       }
     } else {
       result.borderRadius = br
+    }
+  }
+
+  // VECTOR 类型：从 vectorData.styleOverrideTable 提取顶点圆角（路径形状的圆角存储在此）
+  if (nodeType === 'VECTOR' && !result.borderRadius && Array.isArray(style.vectorData?.styleOverrideTable)) {
+    const radii = style.vectorData.styleOverrideTable
+      .map(e => (typeof e.cornerRadius === 'number' && e.cornerRadius > 0) ? e.cornerRadius : 0)
+      .filter(r => r > 0)
+    if (radii.length > 0) {
+      const r = Math.max(...radii)
+      const maxBr = rect && rect.w > 0 && rect.h > 0 ? Math.min(rect.w, rect.h) / 2 : Infinity
+      const capped = Math.min(r, maxBr)
+      result.borderRadius = { topLeft: capped, topRight: capped, bottomRight: capped, bottomLeft: capped }
     }
   }
 
@@ -243,4 +258,29 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
   }
 
   return result
+}
+
+// ─── 蒙版裁剪 ──────────────────────────────────────────────────────────────────
+// 扫描同层 children，找到 mask=true 的节点后，对其所有前序兄弟取与蒙版 rect 的交集
+function applyMaskClip(children, canvasW, canvasH) {
+  for (let i = 0; i < children.length; i++) {
+    if (children[i]._raw?.style?.mask !== true) continue
+    const maskRect = children[i].rect
+    for (let j = 0; j < i; j++) {
+      clipToMask(children[j], maskRect, canvasW, canvasH)
+    }
+  }
+}
+
+function clipToMask(node, maskRect, canvasW, canvasH) {
+  const r = node.rect
+  const newX = Math.max(r.x, maskRect.x)
+  const newY = Math.max(r.y, maskRect.y)
+  const newW = Math.max(0, Math.min(r.x + r.w, maskRect.x + maskRect.w) - newX)
+  const newH = Math.max(0, Math.min(r.y + r.h, maskRect.y + maskRect.h) - newY)
+  node.rect = { x: newX, y: newY, w: newW, h: newH }
+  node.normRect = { x: newX / canvasW, y: newY / canvasH, w: newW / canvasW, h: newH / canvasH }
+  for (const child of (node.children || [])) {
+    clipToMask(child, maskRect, canvasW, canvasH)
+  }
 }
