@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Octo Designer</title>
     <link rel="icon" href="/src/assets/octo.png">
+    <style>
+      /* 锁定 viewport，防止 app.css 异步加载前出现初始长滚动条闪动 */
+      html, body, #app { height: 100%; margin: 0; overflow: hidden; }
+    </style>
   </head>
   <body>
     <div id="app"></div>

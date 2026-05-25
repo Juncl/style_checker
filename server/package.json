@@ -4,9 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/index.js",
-    "start": "node src/index.js",
-    "stats": "node scripts/matchStats.js",
-    "golden": "node scripts/goldenEval.js"
+    "start": "node src/index.js"
   },
   "dependencies": {
     "@tesseract.js-data/chi_sim": "^1.0.0",

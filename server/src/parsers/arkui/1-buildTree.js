@@ -298,6 +298,14 @@ function maybeBuildSplitTextChild(parentUnified, type, attrs, vpRect, resolution
     if (!attrs.label) return null
     content = String(attrs.label)
     fontSize = parseVp(attrs.fontSize)
+    // labelStyle.maxFontSize 是自适应字号的实际渲染上限，优先于 fontSize
+    if (attrs.labelStyle) {
+      try {
+        const ls = typeof attrs.labelStyle === 'string' ? JSON.parse(attrs.labelStyle) : attrs.labelStyle
+        const maxFs = parseVp(ls.maxFontSize)
+        if (maxFs > 0 && maxFs < fontSize) fontSize = maxFs
+      } catch {}
+    }
     fontWeight = attrs.fontWeight
     fontColor = attrs.fontColor
     fontFamily = attrs.fontFamily

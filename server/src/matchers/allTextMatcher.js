@@ -43,29 +43,41 @@ function gaussianCurveParabola(num1, num2, point, diffmax) {
 
 // ─── 五个子评分函数 ────────────────────────────────────────────────────────────
 
-/** 编辑距离（Levenshtein），滚动数组实现 */
-function levenshtein(a, b) {
-  const m = a.length
-  const n = b.length
-  if (m === 0) return n
-  if (n === 0) return m
+/** 计算 Levenshtein 编辑距离相似度 (0-1) */
+function levenshteinSimilarity(s1, s2) {
+  if (!s1 || !s2) return 0
+  if (s1 === s2) return 1
 
-  let prev = Array.from({ length: n + 1 }, (_, i) => i)
-  let cur = new Array(n + 1)
-  for (let i = 1; i <= m; i++) {
-    cur[0] = i
-    for (let j = 1; j <= n; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1
-      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+  const len1 = s1.length
+  const len2 = s2.length
+  const maxLen = Math.max(len1, len2)
+  if (maxLen === 0) return 1
+
+  const dp = Array(len2 + 1).fill(0).map(() => Array(len1 + 1).fill(0))
+
+  for (let i = 0; i <= len1; i++) dp[0][i] = i
+  for (let j = 0; j <= len2; j++) dp[j][0] = j
+
+  for (let j = 1; j <= len2; j++) {
+    for (let i = 1; i <= len1; i++) {
+      const cost = s1[i - 1] === s2[j - 1] ? 0 : 1
+      dp[j][i] = Math.min(
+        dp[j][i - 1] + 1,      // 插入
+        dp[j - 1][i] + 1,      // 删除
+        dp[j - 1][i - 1] + cost // 替换
+      )
     }
-    ;[prev, cur] = [cur, prev]
   }
-  return prev[n]
+
+  const distance = dp[len2][len1]
+  return 1 - distance / maxLen
 }
 
 /**
- * 子评分1 · 内容相似度：编辑距离 + 语义算法结合
- * 完全相同优先：归一化后完全一致 → 1；否则取「编辑距离归一化」与「语义相似度」的较大值
+ * 子评分1 · 内容相似度：fuse.js 编辑距离 + 语义相似度 + 前后缀结构相似
+ * 完全相同优先：数字归一化后完全一致 → 1
+ * 前后缀相似：前≥2字符或后≥2字符相同 → 加权融合（edit:semantic:prefixSuffix = 0.5:0.25:0.25）
+ * 无前后缀匹配：取编辑距离和语义的较大值，但至少不低于编辑距离
  */
 function textSimilar(c1, c2) {
   const t1 = normalizeText(c1)
@@ -73,11 +85,32 @@ function textSimilar(c1, c2) {
   if (!t1 || !t2) return 0
   if (t1 === t2) return 1
 
+  // 数字归一化后的编辑距离
   const t1n = t1.replace(/\d+/g, '0')
   const t2n = t2.replace(/\d+/g, '0')
-  const editMaxLen = Math.max(t1n.length, t2n.length)
-  const editScore = editMaxLen > 0 ? 1 - levenshtein(t1n, t2n) / editMaxLen : 0
+  if (t1n === t2n) return 1
+
+  const editScore = levenshteinSimilarity(t1n, t2n)
   const semanticScore = textSemanticSimilarity(c1, c2)
+
+  // 前后缀相似度计算
+  let prefixSuffixScore = 0
+  const lenDiff = Math.abs(t1n.length - t2n.length)
+  if (lenDiff <= 3) {
+    const hasPrefixMatch = t1n.length >= 2 && t2n.length >= 2 && t1n.substring(0, 2) === t2n.substring(0, 2)
+    const hasSuffixMatch = t1n.length >= 2 && t2n.length >= 2 && t1n.slice(-2) === t2n.slice(-2)
+
+    if (hasPrefixMatch || hasSuffixMatch) {
+      prefixSuffixScore = 0.7 + (1 - lenDiff / 3) * 0.3
+    }
+  }
+
+  // 加权融合：edit 0.5、semantic 0.25、prefixSuffix 0.25
+  if (prefixSuffixScore > 0) {
+    const weightedScore = editScore * 0.5 + semanticScore * 0.25 + prefixSuffixScore * 0.25
+    return Math.max(weightedScore, editScore)
+  }
+
   return Math.max(editScore, semanticScore)
 }
 
