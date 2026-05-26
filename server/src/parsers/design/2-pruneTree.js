@@ -341,7 +341,7 @@ function absorbSameRectInSubtree(frameNode, children) {
 
 function childHasVisualDecoration(node) {
   const s = node.style || {}
-  return !!(s.backgroundColor || s.borderRadius || s.border || s.shadow || s.backdropBlur || s.blur)
+  return !!(s.backgroundColor || s.borderRadius || s.border || s.shadow || s.blur)
 }
 
 function rectsMatch(a, b) {

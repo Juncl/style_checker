@@ -14,17 +14,19 @@ const TOLERANCE = {
   borderRadius:  0,    // 零容差：任何圆角偏差都报
   padding:       1.0,
   opacity:       0.02,
-  blur:          2.0,
-  shadowRadius:  2.0,
-  shadowOffset:  1.0,
+  blur:          0,    // 零容差：任何偏差都报
+  shadowRadius:  0,    // 零容差：任何偏差都报
+  shadowOffset:  0,    // 零容差：任何偏差都报
   colorDelta:    0,    // 颜色欧氏距离（0-442 范围）；0 表示完全精确匹配
 }
 
-// 硬豁免：节点 rawType 为 image / img 时，无论有无 backgroundColor 都不参与填充对比
-// （这类节点的填充语义在 ArkUI 是 fillColor / objectFit，不是 backgroundColor）
+// 硬豁免：节点 rawType 在以下集合时，无论有无 backgroundColor 都不参与填充对比
+// - image / img：填充语义在 ArkUI 是 fillColor / objectFit，不是 backgroundColor
+// - canvas：canvas 背景色无展示意义，对比无意义
 const HARD_IGNORE_BACKGROUND_TYPES = new Set([
   'image',
   'img',
+  'canvas',
 ])
 
 // 软豁免：仅当"该侧节点"本身没有填充值（缺失或透明）时，才跳过该侧驱动的填充对比
@@ -36,7 +38,6 @@ const SOFT_IGNORE_BACKGROUND_TYPES = new Set([
   'swiperindicator',
   'icon',
   'video',
-  'canvas',
 ])
 
 /**
@@ -197,24 +198,66 @@ function diffPadding(diffs, ctx, dv, av) {
   }
 }
 
-function diffBlur(diffs, ctx, dv, av, prop = 'backdropBlur', label = '背景模糊') {
-  if (dv === undefined && av === undefined) return
+function diffBlur(diffs, ctx, dv, av, prop = 'blur', label = '模糊') {
   if (!dv && !av) return
-  const d = dv || 0, a = av || 0
-  if (Math.abs(d - a) > TOLERANCE.blur) {
-    diffs.push(makeDiff(ctx, prop, `${d}`, `${a}`, 'warning', `${label}偏差 ${(d-a).toFixed(1)}`))
+
+  if (dv && !av) {
+    diffs.push(makeDiff(ctx, prop, dv, '—', 'warning', `${label}：实现缺失`))
+    return
+  }
+
+  if (!dv || !av) return
+
+  const parseBlur = s => {
+    const m = String(s).match(/^(背景模糊|高斯模糊)\s+([\d.]+)px$/)
+    return m ? { type: m[1], value: parseFloat(m[2]) } : null
+  }
+  const d = parseBlur(dv), a = parseBlur(av)
+
+  if (!d || !a) {
+    diffs.push(makeDiff(ctx, prop, dv, av, 'warning', `${label}格式异常`))
+    return
+  }
+  if (d.type !== a.type) {
+    diffs.push(makeDiff(ctx, prop, dv, av, 'warning', `${label}类型不匹配`))
+    return
+  }
+  if (d.value !== a.value) {
+    diffs.push(makeDiff(ctx, prop, dv, av, 'warning',
+      `${label}偏差 ${(d.value - a.value).toFixed(1)}px`))
   }
 }
 
 function diffShadow(diffs, ctx, dv, av) {
   if (!dv && !av) return
+
   if (dv && !av) {
-    diffs.push(makeDiff(ctx, 'shadow', `radius:${dv.radius}`, '—', 'warning', '投影：实现缺失'))
+    diffs.push(makeDiff(ctx, 'shadow', dv, '—', 'warning', '投影：实现缺失'))
     return
   }
+
   if (!dv || !av) return
-  if (Math.abs(dv.radius - av.radius) > TOLERANCE.shadowRadius) {
-    diffs.push(makeDiff(ctx, 'shadow.radius', String(dv.radius), String(av.radius), 'warning', '投影模糊半径偏差'))
+
+  const parseShadow = s => {
+    const m = String(s).match(
+      /^(外阴影|内阴影)\s+(\S+)\s+([\d.]+)px\s+X:([-\d.]+),\s*Y:([-\d.]+)$/
+    )
+    return m
+      ? { type: m[1], color: m[2], radius: parseFloat(m[3]), offsetX: parseFloat(m[4]), offsetY: parseFloat(m[5]) }
+      : null
+  }
+  const d = parseShadow(dv), a = parseShadow(av)
+
+  if (!d || !a) {
+    diffs.push(makeDiff(ctx, 'shadow', dv, av, 'warning', '投影格式异常'))
+    return
+  }
+  const issues = []
+  if (d.type !== a.type) issues.push('类型不匹配')
+  if (d.radius !== a.radius) issues.push(`radius偏差 ${(d.radius - a.radius).toFixed(1)}px`)
+  if (d.offsetX !== a.offsetX || d.offsetY !== a.offsetY) issues.push('偏移偏差')
+  if (issues.length > 0) {
+    diffs.push(makeDiff(ctx, 'shadow', dv, av, 'warning', `投影不匹配：${issues.join('，')}`))
   }
 }
 

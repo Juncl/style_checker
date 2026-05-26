@@ -592,8 +592,8 @@ const displayStyle = computed(() => {
     add('padding', uniform ? `${p.top}vp` : `${p.top} ${p.right} ${p.bottom} ${p.left}vp`, null, '内边距')
   }
   if (s.itemSpacing   != null) add('itemSpacing',   `${s.itemSpacing}vp`, null, '间距')
-  if (s.shadow)                add('shadow',        `blur:${s.shadow.radius} x:${s.shadow.offsetX} y:${s.shadow.offsetY}`, s.shadow.color, '阴影')
-  if (s.backdropBlur  != null) add('backdropBlur',  `${s.backdropBlur}`, null, '模糊')
+  if (s.shadow) add('shadow', s.shadow, null, '阴影')
+  if (s.blur)   add('blur',   s.blur,   null, '模糊')
   return rows
 })
 
@@ -606,7 +606,7 @@ const STYLE_DIFF_ALIASES = {
   backgroundColor: ['backgroundColor'],
   borderWidth: ['borderWidth'],
   borderColor: ['borderColor', 'border.color'],
-  shadow: ['shadow', 'shadow.color', 'shadow.radius', 'shadow.offsetX', 'shadow.offsetY'],
+  shadow: ['shadow'],
   fontSize: ['fontSize', 'fontSize.scale'],
   fontWeight: ['fontWeight'],
   fontFamily: ['fontFamily'],
@@ -615,7 +615,7 @@ const STYLE_DIFF_ALIASES = {
   padding: ['padding'],
   itemSpacing: ['itemSpacing'],
   borderRadius: ['borderRadius'],
-  backdropBlur: ['backdropBlur', 'blur'],
+  blur: ['blur'],
 }
 
 function toCssColor(color) {

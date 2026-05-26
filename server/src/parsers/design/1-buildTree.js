@@ -195,19 +195,25 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
   }
 
   if (Array.isArray(style.blur)) {
-    const bgBlur = style.blur.find(b => b.type === 'background')
+    const bgBlur     = style.blur.find(b => b.type === 'background')
     const filterBlur = style.blur.find(b => b.type === 'filter')
-    if (bgBlur) result.backdropBlur = bgBlur.blur
-    if (filterBlur) result.blur = filterBlur.blur
+    if (filterBlur) result.blur = `高斯模糊 ${Number(filterBlur.blur)}px`
+    if (bgBlur)     result.blur = `背景模糊 ${Number(bgBlur.blur)}px`
   }
 
   if (Array.isArray(style.shadows) && style.shadows.length > 0) {
-    const s = style.shadows[0]
-    result.shadow = {
-      color:   normalizeDesignColor(s.color),
-      radius:  s.blur ?? 0,
-      offsetX: s.x ?? 0,
-      offsetY: s.y ?? 0,
+    const s       = style.shadows[0]
+    const color   = normalizeDesignColor(s.color)
+    const radius  = s.blur ?? 0
+    const offsetX = s.x ?? 0
+    const offsetY = s.y ?? 0
+    const needShadow = radius > 0
+      && (offsetX !== 0 || offsetY !== 0)
+      && color
+      && !color.startsWith('#00')
+    if (needShadow) {
+      const typeName = s.type === 'out' ? '外阴影' : '内阴影'
+      result.shadow = `${typeName} ${color} ${radius}px X:${offsetX}, Y:${offsetY}`
     }
   }
 

@@ -20,7 +20,7 @@ const INTRINSIC_VISUAL_RAW_TYPES = new Set([
 
 function hasVisualDecoration(node) {
   const s = node.style || {}
-  return !!(s.backgroundColor || s.borderRadius || s.border || s.shadow || s.backdropBlur || s.blur)
+  return !!(s.backgroundColor || s.borderRadius || s.border || s.shadow || s.blur)
 }
 
 function isIntrinsicVisualNode(node) {

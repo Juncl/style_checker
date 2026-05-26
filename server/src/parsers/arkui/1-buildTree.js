@@ -500,24 +500,27 @@ function extractArkuiStyle(type, attrs, resolution, vpRect) {
     }
   }
 
-  // 模糊
-  const backdropBlur = parseFloat(attrs.backdropBlur)
-  if (!isNaN(backdropBlur) && backdropBlur > 0) s.backdropBlur = backdropBlur
-
+  // 模糊（统一用 blur 字符串字段，背景模糊优先）
   const blur = parseFloat(attrs.blur)
-  if (!isNaN(blur) && blur > 0) s.blur = blur
+  if (!isNaN(blur) && blur > 0) s.blur = `高斯模糊 ${blur}px`
+
+  const backdropBlur = parseFloat(attrs.backdropBlur)
+  if (!isNaN(backdropBlur) && backdropBlur > 0) s.blur = `背景模糊 ${backdropBlur}px`
 
   // 投影
   if (attrs.shadow && typeof attrs.shadow === 'object') {
-    const sh = attrs.shadow
-    const radius = parseFloat(sh.radius)
-    if (!isNaN(radius) && radius > 0) {
-      s.shadow = {
-        radius,
-        color:   normalizeArkuiColor(sh.color),
-        offsetX: parseFloat(sh.offsetX) || 0,
-        offsetY: parseFloat(sh.offsetY) || 0,
-      }
+    const sh      = attrs.shadow
+    const radius  = Number(sh.radius)
+    const offsetX = Number(sh.offsetX)
+    const offsetY = Number(sh.offsetY)
+    const color   = normalizeArkuiColor(sh.color)
+    const needShadow = radius > 0
+      && (offsetX !== 0 || offsetY !== 0)
+      && color
+      && !color.startsWith('#00')
+    if (needShadow) {
+      const typeName = sh.type === '0' ? '外阴影' : '内阴影'
+      s.shadow = `${typeName} ${color} ${radius}px X:${offsetX}, Y:${offsetY}`
     }
   }
 
