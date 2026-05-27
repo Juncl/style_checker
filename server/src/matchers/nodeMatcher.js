@@ -35,6 +35,7 @@ import {
 } from './regionContext.js'
 import { comparePaths } from '../utils/pathOrder.js'
 import { matchAlignedTextRows, matchDynamicTextSlots } from './dynamicTextSlots.js'
+import { matchLongTextFallback } from './longTextFallback.js'
 import { matchByListIndex } from './listIndexMatcher.js'
 
 /**
@@ -112,6 +113,17 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     usedArkui.add(pair.arkui.id)
     matchedDesignIds.add(pair.design.id)
     if (pair.topologyScore >= 0.86) topologyAnchors.push(pair)
+  }
+
+  // ── Pass 2d: 长文本位置-样式兜底（字数 > 12，锚点方向一票否决）───────────────
+  const longTextPairs = matchLongTextFallback(
+    designNodes, arkuiNodes, usedArkui, matchedDesignIds, topologyAnchors,
+    { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight }
+  )
+  for (const pair of longTextPairs) {
+    pairs.push(pair)
+    usedArkui.add(pair.arkui.id)
+    matchedDesignIds.add(pair.design.id)
   }
 
   // ── Pass 3: 匹配区域内文本节点全局最优匹配，处理重复列表/卡片里的文本串位 ──────

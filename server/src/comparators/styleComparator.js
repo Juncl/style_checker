@@ -172,6 +172,8 @@ function diffBorderRadius(diffs, ctx, designNode, arkuiNode, dv, av) {
   if (!dv && !av) return
   if (isCircleOrEllipseLikeNode(designNode) && isCircleOrEllipseLikeNode(arkuiNode)) return
   if (normalizedNodeType(arkuiNode) === 'symbolglyph') return
+  // 软豁免：开发侧 image 类型且开发侧无圆角值 → 跳过（Image 圆角由 clip 父节点裁剪实现，自身不设）
+  if (normalizedNodeType(arkuiNode) === 'image' && !av) return
   if (!dv || !av) {
     diffs.push(makeDiff(ctx, 'borderRadius', formatRadius(dv), formatRadius(av), 'warning', '圆角：一侧缺失'))
     return

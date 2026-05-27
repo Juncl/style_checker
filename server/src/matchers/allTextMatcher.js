@@ -166,22 +166,24 @@ function getWeightScore(w1, w2) {
  * - 参考对角线 diagonal = 两侧画布对角线均值；中心距 = 对角线 20% 时得 0.5，≥ 50% 截断为 0
  */
 function getPlaceScore(hmNode, deNode, diagonal, canvasHeightHm, canvasHeightDe) {
-  const hmCx = hmNode.rect.x + hmNode.rect.w / 2
-  const hmCy = hmNode.rect.y + hmNode.rect.h / 2
-  const deCx = deNode.rect.x + deNode.rect.w / 2
-  const deCy = deNode.rect.y + deNode.rect.h / 2
+  const bothCenter = hmNode.style?.textAlign === 'center' && deNode.style?.textAlign === 'center'
+
+  const hmX = bothCenter ? hmNode.rect.x + hmNode.rect.w / 2 : hmNode.rect.x
+  const hmY = bothCenter ? hmNode.rect.y + hmNode.rect.h / 2 : hmNode.rect.y
+  const deX = bothCenter ? deNode.rect.x + deNode.rect.w / 2 : deNode.rect.x
+  const deY = bothCenter ? deNode.rect.y + deNode.rect.h / 2 : deNode.rect.y
 
   const point = { x: 0.2 * diagonal, y: 0.5 }
   const diffmax = 0.5 * diagonal
 
-  // 左上角对齐
-  const topDist = Math.hypot(hmCx - deCx, hmCy - deCy)
+  // 顶部对齐
+  const topDist = Math.hypot(hmX - deX, hmY - deY)
   const topScore = gaussianCurveParabola(0, topDist, point, diffmax)
 
-  // 左下角对齐（各自距底边）
-  const hmCyBot = canvasHeightHm - hmNode.rect.y - hmNode.rect.h / 2
-  const deCyBot = canvasHeightDe - deNode.rect.y - deNode.rect.h / 2
-  const botDist = Math.hypot(hmCx - deCx, hmCyBot - deCyBot)
+  // 底部对齐（各自距底边）
+  const hmYBot = canvasHeightHm - hmY
+  const deYBot = canvasHeightDe - deY
+  const botDist = Math.hypot(hmX - deX, hmYBot - deYBot)
   const botScore = gaussianCurveParabola(0, botDist, point, diffmax)
 
   return Math.max(topScore, botScore)

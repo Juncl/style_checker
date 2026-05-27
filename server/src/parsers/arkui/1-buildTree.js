@@ -469,7 +469,7 @@ function extractArkuiStyle(type, attrs, resolution, vpRect) {
   // 圆角
   let brRaw = null
   if (attrs.borderRadius && typeof attrs.borderRadius === 'object') {
-    brRaw = parseBorderRadius(attrs.borderRadius)
+    brRaw = parseBorderRadius(attrs.borderRadius, sizeWidth, sizeHeight)
   } else if (typeof attrs.borderRadius === 'string') {
     const val = parseVp(attrs.borderRadius)
     if (val !== null && val > 0) {

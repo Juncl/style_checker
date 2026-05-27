@@ -70,14 +70,24 @@ export function isEquivalentFont(designFont, arkuiFont) {
   return false
 }
 
-/** 解析 ArkUI borderRadius 对象 → 统一格式（单位 vp） */
-export function parseBorderRadius(br) {
+/** 解析 ArkUI borderRadius 对象 → 统一格式（单位 vp）
+ *  w/h：节点宽高（vp），用于将百分比圆角换算为绝对值 */
+export function parseBorderRadius(br, w = null, h = null) {
   if (!br || typeof br !== 'object') return null
+  const parseOne = str => {
+    const vp = parseVp(str)
+    if (vp !== null) return vp
+    if (typeof str === 'string' && str.includes('%') && w !== null && h !== null) {
+      const pct = parseFloat(str)
+      if (!isNaN(pct)) return pct * Math.min(w, h) / 100
+    }
+    return 0
+  }
   return {
-    topLeft:     parseVp(br.topLeft)     ?? 0,
-    topRight:    parseVp(br.topRight)    ?? 0,
-    bottomRight: parseVp(br.bottomRight) ?? 0,
-    bottomLeft:  parseVp(br.bottomLeft)  ?? 0,
+    topLeft:     parseOne(br.topLeft),
+    topRight:    parseOne(br.topRight),
+    bottomRight: parseOne(br.bottomRight),
+    bottomLeft:  parseOne(br.bottomLeft),
   }
 }
 

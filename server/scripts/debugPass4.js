@@ -1,12 +1,3 @@
-import path from 'path'
-import { fileURLToPath } from 'url'
-import { readFileSync } from 'fs'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const ROOT = path.resolve(__dirname, '../../')
-
-import { parseDesign } from '../src/parsers/design/index.js'
-import { parseArkui } from '../src/parsers/arkui/index.js'
 import { matchAllTextNodes } from '../src/matchers/allTextMatcher.js'
 import { segmentRegions, buildRegionContext, candidatePool } from '../src/matchers/regionContext.js'
 import { matchAlignedTextRows, matchDynamicTextSlots } from '../src/matchers/dynamicTextSlots.js'
@@ -23,6 +14,8 @@ import { computeIoU } from '../src/utils/matchGeometry.js'
 import { isStrongTitleSlotMatch, hasUsableText, isShortCjkLabel } from '../src/utils/textSemantics.js'
 import { comparePaths } from '../src/utils/pathOrder.js'
 
+const SERVER = 'http://localhost:3000'
+
 // ── 参数解析 ─────────────────────────────────────────────────────────────────
 const [,, caseId, targetDeId] = process.argv
 if (!caseId) {
@@ -32,15 +25,22 @@ if (!caseId) {
   process.exit(1)
 }
 
-// ── 加载数据 ─────────────────────────────────────────────────────────────────
-const casePath = path.join(ROOT, 'case', caseId)
-const designJson = JSON.parse(readFileSync(path.join(casePath, 'design.json'), 'utf8'))
-const arkuiJson  = JSON.parse(readFileSync(path.join(casePath, 'arkui.json'), 'utf8'))
-const designImg  = readFileSync(path.join(casePath, 'design.png'))
-const arkuiImg   = readFileSync(path.join(casePath, 'arkui.png'))
+// ── 加载数据（调 server 解析接口，复用热 Tesseract worker）───────────────────
+let parsed
+try {
+  const res = await fetch(`${SERVER}/api/debug/parse/${caseId}`)
+  if (!res.ok) { const { error } = await res.json().catch(() => ({})); throw new Error(error || res.statusText) }
+  parsed = await res.json()
+} catch (e) {
+  if (e.cause?.code === 'ECONNREFUSED') {
+    console.error(`❌ 无法连接 server（${SERVER}），请先启动 server：cd server && npm run dev`)
+  } else {
+    console.error(`❌ 解析失败：${e.message}`)
+  }
+  process.exit(1)
+}
 
-const { nodes: designNodes, canvasWidth, canvasHeight } = await parseDesign(designJson, { imageBuffer: designImg })
-const { nodes: arkuiNodes, canvasWidthVp, canvasHeightVp } = await parseArkui(arkuiJson, { imageBuffer: arkuiImg })
+const { designNodes, arkuiNodes, canvasWidth, canvasHeight, canvasWidthVp, canvasHeightVp } = parsed
 
 const diagHm = Math.hypot(canvasWidthVp, canvasHeightVp)
 const diagDe = Math.hypot(canvasWidth, canvasHeight)
