@@ -17,6 +17,9 @@ import { normalizeArkuiColor, isTransparent } from '../../utils/colorUtils.js'
 
 const TEXT_TYPES      = new Set(['Text'])
 const SPAN_TYPES      = new Set(['Span'])
+// 注意：未在此列表的语法节点（如 SyntaxItem、ContentSlot 等）也会被自动当作
+// wrapper 处理 —— 见 2-pruneTree.js 中 "无 rect 但有 children" 的通用 unwrap 规则。
+// 此白名单只用于"有 rect 但仍需 unwrap"的节点。
 const FRAMEWORK_TYPES = new Set([
   'root', 'stage', 'page', 'JsView',
   'IfElse', 'ForEach', 'LazyForEach',
@@ -40,7 +43,7 @@ export function buildDumpTree(dumpText) {
   const canvasWidthVp  = canvasWidthPx / resolution
   const canvasHeightVp = canvasHeightPx / resolution
 
-  const root = convertNode(rawRoot, resolution, canvasWidthVp, canvasHeightVp, [0])
+  const root = convertNode(rawRoot, resolution, canvasWidthVp, canvasHeightVp, [0], { x: 0, y: 0 })
   return { canvasWidthVp, canvasHeightVp, resolution, root }
 }
 
@@ -87,19 +90,28 @@ function parseDumpText(text) {
 
 // ─── RawNode → UnifiedNode ────────────────────────────────────────────────────
 
-function convertNode(rawNode, resolution, canvasW, canvasH, path) {
+function convertNode(rawNode, resolution, canvasW, canvasH, path, accumTranslate) {
   const { type, props, children } = rawNode
   const isFramework = FRAMEWORK_TYPES.has(type)
   const isSpan      = SPAN_TYPES.has(type)
   const isText      = TEXT_TYPES.has(type)
 
-  // 绝对物理像素坐标（top/left 为绝对值，FrameRect 取 w/h）
+  // 累积 translate：祖先链上所有 translate(x,y) 之和 + 自身 translate。
+  // ArkUI translate 是 CSS transform 类似的渲染时变换，影响自己和所有后代的实际渲染位置。
+  // dump 里 top/left 是 layout 位置（不含 translate），需要手动叠加。
+  const selfTranslate = parseTranslate(props) || { x: 0, y: 0 }
+  const newAccum = {
+    x: accumTranslate.x + selfTranslate.x,
+    y: accumTranslate.y + selfTranslate.y,
+  }
+
+  // 绝对物理像素坐标（top/left 为绝对值，FrameRect 取 w/h），叠加累积 translate
   const topLeft   = parseTopLeft(props)
   const frameRect = parseFrameRect(props)
   const absPx = topLeft && frameRect
-    ? { x: topLeft.left, y: topLeft.top, w: frameRect.w, h: frameRect.h }
+    ? { x: topLeft.left + newAccum.x, y: topLeft.top + newAccum.y, w: frameRect.w, h: frameRect.h }
     : frameRect
-      ? { x: frameRect.x, y: frameRect.y, w: frameRect.w, h: frameRect.h }
+      ? { x: frameRect.x + newAccum.x, y: frameRect.y + newAccum.y, w: frameRect.w, h: frameRect.h }
       : null
 
   const vpRect = absPx
@@ -148,11 +160,11 @@ function convertNode(rawNode, resolution, canvasW, canvasH, path) {
 
   if (textContent) unified.textContent = textContent
 
-  // 递归子节点（Span 内容已归并到父 Text，跳过）
+  // 递归子节点（Span 内容已归并到父 Text，跳过）。传 newAccum 让 translate 向下传播。
   let ci = 0
   for (const child of children) {
     if (isText && SPAN_TYPES.has(child.type)) continue
-    unified.children.push(convertNode(child, resolution, canvasW, canvasH, [...path, ci++]))
+    unified.children.push(convertNode(child, resolution, canvasW, canvasH, [...path, ci++], newAccum))
   }
 
   // Button / TextInput：拆分虚拟文本子节点（与 JSON 路径保持一致）
@@ -292,15 +304,32 @@ function getProp(props, re) {
 
 function parseFrameRect(props) {
   for (const p of props) {
-    const m = p.match(/^FrameRect: RectT \(([\d.]+),\s*([\d.]+)\) - \[([\d.]+) x ([\d.]+)\]/)
-    if (m) return { x: parseFloat(m[1]), y: parseFloat(m[2]), w: parseFloat(m[3]), h: parseFloat(m[4]) }
+    // x/y 可能为负数（如 NavDestinationContent y=-136），w/h 同样允许负数解析后再判断
+    const m = p.match(/^FrameRect: RectT \((-?[\d.]+),\s*(-?[\d.]+)\) - \[(-?[\d.]+) x (-?[\d.]+)\]/)
+    if (m) {
+      const w = parseFloat(m[3]), h = parseFloat(m[4])
+      if (w <= 0 || h <= 0) return null  // 负/零 w/h 视为无效尺寸
+      return { x: parseFloat(m[1]), y: parseFloat(m[2]), w, h }
+    }
+  }
+  return null
+}
+
+function parseTranslate(props) {
+  for (const p of props) {
+    const m = p.match(/^translate\(x,y\):\s*(-?[\d.]+),\s*(-?[\d.]+)/)
+    if (m) {
+      const x = parseFloat(m[1]), y = parseFloat(m[2])
+      if (x !== 0 || y !== 0) return { x, y }
+    }
   }
   return null
 }
 
 function parseTopLeft(props) {
   for (const p of props) {
-    const m = p.match(/^top:\s*([\d.]+)\s+left:\s*([\d.]+)/)
+    // top/left 可能为负数（被父容器裁切的偏移）
+    const m = p.match(/^top:\s*(-?[\d.]+)\s+left:\s*(-?[\d.]+)/)
     if (m) return { top: parseFloat(m[1]), left: parseFloat(m[2]) }
   }
   return null

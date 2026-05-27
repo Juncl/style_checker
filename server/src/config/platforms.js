@@ -30,6 +30,17 @@ export const PLATFORMS = {
     dumpDevFile: 'arkui.dump',
     dumpDevImg:  'arkui.jpeg',
   },
+  'hmPhone-dump': {
+    key: 'hmPhone-dump',
+    label: '鸿蒙-手机 (dump)',
+    casesDir:     resolve(PROJECT_ROOT, 'case/hmPhone-dump'),
+    validationDir: resolve(PROJECT_ROOT, 'matchTest/matchCase/hmPhone'),
+    validationFallbackDir: null,
+    devFile:  'arkui.dump',
+    devImg:   'arkui.jpeg',
+    devType:  'arkui',
+    designScale: 1,
+  },
   hmWatch: {
     key: 'hmWatch',
     label: '鸿蒙-手表',

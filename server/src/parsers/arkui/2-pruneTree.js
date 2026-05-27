@@ -58,8 +58,11 @@ function hardPruneReason(node, canvasW, canvasH) {
   if (hasZeroOpacity(attrs.opacity)) return 'opacity-zero'
   if (rawType === 'leftarrow' || rawType === 'rightarrow') return 'special-component'
 
-  // 无 rect：除框架节点外都剪掉（框架节点保留以便其子节点 unwrap 时不丢失）
-  if (!node._rectRaw && !node._frameworkType && !node._spanType) return 'no-rect'
+  // 无 rect：叶子节点（无 children）才剪；有 children 的当作 wrapper / 语法节点保留，
+  // 留给 softPrune unwrap，避免连带剪掉真实子树（如 dump 里的 SyntaxItem、ContentSlot 等）
+  if (!node._rectRaw && !node._spanType && !(node.children && node.children.length > 0)) {
+    return 'no-rect'
+  }
 
   if (isOutOfBoundsRect(node.rect, canvasW, canvasH)) return 'out-of-bounds'
 
@@ -109,6 +112,10 @@ function shouldUnwrap(node) {
   // Span / Blank 无独立布局，永远 unwrap
   if (node._spanType) return true
   if (node._blankType) return true
+
+  // 无 rect 的 wrapper / 语法节点（dump 里的 SyntaxItem 等）：无条件 unwrap
+  // root 例外（它是整棵树的容器，永远保留）
+  if (!node._rectRaw && node.name !== 'root') return true
 
   // 框架节点：root 永不 unwrap；其余无背景色时 unwrap
   if (node._frameworkType) {
