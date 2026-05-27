@@ -6,7 +6,10 @@
  *   step3 annotateDesignTree  像素可见性标注 + 剔除
  *   step4 flattenDesignTree   树 → 扁平 UnifiedNode[]
  *
- * 入口：parseDesign(designJson, { imageBuffer }) → 直接对接 match 阶段
+ * 入口：parseDesign(designJson, { imageBuffer, arkuiCanvasWidthVp, designScale })
+ *
+ * designScale：design.json 数值缩放系数，默认 1。hmWatch 的 design.json 数值是
+ *   物理像素（480×408），需传 0.5 把 rect/fontSize/border 等数值统一缩放到真实 dp。
  *
  * 注：design 侧 step3 没有 OCR、没有后项杀前项，整体同步即可；
  * 为与 ArkUI 流水线 API 对称仍返回 Promise。
@@ -19,9 +22,9 @@ import { flattenDesignTree } from './4-flattenTree.js'
 import { normalizeTree } from '../../utils/normalizeTree.js'
 
 export async function parseDesign(designJson, opts = {}) {
-  const { imageBuffer, arkuiCanvasWidthVp } = opts
+  const { imageBuffer, arkuiCanvasWidthVp, designScale = 1 } = opts
 
-  const { canvasWidth, canvasHeight, root } = buildDesignTree(designJson, arkuiCanvasWidthVp)
+  const { canvasWidth, canvasHeight, root } = buildDesignTree(designJson, arkuiCanvasWidthVp, designScale)
 
   pruneDesignTree(root, canvasWidth, canvasHeight)
   normalizeTree(root)

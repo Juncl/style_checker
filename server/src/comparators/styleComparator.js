@@ -42,10 +42,14 @@ const SOFT_IGNORE_BACKGROUND_TYPES = new Set([
 
 /**
  * 比对一对匹配节点的样式
+ * @param {object} pair
+ * @param {object} [opts]
+ * @param {string} [opts.platform] 平台 key（hmPhone/hmWatch/web）；web 平台跳过 padding 比对
  * @returns {StyleDiff[]}
  */
-export function compareStyles(pair) {
+export function compareStyles(pair, opts = {}) {
   const { design: dn, arkui: an, matchType } = pair
+  const platform = opts.platform || 'hmPhone'
   const diffs = []
   const ds = dn.style || {}
   const as_ = an.style || {}
@@ -61,6 +65,8 @@ export function compareStyles(pair) {
     topologyScore: pair.topologyScore ?? null,
     regionScore: pair.regionScore ?? null,
   }
+  // web 平台不对比 padding（当前 diffPadding 已停用；保留 platform 参数为后续恢复留口）
+  void platform
 
   // ── 文字节点属性 ──────────────────────────────────────────────────────────
   if (dn.type === 'text' && an.type === 'text') {
@@ -90,11 +96,14 @@ export function compareStyles(pair) {
 
 /**
  * 批量处理所有 pair，汇总结果
+ * @param {Array} pairs
+ * @param {object} [opts]
+ * @param {string} [opts.platform] 平台 key，透传给 compareStyles
  */
-export function compareAll(pairs) {
+export function compareAll(pairs, opts = {}) {
   const allDiffs = []
   for (const pair of pairs) {
-    const diffs = compareStyles(pair)
+    const diffs = compareStyles(pair, opts)
     for (const d of diffs) {
       allDiffs.push({ ...d, designNodeId: pair.design.id, arkuiNodeId: pair.arkui.id })
     }

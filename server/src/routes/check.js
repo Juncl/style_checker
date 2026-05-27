@@ -1,44 +1,48 @@
 /**
  * /api/check 路由
- * - GET  /api/cases                  列出可用的内置 case
- * - POST /api/check/case/:caseId     分析指定 case（从磁盘加载）
- * - POST /api/check/upload           分析上传的文件
+ * - GET  /api/cases?platform=                列出指定平台的可用 case
+ * - GET  /api/cases/:caseId/image/:type?platform=
+ * - POST /api/check/case/:caseId?platform=   分析指定 case（从磁盘加载）
+ * - POST /api/check/upload                   分析上传的文件（platform 从 form 字段读）
  */
 
 import { Router } from 'express'
 import { readFileSync, existsSync, readdirSync } from 'fs'
-import { dirname, join, resolve } from 'path'
-import { fileURLToPath } from 'url'
+import { join } from 'path'
 import multer from 'multer'
 
 import { parseDesign } from '../parsers/design/index.js'
 import { parseArkui }  from '../parsers/arkui/index.js'
+import { parseWeb }    from '../parsers/web/index.js'
 import { matchNodes }  from '../matchers/nodeMatcher.js'
 import { compareAll }  from '../comparators/styleComparator.js'
 import { compareSpatialRelations } from '../comparators/spatialComparator.js'
+import { getPlatform, resolvePlatform } from '../config/platforms.js'
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage() })
 
-// case 数据根目录（相对于项目位置动态解析）
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const CASES_DIR = resolve(__dirname, '../../../case')
-// 验证集目录（人工标注的匹配真值，与 case 数据分离）
-const VALIDATION_DIR = resolve(__dirname, '../../../matchTest/matchCase')
 const DEFAULT_MATCH_DIRECTION = process.env.STYLE_CHECKER_MATCH_DIRECTION || 'arkui'
 
+// 从请求里解析 platform key（query 优先，body 兜底）
+function platformFromRequest(req) {
+  return resolvePlatform(req.query?.platform || req.body?.platform || req.body?.deviceType)
+}
+
 // ── 列出所有可用 case ─────────────────────────────────────────────────────────
-router.get('/cases', (_req, res) => {
+router.get('/cases', (req, res) => {
   try {
-    if (!existsSync(CASES_DIR)) {
+    const platform = getPlatform(platformFromRequest(req))
+    const casesDir = platform.casesDir
+    if (!existsSync(casesDir)) {
       return res.json({ cases: [] })
     }
-    const cases = readdirSync(CASES_DIR, { withFileTypes: true })
+    const requiredFiles = ['design.json', platform.devFile, 'design.png', platform.devImg]
+    const cases = readdirSync(casesDir, { withFileTypes: true })
       .filter(d => d.isDirectory() && d.name.startsWith('case'))
       .map(d => {
-        const dir = join(CASES_DIR, d.name)
-        const hasAll = ['design.json', 'arkui.json', 'design.png', 'arkui.png']
-          .every(f => existsSync(join(dir, f)))
+        const dir = join(casesDir, d.name)
+        const hasAll = requiredFiles.every(f => existsSync(join(dir, f)))
         return { id: d.name, dir, hasAll }
       })
       .filter(c => c.hasAll)
@@ -54,11 +58,14 @@ router.get('/cases', (_req, res) => {
 })
 
 // ── 获取 case 图片 ─────────────────────────────────────────────────────────────
+// type=design → design.png；type=arkui → 平台对应的开发侧图片（arkui.png 或 web.png）
 router.get('/cases/:caseId/image/:type', (req, res) => {
   const { caseId, type } = req.params
   if (!['design', 'arkui'].includes(type)) return res.status(400).end()
 
-  const imgPath = join(CASES_DIR, caseId, `${type}.png`)
+  const platform = getPlatform(platformFromRequest(req))
+  const fileName = type === 'design' ? 'design.png' : platform.devImg
+  const imgPath = join(platform.casesDir, caseId, fileName)
   if (!existsSync(imgPath)) return res.status(404).end()
 
   res.setHeader('Content-Type', 'image/png')
@@ -68,22 +75,25 @@ router.get('/cases/:caseId/image/:type', (req, res) => {
 // ── 分析内置 case ─────────────────────────────────────────────────────────────
 router.post('/check/case/:caseId', async (req, res) => {
   const { caseId } = req.params
-  const caseDir = join(CASES_DIR, caseId)
+  const platform = getPlatform(platformFromRequest(req))
+  const caseDir = join(platform.casesDir, caseId)
 
   if (!existsSync(caseDir)) {
-    return res.status(404).json({ error: `Case ${caseId} not found` })
+    return res.status(404).json({ error: `Case ${caseId} not found for platform ${platform.key}` })
   }
 
   try {
     const designJson = JSON.parse(readFileSync(join(caseDir, 'design.json'), 'utf-8'))
-    const arkuiJson  = JSON.parse(readFileSync(join(caseDir, 'arkui.json'),  'utf-8'))
-    const result = await runCheck(designJson, arkuiJson, caseId, {
+    const devJson    = JSON.parse(readFileSync(join(caseDir, platform.devFile), 'utf-8'))
+    const result = await runCheck(designJson, devJson, caseId, {
       designImageBuffer: readFileSync(join(caseDir, 'design.png')),
-      arkuiImageBuffer: readFileSync(join(caseDir, 'arkui.png')),
-      matchDirection: matchDirectionFromRequest(req),
+      devImageBuffer:    readFileSync(join(caseDir, platform.devImg)),
+      matchDirection:    matchDirectionFromRequest(req),
+      platform,
     })
-    const validationPath = join(VALIDATION_DIR, caseId, 'matchValidation.json')
-    if (existsSync(validationPath)) {
+    // 验证集：先尝试 platform 子目录，再回退到旧根目录（hmPhone 旧布局兼容）
+    const validationPath = findValidationPath(platform, caseId)
+    if (validationPath) {
       result.matchValidation = JSON.parse(readFileSync(validationPath, 'utf-8'))
     }
     res.json(result)
@@ -108,15 +118,18 @@ router.post(
       if (!files?.designJson || !files?.arkuiJson) {
         return res.status(400).json({ error: '缺少 designJson 或 arkuiJson 文件' })
       }
-      if (!files?.arkuiImage) {
-        return res.status(400).json({ error: 'OCR 主流程需要 arkuiImage 文件' })
+      const platform = getPlatform(platformFromRequest(req))
+      // web 平台不需要图片，ArkUI 系仍要求开发侧图片用于 OCR
+      if (platform.devType === 'arkui' && !files?.arkuiImage) {
+        return res.status(400).json({ error: 'ArkUI 主流程需要 arkuiImage 文件' })
       }
       const designJson = JSON.parse(files.designJson[0].buffer.toString('utf-8'))
-      const arkuiJson  = JSON.parse(files.arkuiJson[0].buffer.toString('utf-8'))
-      const result = await runCheck(designJson, arkuiJson, 'upload', {
+      const devJson    = JSON.parse(files.arkuiJson[0].buffer.toString('utf-8'))
+      const result = await runCheck(designJson, devJson, 'upload', {
         designImageBuffer: files.designImage?.[0]?.buffer,
-        arkuiImageBuffer: files.arkuiImage?.[0]?.buffer,
-        matchDirection: matchDirectionFromRequest(req),
+        devImageBuffer:    files.arkuiImage?.[0]?.buffer,
+        matchDirection:    matchDirectionFromRequest(req),
+        platform,
       })
       res.json(result)
     } catch (err) {
@@ -126,24 +139,39 @@ router.post(
   }
 )
 
+// 查找验证集文件路径，hmPhone 兼容旧的扁平结构
+function findValidationPath(platform, caseId) {
+  const primary = join(platform.validationDir, caseId, 'matchValidation.json')
+  if (existsSync(primary)) return primary
+  if (platform.validationFallbackDir) {
+    const fallback = join(platform.validationFallbackDir, caseId, 'matchValidation.json')
+    if (existsSync(fallback)) return fallback
+  }
+  return null
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // 核心分析流程
 // ──────────────────────────────────────────────────────────────────────────────
-async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
+async function runCheck(designJson, devJson, caseId, assets = {}) {
   const t0 = Date.now()
+  const platform = assets.platform || getPlatform()
 
-  // 1. 解析（先解 arkui 拿到画布宽度，再据此缩放 design 坐标系使两侧对齐）
-  const arkuiResult  = await parseArkui(arkuiJson, { imageBuffer: assets.arkuiImageBuffer })
+  // 1. 解析：先解开发侧拿到画布宽度，再据此缩放 design 坐标系
+  const devResult = platform.devType === 'web'
+    ? await parseWeb(devJson, { imageBuffer: assets.devImageBuffer })
+    : await parseArkui(devJson, { imageBuffer: assets.devImageBuffer })
+
   const designResult = await parseDesign(designJson, {
     imageBuffer: assets.designImageBuffer,
-    arkuiCanvasWidthVp: arkuiResult.canvasWidthVp,
+    arkuiCanvasWidthVp: devResult.canvasWidthVp,
+    designScale: platform.designScale,
   })
 
-  // 流水线已剔除不可见节点，直接使用 nodes
   const designVisibleNodes = designResult.nodes
-  const arkuiVisibleNodes  = arkuiResult.nodes
+  const devVisibleNodes    = devResult.nodes
 
-  const arkuiAnnotate  = arkuiResult.annotateStats  || {}
+  const devAnnotate    = devResult.annotateStats    || {}
   const designAnnotate = designResult.annotateStats || {}
 
   // 2. 匹配
@@ -156,22 +184,23 @@ async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
     regions,
   } = matchNodes(
     designVisibleNodes,
-    arkuiVisibleNodes,
+    devVisibleNodes,
     {
       primarySource: assets.matchDirection || DEFAULT_MATCH_DIRECTION,
-      canvasWidthVp: arkuiResult.canvasWidthVp,
-      canvasHeightVp: arkuiResult.canvasHeightVp,
+      canvasWidthVp: devResult.canvasWidthVp,
+      canvasHeightVp: devResult.canvasHeightVp,
       canvasWidth: designResult.canvasWidth,
       canvasHeight: designResult.canvasHeight,
+      platform: platform.key,
     }
   )
 
-  // 3. 样式比对，并将节点坐标挂到每条 diff 上（前端高亮用）
+  // 3. 样式比对
   const rectByPairKey = new Map(
     pairs.map(p => [`${p.design.id}::${p.arkui.id}`, { designRect: p.design.rect, arkuiRect: p.arkui.rect }])
   )
   const spatialDiffs = compareSpatialRelations(pairs)
-  const diffs = [...compareAll(pairs), ...spatialDiffs].map(d => ({
+  const diffs = [...compareAll(pairs, { platform: platform.key }), ...spatialDiffs].map(d => ({
     ...d,
     ...( rectByPairKey.get(`${d.designNodeId}::${d.arkuiNodeId}`) || {} ),
   }))
@@ -185,7 +214,6 @@ async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
     : 0
   const lowConfidencePairs = pairs.filter(p => p.confidence === 'low').length
 
-  // 还原度评分：差异扣分 + 覆盖率扣分。匹配覆盖不足时分数不能虚高。
   const totalNodes = pairs.length || 1
   const penalty = (errorCount * 3 + warningCount * 1) / totalNodes
   const coveragePenalty = (1 - matchCoverage) * 25
@@ -194,10 +222,11 @@ async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
 
   return {
     caseId,
+    platform: platform.key,
     duration: Date.now() - t0,
     stats: {
       designNodes:    designVisibleNodes.length,
-      arkuiNodes:     arkuiVisibleNodes.length,
+      arkuiNodes:     devVisibleNodes.length,
       comparableDesignNodes: comparableDesignCount,
       comparableArkuiNodes: comparableArkuiCount,
       matchedPairs:   pairs.length,
@@ -206,12 +235,12 @@ async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
       matchCoverage:   Number((matchCoverage * 100).toFixed(1)),
       matchDirection: assets.matchDirection || DEFAULT_MATCH_DIRECTION,
       lowConfidencePairs,
-      pixelVisibilityChecked: arkuiAnnotate.pixelChecked || 0,
-      pixelInvisibleNodes: arkuiAnnotate.pixelHidden || 0,
-      arkuiOcrVisibilityChecked: arkuiAnnotate.ocrChecked || 0,
-      arkuiOcrInvisibleTextNodes: arkuiAnnotate.ocrHidden || 0,
-      arkuiOcrMatchedTextNodes: arkuiAnnotate.ocrMatched || 0,
-      arkuiOcrItems: arkuiAnnotate.ocrItems || 0,
+      pixelVisibilityChecked: devAnnotate.pixelChecked || 0,
+      pixelInvisibleNodes: devAnnotate.pixelHidden || 0,
+      arkuiOcrVisibilityChecked: devAnnotate.ocrChecked || 0,
+      arkuiOcrInvisibleTextNodes: devAnnotate.ocrHidden || 0,
+      arkuiOcrMatchedTextNodes: devAnnotate.ocrMatched || 0,
+      arkuiOcrItems: devAnnotate.ocrItems || 0,
       designPixelVisibilityChecked: designAnnotate.pixelChecked || 0,
       designPixelInvisibleNodes: designAnnotate.pixelHidden || 0,
       errorCount,
@@ -221,7 +250,7 @@ async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
     },
     canvas: {
       design: { w: designResult.canvasWidth, h: designResult.canvasHeight },
-      arkui:  { w: arkuiResult.canvasWidthVp, h: arkuiResult.canvasHeightVp, resolution: arkuiResult.resolution },
+      arkui:  { w: devResult.canvasWidthVp, h: devResult.canvasHeightVp, resolution: devResult.resolution },
     },
     regions,
     diffs,
@@ -246,7 +275,7 @@ async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
     })(),
     allArkuiNodes: (() => {
       const matchedIds = new Set(pairs.map(p => p.arkui.id))
-      return arkuiVisibleNodes.map(n => ({
+      return devVisibleNodes.map(n => ({
         id: n.id,
         name: n.name,
         type: n.type,
@@ -291,6 +320,7 @@ async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
     })),
   }
 }
+
 function matchDirectionFromRequest(req) {
   const value = req.query.matchDirection || req.body?.matchDirection
   return value === 'design' || value === 'design-first' ? 'design' : DEFAULT_MATCH_DIRECTION

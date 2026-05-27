@@ -335,6 +335,10 @@ const props = defineProps({
   caseNames: {
     type: Object,
     default: () => ({})
+  },
+  currentPlatform: {
+    type: String,
+    default: 'hmPhone'
   }
 })
 
@@ -433,7 +437,7 @@ function matchTypePass(matchType) {
 }
 
 function caseImageUrl(caseId) {
-  return imageUrl(caseId, 'design')
+  return imageUrl(caseId, 'design', props.currentPlatform)
 }
 
 function validationBg(status) {

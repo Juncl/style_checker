@@ -10,11 +10,13 @@
       :case-names="CASE_NAMES"
       :is-drag-over="isDragOver && !loading"
       :debug-mode="debugMode"
+      :current-platform="currentPlatform"
       @step-picked="onStepPicked"
       @drag-over="isDragOver = $event"
       @drop="onDrop"
       @run-upload="runUpload"
       @select-case="selectCase"
+      @platform-switch="onPlatformSwitch"
     />
 
     <div v-if="loading" class="center-placeholder-wrapper">
@@ -45,6 +47,7 @@
       :cases="cases"
       :selected-case="selectedCase"
       :case-names="CASE_NAMES"
+      :current-platform="currentPlatform"
       @select-case="selectCase"
       @arkui-node-click="onArkuiNodeClick"
       @design-node-click="onDesignNodeClick"
@@ -69,18 +72,25 @@ import UploadPage from './components/UploadPage.vue'
 import ReportPage from './components/ReportPage.vue'
 import './styles/app.css'
 
-const CASE_NAMES = {
-  case1: '主题购买页面',
-  case2: '音乐APP的页面',
-  case3: '查看照片页面',
-  case4: '运动健康页面',
-  case5: '地图导航页面',
-  case6: '路线导航浮层页面',
-  case7: '90日天气页面',
-  case8: '生活服务数据页面',
+// 按平台分组的 case 中文名（缺名时由组件层用 caseId 兜底）
+const CASE_NAMES_BY_PLATFORM = {
+  hmPhone: {
+    case1: '主题购买页面',
+    case2: '音乐APP的页面',
+    case3: '查看照片页面',
+    case4: '运动健康页面',
+    case5: '地图导航页面',
+    case6: '路线导航浮层页面',
+    case7: '90日天气页面',
+    case8: '生活服务数据页面',
+  },
+  hmWatch: {},
+  web: {},
 }
 
-const cases        = ref([])
+const cases           = ref([])
+const currentPlatform = ref('hmPhone')   // 当前选中的平台（影响 fetchCases / checkCase / imageUrl）
+const CASE_NAMES      = computed(() => CASE_NAMES_BY_PLATFORM[currentPlatform.value] || {})
 const selectedCase = ref('')
 const loading      = ref(false)
 const result       = ref(null)
@@ -294,10 +304,10 @@ function assignFiles(files) {
 }
 
 const designImgSrc = computed(() =>
-  selectedCase.value ? imageUrl(selectedCase.value, 'design') : blobUrls.value.design
+  selectedCase.value ? imageUrl(selectedCase.value, 'design', currentPlatform.value) : blobUrls.value.design
 )
 const arkuiImgSrc = computed(() =>
-  selectedCase.value ? imageUrl(selectedCase.value, 'arkui') : blobUrls.value.arkui
+  selectedCase.value ? imageUrl(selectedCase.value, 'arkui', currentPlatform.value) : blobUrls.value.arkui
 )
 
 const scoreTagType = computed(() => {
@@ -312,9 +322,18 @@ onMounted(async () => {
   debugMode.value = params.get('debugger') === '1'
   debugPipelineOn.value = false
   debugOverlayOn.value = false
-  try { cases.value = await fetchCases() }
+  try { cases.value = await fetchCases(currentPlatform.value) }
   catch { ElMessage.warning('无法加载内置 Case') }
 })
+
+// debugger 模式下，UploadPage 切换平台或上传后自动识别平台时调用
+async function onPlatformSwitch(platform) {
+  if (!platform || platform === currentPlatform.value) return
+  currentPlatform.value = platform
+  selectedCase.value = ''
+  try { cases.value = await fetchCases(platform) }
+  catch { ElMessage.warning(`无法加载 ${platform} 的 Case 列表`) }
+}
 
 watch(debugMode, value => {
   if (!value) debugOverlayOn.value = false
@@ -467,25 +486,27 @@ async function selectCase(id) {
   loading.value       = true
   result.value        = null
   revokeBlobUrls()
-  try { result.value = await checkCase(id) }
+  try { result.value = await checkCase(id, currentPlatform.value) }
   catch (e) { ElMessage.error(`分析失败：${e.response?.data?.error || e.message}`) }
   finally    { loading.value = false }
 }
 
-async function runUpload(deviceType) {
+async function runUpload(platform) {
+  // platform：从 UploadPage 传来的平台 key（'hmPhone' / 'hmWatch' / 'web'）
   selectedCase.value  = ''
   activeDiff.value    = null
   selectedPair.value  = null
   lockedNodeIds.value = new Set()
   loading.value       = true
   result.value        = null
+  if (platform && platform !== currentPlatform.value) currentPlatform.value = platform
   try {
     result.value = await checkUpload(
       uploadFiles.value.designJson,
       uploadFiles.value.arkuiJson,
       uploadFiles.value.designImage,
       uploadFiles.value.arkuiImage,
-      deviceType,
+      platform || currentPlatform.value,
     )
     ElMessage.success('分析完成')
   } catch (e) { ElMessage.error(`分析失败：${e.response?.data?.error || e.message}`) }

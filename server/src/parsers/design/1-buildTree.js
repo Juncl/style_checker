@@ -30,14 +30,16 @@ const CONTAINER_TYPES = new Set(['FRAME', 'GROUP'])
 /**
  * @param {object} designJson 原始 design.json
  * @param {number} [arkuiCanvasWidthVp] arkui 画布宽度（vp），传入时对 design rect 做等比缩放使两侧坐标系对齐
+ * @param {number} [designScale=1] design.json 内部数值缩放系数（hmWatch=0.5；把"伪 dp"换算成真 dp）
  * @returns {{ canvasWidth: number, canvasHeight: number, root: object | null }}
  */
-export function buildDesignTree(designJson, arkuiCanvasWidthVp) {
+export function buildDesignTree(designJson, arkuiCanvasWidthVp, designScale = 1) {
   const rawNodes = (designJson && Array.isArray(designJson.data)) ? designJson.data : []
 
   const rootRaw = rawNodes.find(n => Array.isArray(n.path) && n.path.length === 1)
-  const origCanvasWidth  = rootRaw?.rect?.w || 360
-  const origCanvasHeight = rootRaw?.rect?.h || 792
+  // 真实 dp 画布尺寸 = raw 画布 × designScale
+  const origCanvasWidth  = (rootRaw?.rect?.w || 360) * designScale
+  const origCanvasHeight = (rootRaw?.rect?.h || 792) * designScale
 
   const scale = arkuiCanvasWidthVp != null ? arkuiCanvasWidthVp / origCanvasWidth : 1
   const canvasWidth  = origCanvasWidth  * scale   // 缩放后 = arkuiCanvasWidthVp（或原值）
@@ -48,7 +50,7 @@ export function buildDesignTree(designJson, arkuiCanvasWidthVp) {
 
   // 1b. 字段统一（递归把 _raw 转 UnifiedNode）
   const root = rawTreeRoot
-    ? convertToUnified(rawTreeRoot, origCanvasWidth, origCanvasHeight, scale, canvasWidth, canvasHeight)
+    ? convertToUnified(rawTreeRoot, origCanvasWidth, origCanvasHeight, scale, canvasWidth, canvasHeight, designScale)
     : null
 
   return { canvasWidth, canvasHeight, root }
@@ -81,7 +83,8 @@ function rebuildAsTree(rawNodes) {
 }
 
 // ─── 1b. 字段统一 ──────────────────────────────────────────────────────────────
-function convertToUnified(wrap, origCanvasW, origCanvasH, scale, canvasW, canvasH) {
+// dpScale：把 raw.rect / raw.style 里的"伪 dp"换算成真 dp 的系数（hmWatch=0.5）
+function convertToUnified(wrap, origCanvasW, origCanvasH, scale, canvasW, canvasH, dpScale = 1) {
   const raw = wrap._raw
   const rect = raw.rect || {}
   const style = raw.style || {}
@@ -89,7 +92,11 @@ function convertToUnified(wrap, origCanvasW, origCanvasH, scale, canvasW, canvas
 
   const hmSymbol = raw.type === TEXT_TYPE && isHmSymbolNode(raw)
 
-  const rx = rect.x ?? 0, ry = rect.y ?? 0, rw = rect.w ?? 0, rh = rect.h ?? 0
+  // 把 raw 坐标先缩放到真实 dp（rx, ry, rw, rh 之后皆为 dp 单位）
+  const rx = (rect.x ?? 0) * dpScale
+  const ry = (rect.y ?? 0) * dpScale
+  const rw = (rect.w ?? 0) * dpScale
+  const rh = (rect.h ?? 0) * dpScale
 
   const unified = {
     id: raw.guid,
@@ -98,7 +105,7 @@ function convertToUnified(wrap, origCanvasW, origCanvasH, scale, canvasW, canvas
     rawType: hmSymbol ? 'symbolglyph' : String(raw.type || '').toLowerCase(),
     name: raw.name || '',
     path: raw.path,
-    size: { x: rx, y: ry, w: rw, h: rh },   // 原始 dp rect，供样式比对/间距计算使用
+    size: { x: rx, y: ry, w: rw, h: rh },   // 真实 dp rect，供样式比对/间距计算使用
     rect: { x: rx * scale, y: ry * scale, w: rw * scale, h: rh * scale },
     normRect: {
       x: rx * scale / canvasW,
@@ -107,7 +114,8 @@ function convertToUnified(wrap, origCanvasW, origCanvasH, scale, canvasW, canvas
       h: rh * scale / canvasH,
     },
     visible: raw.state?.visible !== false,
-    style: extractDesignStyle(raw.type, style, layout, { hmSymbol, rect }),
+    // 给 extractDesignStyle 传一个等比缩放后的 rect（dp），供 borderRadius 上限计算用
+    style: extractDesignStyle(raw.type, style, layout, { hmSymbol, rect: { x: rx, y: ry, w: rw, h: rh }, dpScale }),
     children: [],
     _raw: raw,
   }
@@ -117,7 +125,7 @@ function convertToUnified(wrap, origCanvasW, origCanvasH, scale, canvasW, canvas
   }
 
   for (const childWrap of wrap.children) {
-    unified.children.push(convertToUnified(childWrap, origCanvasW, origCanvasH, scale, canvasW, canvasH))
+    unified.children.push(convertToUnified(childWrap, origCanvasW, origCanvasH, scale, canvasW, canvasH, dpScale))
   }
 
   applyMaskClip(unified.children, canvasW, canvasH)
@@ -136,7 +144,7 @@ function isHmSymbolNode(node) {
 }
 
 function extractDesignStyle(nodeType, style, layout, options = {}) {
-  const { hmSymbol = false, rect = null } = options
+  const { hmSymbol = false, rect = null, dpScale = 1 } = options
   const result = {}
 
   if (style.opacity !== undefined) {
@@ -160,7 +168,13 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
   }
 
   if (Array.isArray(style.borderRadius) && style.borderRadius.some(v => v > 0)) {
-    const br = parseDesignBorderRadius(style.borderRadius)
+    const brRaw = parseDesignBorderRadius(style.borderRadius)
+    const br = {
+      topLeft:     (brRaw.topLeft     ?? 0) * dpScale,
+      topRight:    (brRaw.topRight    ?? 0) * dpScale,
+      bottomRight: (brRaw.bottomRight ?? 0) * dpScale,
+      bottomLeft:  (brRaw.bottomLeft  ?? 0) * dpScale,
+    }
     if (rect && rect.w > 0 && rect.h > 0) {
       const maxBr = Math.min(rect.w, rect.h) / 2
       result.borderRadius = {
@@ -180,7 +194,7 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
       .map(e => (typeof e.cornerRadius === 'number' && e.cornerRadius > 0) ? e.cornerRadius : 0)
       .filter(r => r > 0)
     if (radii.length > 0) {
-      const r = Math.max(...radii)
+      const r = Math.max(...radii) * dpScale
       const maxBr = rect && rect.w > 0 && rect.h > 0 ? Math.min(rect.w, rect.h) / 2 : Infinity
       const capped = Math.min(r, maxBr)
       result.borderRadius = { topLeft: capped, topRight: capped, bottomRight: capped, bottomLeft: capped }
@@ -192,7 +206,7 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
     const b = borders[0]
     result.border = {
       color: normalizeDesignColor(b.color),
-      width: b.width ?? 0,
+      width: (b.width ?? 0) * dpScale,
       style: b.style || 'solid',
     }
   }
@@ -200,16 +214,16 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
   if (Array.isArray(style.blur)) {
     const bgBlur     = style.blur.find(b => b.type === 'background')
     const filterBlur = style.blur.find(b => b.type === 'filter')
-    if (filterBlur) result.blur = `高斯模糊 ${Number(filterBlur.blur)}px`
-    if (bgBlur)     result.blur = `背景模糊 ${Number(bgBlur.blur)}px`
+    if (filterBlur) result.blur = `高斯模糊 ${Number(filterBlur.blur) * dpScale}px`
+    if (bgBlur)     result.blur = `背景模糊 ${Number(bgBlur.blur) * dpScale}px`
   }
 
   if (Array.isArray(style.shadows) && style.shadows.length > 0) {
     const s       = style.shadows[0]
     const color   = normalizeDesignColor(s.color)
-    const radius  = s.blur ?? 0
-    const offsetX = s.x ?? 0
-    const offsetY = s.y ?? 0
+    const radius  = (s.blur ?? 0) * dpScale
+    const offsetX = (s.x ?? 0) * dpScale
+    const offsetY = (s.y ?? 0) * dpScale
     const needShadow = radius > 0
       && (offsetX !== 0 || offsetY !== 0)
       && color
@@ -231,13 +245,14 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
       }
     } else {
       result.textAlign = style.textAlign || 'left'
-      result.fontSize = t.fontSize ?? null
+      result.fontSize = t.fontSize != null ? t.fontSize * dpScale : null
       result.fontWeight = normalizeDesignFontWeight(t.fontWeight)
       result.fontFamily = t.fontFamily || null
-      result.lineHeight = typeof t.lineHeight === 'number' && t.lineHeight !== 1
-        ? t.lineHeight
+      // 注意：lineHeight === 1 是 Figma 表示"默认行高"的哨兵值，用原始值比较再决定要不要缩放
+      result.lineHeight = (typeof t.lineHeight === 'number' && t.lineHeight !== 1)
+        ? t.lineHeight * dpScale
         : null
-      result.letterSpacing = t.letterSpacing ?? null
+      result.letterSpacing = t.letterSpacing != null ? t.letterSpacing * dpScale : null
       if (Array.isArray(t.data)) {
         const solidFill = t.data.find(d => d.type === 'SOLID')
         if (solidFill?.color) {
@@ -258,11 +273,17 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
   if (CONTAINER_TYPES.has(nodeType)) {
     const container = layout.container || {}
     if (Array.isArray(container.padding)) {
-      result.padding = parseDesignPadding(container.padding)
+      const p = parseDesignPadding(container.padding)
+      result.padding = {
+        top:    (p.top    ?? 0) * dpScale,
+        right:  (p.right  ?? 0) * dpScale,
+        bottom: (p.bottom ?? 0) * dpScale,
+        left:   (p.left   ?? 0) * dpScale,
+      }
     }
     const primary = container.axis?.primary || {}
     if (primary.spacing !== undefined) {
-      result.itemSpacing = primary.spacing
+      result.itemSpacing = primary.spacing * dpScale
     }
   }
 

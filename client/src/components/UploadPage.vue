@@ -193,19 +193,19 @@
         <img :src="iconEmpty" class="report-empty-img" alt="" />
         <p class="report-empty-hint">请完成操作指引，<br />导入待检查页面后开始检查</p>
         <div class="report-device-row">
-          <select class="report-device-select" v-model="deviceType">
-            <option>鸿蒙-手机</option>
-            <option>鸿蒙-手表</option>
-            <option>web网页</option>
+          <select class="report-device-select" v-model="selectedPlatform">
+            <option value="hmPhone">鸿蒙-手机</option>
+            <option value="hmWatch">鸿蒙-手表</option>
+            <option value="web">web网页</option>
           </select>
           <el-icon class="report-device-arrow"><ArrowDown /></el-icon>
         </div>
         <el-button
           type="primary"
           :loading="loading"
-          :disabled="!uploadFiles.designJson || !uploadFiles.arkuiJson || !uploadFiles.arkuiImage || !uploadFiles.designImage"
+          :disabled="!uploadFiles.designJson || !uploadFiles.arkuiJson || (selectedPlatform !== 'web' && !uploadFiles.arkuiImage) || !uploadFiles.designImage"
           class="report-start-btn"
-          @click="$emit('run-upload', deviceType)"
+          @click="$emit('run-upload', selectedPlatform)"
         >开始对比</el-button>
       </div>
 
@@ -214,6 +214,17 @@
         <div class="cases-head">
           <span class="cases-head-title">试用案例</span>
           <span class="cases-head-hint">👏 点击下方案例即刻体验~</span>
+          <!-- debugger 模式：平台下拉框，切换会刷新 case 组 -->
+          <select
+            v-if="debugMode"
+            class="cases-platform-select"
+            :value="currentPlatform"
+            @change="onPlatformSwitch($event.target.value)"
+          >
+            <option value="hmPhone">鸿蒙-手机</option>
+            <option value="hmWatch">鸿蒙-手表</option>
+            <option value="web">web网页</option>
+          </select>
         </div>
         <div v-if="!cases.length" class="cases-loading">加载中…</div>
         <div class="cases-list">
@@ -241,7 +252,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, Loading, ArrowRight, ArrowDown } from '@element-plus/icons-vue'
 import { imageUrl } from '../api/index.js'
@@ -279,6 +290,10 @@ const props = defineProps({
   debugMode: {
     type: Boolean,
     default: false
+  },
+  currentPlatform: {
+    type: String,
+    default: 'hmPhone'
   }
 })
 
@@ -287,11 +302,14 @@ const emit = defineEmits([
   'drag-over',
   'drop',
   'run-upload',
-  'select-case'
+  'select-case',
+  'platform-switch'
 ])
 
 const annotationUrl = ref('')
-const deviceType = ref('鸿蒙-手机')
+// 当前对比的平台 key（与父组件双向同步）
+const selectedPlatform = ref(props.currentPlatform || 'hmPhone')
+watch(() => props.currentPlatform, v => { if (v && v !== selectedPlatform.value) selectedPlatform.value = v })
 
 // 4个独立的picker input
 const pickerStep1 = ref(null)
@@ -303,7 +321,33 @@ const pickerStep4 = ref(null)
 const debugStep3Mode = ref(true) // true: 传送码模式，false: 文件上传模式
 
 function caseImageUrl(caseId) {
-  return imageUrl(caseId, 'arkui')
+  return imageUrl(caseId, 'arkui', props.currentPlatform)
+}
+
+// debugger 模式：用户切换平台下拉框时通知父组件刷新 case 列表
+function onPlatformSwitch(platform) {
+  selectedPlatform.value = platform
+  emit('platform-switch', platform)
+}
+
+// 从开发侧 JSON 自动识别平台（上传 ArkUI/Web JSON 后调用）
+async function detectPlatformFromJson(file) {
+  try {
+    const text = await file.text()
+    const json = JSON.parse(text)
+    // web 标识：deviceType === 'web' 或 name === 'viewport'
+    if (json.deviceType === 'web') return 'web'
+    if (json.name === 'viewport') return 'web'
+    // ArkUI：content.$resolution 存在
+    if (json.content && json.content.width != null) {
+      const w = parseFloat(json.content.width)
+      if (Number.isFinite(w) && w < 600) return 'hmWatch'
+      return 'hmPhone'
+    }
+  } catch (e) {
+    // 解析失败不切换平台
+  }
+  return null
 }
 
 // ── 传送码校验（共用于debugger和非debugger模式）──
@@ -361,7 +405,7 @@ function triggerStep4() {
 }
 
 // ── 4个独立的文件选中处理函数 ──
-function onStep1Picked(event) {
+async function onStep1Picked(event) {
   const file = event.target.files?.[0]
   if (!file) return
   if (!file.name.endsWith('.json') && !file.name.endsWith('.dump')) {
@@ -370,6 +414,12 @@ function onStep1Picked(event) {
     return
   }
   emit('step-picked', { type: 'arkuiJson', file })
+  // 自动识别平台：读 JSON 内容做特征匹配
+  const detected = await detectPlatformFromJson(file)
+  if (detected && detected !== selectedPlatform.value) {
+    selectedPlatform.value = detected
+    emit('platform-switch', detected)
+  }
   event.target.value = ''
 }
 
