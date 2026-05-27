@@ -26,6 +26,9 @@ export const PLATFORMS = {
     devImg:   'arkui.png',
     devType:  'arkui',
     designScale: 1,
+    // dump 格式（caseN-dump 目录）的备选文件名
+    dumpDevFile: 'arkui.dump',
+    dumpDevImg:  'arkui.jpeg',
   },
   hmWatch: {
     key: 'hmWatch',

@@ -82,6 +82,8 @@ function hasZeroOpacity(value) {
 
 function isOutOfBoundsRect(rect, canvasW, canvasH) {
   if (!rect) return false
+  // 零尺寸节点（框架节点等）无可见内容，不参与越界判定
+  if (rect.w <= 0 || rect.h <= 0) return false
   return rect.x > canvasW ||
     rect.y > canvasH ||
     rect.x + rect.w <= 0 ||

@@ -37,19 +37,26 @@ router.get('/cases', (req, res) => {
     if (!existsSync(casesDir)) {
       return res.json({ cases: [] })
     }
-    const requiredFiles = ['design.json', platform.devFile, 'design.png', platform.devImg]
+    const jsonRequired  = ['design.json', platform.devFile, 'design.png', platform.devImg]
+    const dumpRequired  = platform.dumpDevFile
+      ? ['design.json', platform.dumpDevFile, 'design.png', platform.dumpDevImg]
+      : null
     const cases = readdirSync(casesDir, { withFileTypes: true })
       .filter(d => d.isDirectory() && d.name.startsWith('case'))
       .map(d => {
         const dir = join(casesDir, d.name)
-        const hasAll = requiredFiles.every(f => existsSync(join(dir, f)))
-        return { id: d.name, dir, hasAll }
+        const hasJson = jsonRequired.every(f => existsSync(join(dir, f)))
+        const hasDump = dumpRequired && dumpRequired.every(f => existsSync(join(dir, f)))
+        return { id: d.name, dir, hasAll: hasJson || hasDump }
       })
       .filter(c => c.hasAll)
       .sort((a, b) => {
-        const na = parseInt(a.id.replace('case', ''))
-        const nb = parseInt(b.id.replace('case', ''))
-        return na - nb
+        const aDump = a.id.includes('-dump')
+        const bDump = b.id.includes('-dump')
+        if (aDump !== bDump) return aDump ? 1 : -1
+        const na = parseInt(a.id.replace(/[^0-9]/g, '')) || 0
+        const nb = parseInt(b.id.replace(/[^0-9]/g, '')) || 0
+        return na - nb || a.id.localeCompare(b.id)
       })
     res.json({ cases: cases.map(c => ({ id: c.id })) })
   } catch (err) {
@@ -64,11 +71,23 @@ router.get('/cases/:caseId/image/:type', (req, res) => {
   if (!['design', 'arkui'].includes(type)) return res.status(400).end()
 
   const platform = getPlatform(platformFromRequest(req))
-  const fileName = type === 'design' ? 'design.png' : platform.devImg
-  const imgPath = join(platform.casesDir, caseId, fileName)
+  const caseImgDir = join(platform.casesDir, caseId)
+  let imgPath
+  if (type === 'design') {
+    const pngPath = join(caseImgDir, 'design.png')
+    const jpgPath = join(caseImgDir, 'design.jpg')
+    imgPath = existsSync(pngPath) ? pngPath : jpgPath
+  } else {
+    // 优先查 devImg，找不到时尝试 dumpDevImg（dump 格式的 jpeg 图片）
+    const primaryPath = join(caseImgDir, platform.devImg)
+    const dumpImgPath = platform.dumpDevImg ? join(caseImgDir, platform.dumpDevImg) : null
+    imgPath = existsSync(primaryPath) ? primaryPath : (dumpImgPath || primaryPath)
+  }
   if (!existsSync(imgPath)) return res.status(404).end()
 
-  res.setHeader('Content-Type', 'image/png')
+  const lowerPath = imgPath.toLowerCase()
+  const contentType = (lowerPath.endsWith('.jpeg') || lowerPath.endsWith('.jpg')) ? 'image/jpeg' : 'image/png'
+  res.setHeader('Content-Type', contentType)
   res.sendFile(imgPath)
 })
 
@@ -84,10 +103,30 @@ router.post('/check/case/:caseId', async (req, res) => {
 
   try {
     const designJson = JSON.parse(readFileSync(join(caseDir, 'design.json'), 'utf-8'))
-    const devJson    = JSON.parse(readFileSync(join(caseDir, platform.devFile), 'utf-8'))
-    const result = await runCheck(designJson, devJson, caseId, {
-      designImageBuffer: readFileSync(join(caseDir, 'design.png')),
-      devImageBuffer:    readFileSync(join(caseDir, platform.devImg)),
+
+    // 自动识别开发侧格式：优先 JSON，其次 dump
+    const jsonPath = join(caseDir, platform.devFile)
+    const dumpPath = platform.dumpDevFile ? join(caseDir, platform.dumpDevFile) : null
+    let devContent, devImgFile
+    if (existsSync(jsonPath)) {
+      devContent = JSON.parse(readFileSync(jsonPath, 'utf-8'))
+      devImgFile = platform.devImg
+    } else if (dumpPath && existsSync(dumpPath)) {
+      devContent = readFileSync(dumpPath, 'utf-8')
+      devImgFile = platform.dumpDevImg || platform.devImg
+    } else {
+      return res.status(404).json({ error: `Case ${caseId} 缺少开发侧文件` })
+    }
+
+    // 设计侧图片：优先 png，兜底 jpg
+    const designImgPath = existsSync(join(caseDir, 'design.png'))
+      ? join(caseDir, 'design.png')
+      : join(caseDir, 'design.jpg')
+    const devImgPath = join(caseDir, devImgFile)
+
+    const result = await runCheck(designJson, devContent, caseId, {
+      designImageBuffer: existsSync(designImgPath) ? readFileSync(designImgPath) : undefined,
+      devImageBuffer:    existsSync(devImgPath)    ? readFileSync(devImgPath)    : undefined,
       matchDirection:    matchDirectionFromRequest(req),
       platform,
     })

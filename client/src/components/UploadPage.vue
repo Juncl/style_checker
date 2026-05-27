@@ -32,8 +32,8 @@
                 <!-- Step1 -->
                 <div class="up-step">
                   <div class="up-step-title">
-                    <span>Step1：上传 ArkUI 树 JSON</span>
-                    <span class="up-help" title="下载工具导出 ArkUI 节点树 JSON 后上传">?</span>
+                    <span>Step1：{{ selectedPlatform === 'web' ? '上传 JSON 文件' : '上传 ArkUI 树 JSON/DUMP' }}</span>
+                    <span class="up-help" :title="selectedPlatform === 'web' ? '上传 Web DOM 树 JSON 文件' : '下载工具导出 ArkUI 节点树 JSON 或 DUMP 后上传'">?</span>
                   </div>
                   <div
                     :class="['up-drop', { 'has-file': uploadFiles.arkuiJson, 'drag-over': isDragOver }]"
