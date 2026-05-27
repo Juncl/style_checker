@@ -29,21 +29,26 @@ const CONTAINER_TYPES = new Set(['FRAME', 'GROUP'])
 
 /**
  * @param {object} designJson 原始 design.json
+ * @param {number} [arkuiCanvasWidthVp] arkui 画布宽度（vp），传入时对 design rect 做等比缩放使两侧坐标系对齐
  * @returns {{ canvasWidth: number, canvasHeight: number, root: object | null }}
  */
-export function buildDesignTree(designJson) {
+export function buildDesignTree(designJson, arkuiCanvasWidthVp) {
   const rawNodes = (designJson && Array.isArray(designJson.data)) ? designJson.data : []
 
   const rootRaw = rawNodes.find(n => Array.isArray(n.path) && n.path.length === 1)
-  const canvasWidth = rootRaw?.rect?.w || 360
-  const canvasHeight = rootRaw?.rect?.h || 792
+  const origCanvasWidth  = rootRaw?.rect?.w || 360
+  const origCanvasHeight = rootRaw?.rect?.h || 792
+
+  const scale = arkuiCanvasWidthVp != null ? arkuiCanvasWidthVp / origCanvasWidth : 1
+  const canvasWidth  = origCanvasWidth  * scale   // 缩放后 = arkuiCanvasWidthVp（或原值）
+  const canvasHeight = origCanvasHeight * scale
 
   // 1a. 按 path 重建树结构
   const rawTreeRoot = rebuildAsTree(rawNodes)
 
   // 1b. 字段统一（递归把 _raw 转 UnifiedNode）
   const root = rawTreeRoot
-    ? convertToUnified(rawTreeRoot, canvasWidth, canvasHeight)
+    ? convertToUnified(rawTreeRoot, origCanvasWidth, origCanvasHeight, scale, canvasWidth, canvasHeight)
     : null
 
   return { canvasWidth, canvasHeight, root }
@@ -76,13 +81,15 @@ function rebuildAsTree(rawNodes) {
 }
 
 // ─── 1b. 字段统一 ──────────────────────────────────────────────────────────────
-function convertToUnified(wrap, canvasW, canvasH) {
+function convertToUnified(wrap, origCanvasW, origCanvasH, scale, canvasW, canvasH) {
   const raw = wrap._raw
   const rect = raw.rect || {}
   const style = raw.style || {}
   const layout = raw.layout || {}
 
   const hmSymbol = raw.type === TEXT_TYPE && isHmSymbolNode(raw)
+
+  const rx = rect.x ?? 0, ry = rect.y ?? 0, rw = rect.w ?? 0, rh = rect.h ?? 0
 
   const unified = {
     id: raw.guid,
@@ -91,17 +98,13 @@ function convertToUnified(wrap, canvasW, canvasH) {
     rawType: hmSymbol ? 'symbolglyph' : String(raw.type || '').toLowerCase(),
     name: raw.name || '',
     path: raw.path,
-    rect: {
-      x: rect.x ?? 0,
-      y: rect.y ?? 0,
-      w: rect.w ?? 0,
-      h: rect.h ?? 0,
-    },
+    size: { x: rx, y: ry, w: rw, h: rh },   // 原始 dp rect，供样式比对/间距计算使用
+    rect: { x: rx * scale, y: ry * scale, w: rw * scale, h: rh * scale },
     normRect: {
-      x: (rect.x ?? 0) / canvasW,
-      y: (rect.y ?? 0) / canvasH,
-      w: (rect.w ?? 0) / canvasW,
-      h: (rect.h ?? 0) / canvasH,
+      x: rx * scale / canvasW,
+      y: ry * scale / canvasH,
+      w: rw * scale / canvasW,
+      h: rh * scale / canvasH,
     },
     visible: raw.state?.visible !== false,
     style: extractDesignStyle(raw.type, style, layout, { hmSymbol, rect }),
@@ -114,7 +117,7 @@ function convertToUnified(wrap, canvasW, canvasH) {
   }
 
   for (const childWrap of wrap.children) {
-    unified.children.push(convertToUnified(childWrap, canvasW, canvasH))
+    unified.children.push(convertToUnified(childWrap, origCanvasW, origCanvasH, scale, canvasW, canvasH))
   }
 
   applyMaskClip(unified.children, canvasW, canvasH)

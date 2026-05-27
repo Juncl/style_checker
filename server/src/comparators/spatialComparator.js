@@ -52,8 +52,8 @@ function compareSiblingRelations(siblings) {
   for (let i = 0; i < siblings.length - 1; i++) {
     const left = siblings[i]
     const right = siblings[i + 1]
-    const axis = dominantAxis(left.design.rect, right.design.rect)
-    const d = relationMetrics(left.design.rect, right.design.rect, axis)
+    const axis = dominantAxis(left.design.size ?? left.design.rect, right.design.size ?? right.design.rect)
+    const d = relationMetrics(left.design.size ?? left.design.rect, right.design.size ?? right.design.rect, axis)
     const a = relationMetrics(left.arkui.rect, right.arkui.rect, axis)
 
     const gapDelta = Math.abs(d.gap - a.gap)
@@ -79,7 +79,7 @@ function compareSiblingRelations(siblings) {
         relationKind: 'sibling',
         relationAxis: axis,
         relationRects: {
-          design: [left.design.rect, right.design.rect],
+          design: [left.design.size ?? left.design.rect, right.design.size ?? right.design.rect],
           arkui: [left.arkui.rect, right.arkui.rect],
           axis,
         },
@@ -90,7 +90,7 @@ function compareSiblingRelations(siblings) {
 }
 
 function compareParentChildRelation(parentPair, childPair) {
-  const d = parentChildMetrics(parentPair.design.rect, childPair.design.rect)
+  const d = parentChildMetrics(parentPair.design.size ?? parentPair.design.rect, childPair.design.size ?? childPair.design.rect)
   const a = parentChildMetrics(parentPair.arkui.rect, childPair.arkui.rect)
   const insetDelta = Math.max(
     Math.abs(d.left - a.left),
@@ -116,7 +116,7 @@ function compareParentChildRelation(parentPair, childPair) {
     relationKind: 'parent-child',
     relationAxis: 'mixed',
     relationRects: {
-      design: [parentPair.design.rect, childPair.design.rect],
+      design: [parentPair.design.size ?? parentPair.design.rect, childPair.design.size ?? childPair.design.rect],
       arkui: [parentPair.arkui.rect, childPair.arkui.rect],
       axis: 'mixed',
     },

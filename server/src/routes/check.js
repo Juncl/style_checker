@@ -132,11 +132,12 @@ router.post(
 async function runCheck(designJson, arkuiJson, caseId, assets = {}) {
   const t0 = Date.now()
 
-  // 1. 解析（流水线内已完成像素/OCR 标注 + 不可见节点剔除）
-  const [designResult, arkuiResult] = await Promise.all([
-    parseDesign(designJson, { imageBuffer: assets.designImageBuffer }),
-    parseArkui(arkuiJson,  { imageBuffer: assets.arkuiImageBuffer }),
-  ])
+  // 1. 解析（先解 arkui 拿到画布宽度，再据此缩放 design 坐标系使两侧对齐）
+  const arkuiResult  = await parseArkui(arkuiJson, { imageBuffer: assets.arkuiImageBuffer })
+  const designResult = await parseDesign(designJson, {
+    imageBuffer: assets.designImageBuffer,
+    arkuiCanvasWidthVp: arkuiResult.canvasWidthVp,
+  })
 
   // 流水线已剔除不可见节点，直接使用 nodes
   const designVisibleNodes = designResult.nodes

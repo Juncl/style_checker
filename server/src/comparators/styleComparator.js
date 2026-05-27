@@ -179,7 +179,7 @@ function diffBorderRadius(diffs, ctx, designNode, arkuiNode, dv, av) {
     return
   }
   const keys = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft']
-  const dEffective = effectiveRadius(dv, designNode.rect)
+  const dEffective = effectiveRadius(dv, designNode.size ?? designNode.rect)
   const aEffective = effectiveRadius(av, arkuiNode.rect)
 
   const mismatched = keys.filter(k => Math.abs((dEffective[k] || 0) - (aEffective[k] || 0)) > TOLERANCE.borderRadius)

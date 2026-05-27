@@ -31,10 +31,11 @@ router.get('/parse/:caseId', async (req, res) => {
     const designImg  = readFileSync(join(caseDir, 'design.png'))
     const arkuiImg   = readFileSync(join(caseDir, 'arkui.png'))
 
-    const [designResult, arkuiResult] = await Promise.all([
-      parseDesign(designJson, { imageBuffer: designImg }),
-      parseArkui(arkuiJson,   { imageBuffer: arkuiImg }),
-    ])
+    const arkuiResult  = await parseArkui(arkuiJson,   { imageBuffer: arkuiImg })
+    const designResult = await parseDesign(designJson, {
+      imageBuffer: designImg,
+      arkuiCanvasWidthVp: arkuiResult.canvasWidthVp,
+    })
 
     res.json({
       designNodes:    designResult.nodes,
