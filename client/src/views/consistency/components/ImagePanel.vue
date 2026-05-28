@@ -54,7 +54,7 @@
 
 <script setup>
 import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
-import '../styles/image-panel.css'
+import '../../../styles/image-panel.css'
 
 const props = defineProps({
   src:          { type: String,  default: '' },

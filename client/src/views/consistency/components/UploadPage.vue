@@ -193,7 +193,7 @@
         <img :src="iconEmpty" class="report-empty-img" alt="" />
         <p class="report-empty-hint">请完成操作指引，<br />导入待检查页面后开始检查</p>
         <div class="report-device-row">
-          <select class="report-device-select" v-model="selectedPlatform">
+          <select class="report-device-select" :value="selectedPlatform" @change="onPlatformSwitch($event.target.value)">
             <option value="hmPhone">鸿蒙-手机</option>
             <option value="hmWatch">鸿蒙-手表</option>
             <option value="web">web网页</option>
@@ -255,7 +255,7 @@
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, Loading, ArrowRight, ArrowDown } from '@element-plus/icons-vue'
-import { imageUrl } from '../api/index.ts'
+import { imageUrl } from '../../../api/index.ts'
 const iconJson = '/src/assets/upload-json.png'
 const iconImage = '/src/assets/upload-image.png'
 const iconEmpty = '/src/assets/empty-report.png'

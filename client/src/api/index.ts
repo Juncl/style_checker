@@ -1,22 +1,8 @@
-import axios from 'axios'
+import { http } from './request'
+import { type PlatformKey, PLATFORMS, DEFAULT_PLATFORM, ZH_BY_KEY, KEY_BY_ZH } from './constants'
 
-type PlatformKey = 'hmPhone' | 'hmWatch' | 'web'
-
-const http = axios.create({ baseURL: '/api' })
-
-export const PLATFORMS: PlatformKey[] = ['hmPhone', 'hmWatch', 'web']
-export const DEFAULT_PLATFORM: PlatformKey = 'hmPhone'
-
-const ZH_BY_KEY: Record<PlatformKey, string> = {
-  hmPhone: '鸿蒙-手机',
-  hmWatch: '鸿蒙-手表',
-  web: 'web网页',
-}
-const KEY_BY_ZH: Record<string, PlatformKey> = {
-  '鸿蒙-手机': 'hmPhone',
-  '鸿蒙-手表': 'hmWatch',
-  'web网页': 'web',
-}
+export { PLATFORMS, DEFAULT_PLATFORM } from './constants'
+export type { PlatformKey } from './constants'
 
 export const platformToZh = (key: PlatformKey): string =>
   ZH_BY_KEY[key] ?? ZH_BY_KEY[DEFAULT_PLATFORM]
@@ -55,3 +41,15 @@ export const checkUpload = (
 
 export const imageUrl = (caseId: string, type: string, platform: PlatformKey = DEFAULT_PLATFORM): string =>
   `/api/cases/${caseId}/image/${type}?platform=${encodeURIComponent(platform)}`
+
+interface TrackParams {
+  deliverableId: string
+  pageId: string
+  versionId: string
+}
+
+// 预留打点接口，后续补充真实接口地址和参数
+export async function reportTrack(_params: TrackParams): Promise<void> {
+  // TODO: 调用后台打点接口，例如：
+  // await post('/track/entry', params)
+}
