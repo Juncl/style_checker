@@ -66,7 +66,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { fetchCases, checkCase, checkUpload, imageUrl } from './api/index.js'
+import { fetchCases, checkCase, checkUpload, imageUrl } from './api/index.ts'
 import AppLayout from './components/AppLayout.vue'
 import UploadPage from './components/UploadPage.vue'
 import ReportPage from './components/ReportPage.vue'

@@ -254,7 +254,7 @@ import { ArrowRight, Crop } from '@element-plus/icons-vue'
 import DiffReport from './DiffReport.vue'
 import ImagePanel from './ImagePanel.vue'
 import NodeTree from './NodeTree.vue'
-import { imageUrl } from '../api/index.js'
+import { imageUrl } from '../api/index.ts'
 
 const iconDev = '/src/assets/icon-dev.png'
 const iconDesign = '/src/assets/icon-design.png'

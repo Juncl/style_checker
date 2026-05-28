@@ -255,7 +255,7 @@
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, Loading, ArrowRight, ArrowDown } from '@element-plus/icons-vue'
-import { imageUrl } from '../api/index.js'
+import { imageUrl } from '../api/index.ts'
 const iconJson = '/src/assets/upload-json.png'
 const iconImage = '/src/assets/upload-image.png'
 const iconEmpty = '/src/assets/empty-report.png'
