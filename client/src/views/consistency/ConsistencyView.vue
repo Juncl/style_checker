@@ -259,13 +259,21 @@ const arkuiImgSrc = computed(() =>
 )
 
 onMounted(async () => {
-  const { platform } = await initApp()
+  const { platform, deliverable } = await initApp()
   currentPlatform.value = platform
 
   const params = new URLSearchParams(window.location.search)
   debugMode.value = params.get('debugger') === '1'
   debugPipelineOn.value = false
   debugOverlayOn.value = false
+
+  // Step 6：deliverableId 模式，直接渲染报告页，跳过上传和 fetchCases
+  if (deliverable) {
+    result.value = deliverable.result
+    blobUrls.value = { design: deliverable.designImgSrc, arkui: deliverable.arkuiImgSrc }
+    return
+  }
+
   try { cases.value = await fetchCases(currentPlatform.value) }
   catch { ElMessage.warning('无法加载内置 Case') }
 })
