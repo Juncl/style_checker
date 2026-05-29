@@ -27,7 +27,7 @@
           @dblclick.stop="resetInspectorPosition"
         >
           <span class="inspector-name">{{ inspectorNode.textContent || inspectorNode.name }}</span>
-          <span class="inspector-badge">{{ inspectorNode.rawType || inspectorNode.type }}</span>
+          <span v-if="debugMode" class="inspector-badge">{{ inspectorNode.rawType || inspectorNode.type }}</span>
         </div>
         <div class="inspector-body">
           <div v-if="debugMode" class="prop-row">
@@ -74,7 +74,7 @@ const props = defineProps({
   debugPairMap:  { type: Object,  default: () => ({}) },
 })
 
-const emit = defineEmits(['node-click', 'bg-click'])
+const emit = defineEmits(['node-click', 'bg-click', 'node-hover'])
 
 const panelRef     = ref(null)
 const labelRef     = ref(null)
@@ -206,6 +206,7 @@ function onMouseMove(e) {
   if (newId !== hoveredId.value) {
     hoveredId.value = newId
     if (canvasRef.value) canvasRef.value.style.cursor = newId ? 'pointer' : 'default'
+    emit('node-hover', newId)
     draw()
   }
 }
@@ -214,6 +215,7 @@ function onMouseLeave() {
   if (hoveredId.value !== null) {
     hoveredId.value = null
     if (canvasRef.value) canvasRef.value.style.cursor = 'default'
+    emit('node-hover', null)
     draw()
   }
 }

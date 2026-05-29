@@ -14,6 +14,7 @@
       </div>
       <div class="diff-tools">
         <el-input
+          v-if="debugMode"
           v-model="search"
           placeholder="搜索差异项"
           clearable
@@ -38,7 +39,11 @@
       <div
         v-for="(d, idx) in filteredDiffs"
         :key="`${d.designNodeId}-${d.arkuiNodeId}-${d.property}-${idx}`"
-        :class="['diff-card', { selected: selectedIdx === idx }]"
+        :class="['diff-card', {
+          selected: selectedIdx === idx,
+          'active-from-node': activeDiffKeys.has(foldKey(d)) && selectedIdx !== idx,
+          'hover-from-node':  hoverDiffKeys.has(foldKey(d)) && selectedIdx !== idx && !activeDiffKeys.has(foldKey(d))
+        }]"
         @click="selectItem(d, idx)"
       >
         <!-- 卡片头 -->
@@ -79,7 +84,6 @@
             </div>
           </div>
 
-          <div v-if="d.description" class="diff-card-desc">{{ d.description }}</div>
         </div>
       </div>
     </div>
@@ -87,7 +91,7 @@
 </template>
 
 <script setup>
-import { ref, computed, defineComponent, h } from 'vue'
+import { ref, computed, watch, nextTick, defineComponent, h } from 'vue'
 import { Search, CircleCheck, MoreFilled, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 
 const ColorDot = defineComponent({
@@ -111,8 +115,11 @@ const ColorDot = defineComponent({
 })
 
 const props = defineProps({
-  diffs:     { type: Array, default: () => [] },
-  unmatched: { type: Array, default: () => [] },
+  diffs:      { type: Array,   default: () => [] },
+  unmatched:  { type: Array,   default: () => [] },
+  activePair: { type: Object,  default: null },
+  hoverPair:  { type: Object,  default: null },
+  debugMode:  { type: Boolean, default: false },
 })
 const emit = defineEmits(['select'])
 
@@ -159,8 +166,7 @@ const filteredDiffs = computed(() => {
       d.property.toLowerCase().includes(q) ||
       issueLabel(d.property).includes(q) ||
       (d.textContent || '').includes(q) ||
-      (d.designName || '').includes(q) ||
-      d.description.toLowerCase().includes(q)
+      (d.designName || '').includes(q)
     )
   }
   const sevOrder = { error: 0, warning: 1, info: 2 }
@@ -169,6 +175,55 @@ const filteredDiffs = computed(() => {
     const issueDelta = (issueOrder[issueKey(a.property)] ?? 99) - (issueOrder[issueKey(b.property)] ?? 99)
     if (activeIssue.value === 'all' && issueDelta !== 0) return issueDelta
     return (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9)
+  })
+})
+
+// ── 左侧节点联动高亮 ────────────────────────────────────────────────────────
+
+function isDiffMatchPair(diff, pair) {
+  if (!pair) return false
+  if (pair.arkuiNodeId  && diff.arkuiNodeId  === pair.arkuiNodeId)  return true
+  if (pair.designNodeId && diff.designNodeId === pair.designNodeId) return true
+  return false
+}
+
+const activeDiffKeys = computed(() => {
+  if (!props.activePair) return new Set()
+  const keys = new Set()
+  for (const d of filteredDiffs.value) {
+    if (isDiffMatchPair(d, props.activePair)) keys.add(foldKey(d))
+  }
+  return keys
+})
+
+const hoverDiffKeys = computed(() => {
+  if (!props.hoverPair) return new Set()
+  const keys = new Set()
+  for (const d of filteredDiffs.value) {
+    if (isDiffMatchPair(d, props.hoverPair)) keys.add(foldKey(d))
+  }
+  return keys
+})
+
+let _skipScrollOnce = false
+
+watch(() => props.activePair, (val) => {
+  if (!val) return
+  if (_skipScrollOnce) {
+    _skipScrollOnce = false
+    return
+  }
+  nextTick(() => {
+    const listEl = listRef.value
+    if (!listEl) return
+    const idx = filteredDiffs.value.findIndex(d => isDiffMatchPair(d, val))
+    if (idx < 0) return
+    const card = listEl.querySelectorAll('.diff-card')[idx]
+    if (card) {
+      const cardTop    = card.getBoundingClientRect().top
+      const listTop    = listEl.getBoundingClientRect().top
+      listEl.scrollTop = listEl.scrollTop + (cardTop - listTop)
+    }
   })
 })
 
@@ -182,6 +237,7 @@ function selectItem(d, idx) {
     selectedIdx.value = -1
     emit('select', null)
   } else {
+    _skipScrollOnce = true   // 右侧主动点击，阻止 watch 触发滚动
     selectedIdx.value = idx
     emit('select', d)
   }
@@ -293,6 +349,7 @@ function issueLabel(property) {
   gap: 12px;
 }
 
+
 .diff-search {
   flex: 1;
   min-width: 0;
@@ -367,6 +424,16 @@ function issueLabel(property) {
 .diff-card.selected {
   background: var(--octo-surface-selected);
   border-color: var(--octo-primary);
+}
+
+.diff-card.active-from-node {
+  background: var(--octo-primary-subtle);
+  border-color: var(--octo-border-default);
+}
+
+.diff-card.hover-from-node {
+  background: var(--octo-surface-hover);
+  border-color: var(--octo-border-default);
 }
 
 .diff-card-head {
@@ -494,13 +561,6 @@ function issueLabel(property) {
   white-space: nowrap;
 }
 
-/* 底部说明 */
-.diff-card-desc {
-  font-size: 14px;
-  color: var(--octo-text-secondary);
-  padding: 0 8px;
-  line-height: 22px;
-}
 
 :deep(.color-dot) {
   display: inline-block;

@@ -143,6 +143,7 @@
             :debug-visible="debugOverlayOn"
             :debug-pair-map="debugPairMap"
             @node-click="$emit('arkui-node-click', $event)"
+            @node-hover="onArkuiHover"
             @bg-click="$emit('clear-pair')"
           />
         </div>
@@ -175,6 +176,7 @@
             :debug-visible="debugOverlayOn"
             :debug-pair-map="debugPairMap"
             @node-click="$emit('design-node-click', $event)"
+            @node-hover="onDesignHover"
             @bg-click="$emit('clear-pair')"
           />
         </div>
@@ -219,6 +221,9 @@
       v-show="!debugMode || rightTab === 'diff'"
       :diffs="result.diffs"
       :unmatched="result.unmatchedDesignNodes"
+      :active-pair="activePairForDiff"
+      :hover-pair="hoverPairForDiff"
+      :debug-mode="debugMode"
       @select="$emit('diff-select', $event)"
     />
 
@@ -360,6 +365,35 @@ const rightTab = ref('diff')
 const treeSide = ref('design')
 const debugMappingExpanded = ref(false)
 const emptyLockedIds = new Set()
+
+// ── 左侧 canvas → 右侧 DiffReport 联动 ──────────────────────────────────────
+const hoveredArkuiNodeId  = ref(null)
+const hoveredDesignNodeId = ref(null)
+
+const activePairForDiff = computed(() => {
+  if (!props.selectedPair) return null
+  return {
+    designNodeId: props.selectedPair.design?.id ?? null,
+    arkuiNodeId:  props.selectedPair.arkui?.id  ?? null,
+  }
+})
+
+const hoverPairForDiff = computed(() => {
+  if (!hoveredArkuiNodeId.value && !hoveredDesignNodeId.value) return null
+  return {
+    arkuiNodeId:  hoveredArkuiNodeId.value  ?? null,
+    designNodeId: hoveredDesignNodeId.value ?? null,
+  }
+})
+
+function onArkuiHover(id) {
+  hoveredArkuiNodeId.value  = id
+  hoveredDesignNodeId.value = null
+}
+function onDesignHover(id) {
+  hoveredDesignNodeId.value = id
+  hoveredArkuiNodeId.value  = null
+}
 
 // 拖拽位置（null = 使用 CSS 默认值）
 const debugFloatX  = ref(null)
