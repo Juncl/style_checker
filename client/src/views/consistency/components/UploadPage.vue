@@ -256,11 +256,11 @@ import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, Loading, ArrowRight, ArrowDown } from '@element-plus/icons-vue'
 import { imageUrl } from '../../../api/index.ts'
-const iconJson = '/src/assets/upload-json.png'
-const iconImage = '/src/assets/upload-image.png'
-const iconEmpty = '/src/assets/empty-report.png'
-const iconDev = '/src/assets/icon-dev.png'
-const iconDesign = '/src/assets/icon-design.png'
+import iconJson from '@/assets/upload-json.png'
+import iconImage from '@/assets/upload-image.png'
+import iconEmpty from '@/assets/empty-report.png'
+import iconDev from '@/assets/icon-dev.png'
+import iconDesign from '@/assets/icon-design.png'
 
 const props = defineProps({
   uploadFiles: {

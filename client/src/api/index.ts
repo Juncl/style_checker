@@ -1,4 +1,4 @@
-import { http, mockHttp } from './request'
+import { http, mockHttp } from './requestOut'
 import { type PlatformKey, PLATFORMS, DEFAULT_PLATFORM, ZH_BY_KEY, KEY_BY_ZH } from './constants'
 
 export { PLATFORMS, DEFAULT_PLATFORM } from './constants'
@@ -40,7 +40,7 @@ export const checkUpload = (
 }
 
 export const imageUrl = (caseId: string, type: string, platform: PlatformKey = DEFAULT_PLATFORM): string =>
-  `/api/cases/${caseId}/image/${type}?platform=${encodeURIComponent(platform)}`
+  `/devlint/api/cases/${caseId}/image/${type}?platform=${encodeURIComponent(platform)}`
 
 interface TrackParams {
   deliverableId: string

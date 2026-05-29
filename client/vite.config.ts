@@ -1,8 +1,18 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, 'src'),
+    },
+  },
+  build: {
+    outDir: 'consistency-compare-client'
+  },
+  base: './',
   server: {
     port: 5173,
     proxy: {
@@ -10,8 +20,9 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
-      '/api': {
+      '/devlint/api': {
         target: 'http://localhost:3000',
+        rewrite: (path) => path.replace(/^\/devlint/, ''),
         changeOrigin: true,
       },
     },

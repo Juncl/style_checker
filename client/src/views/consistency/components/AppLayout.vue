@@ -12,5 +12,5 @@
 </template>
 
 <script setup>
-const logoUrl = '/src/assets/logo.png'
+import logoUrl from '@/assets/logo.png'
 </script>

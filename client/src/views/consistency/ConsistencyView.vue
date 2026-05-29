@@ -65,6 +65,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { fetchCases, checkCase, checkUpload, imageUrl } from '../../api/index.ts'
@@ -76,6 +77,7 @@ import ReportPage from './components/ReportPage.vue'
 import '../../styles/app.css'
 import { CASE_NAMES_BY_PLATFORM, DEBUG_COLORS, FILE_SLOTS } from '../utils/constants'
 
+const route           = useRoute()
 const cases           = ref([])
 const currentPlatform = ref('hmPhone')
 const CASE_NAMES      = computed(() => CASE_NAMES_BY_PLATFORM[currentPlatform.value] || {})
@@ -262,8 +264,7 @@ onMounted(async () => {
   const { platform, deliverable } = await initApp()
   currentPlatform.value = platform
 
-  const params = new URLSearchParams(window.location.search)
-  debugMode.value = params.get('debugger') === '1'
+  debugMode.value = route.query['debugger'] === '1'
   debugPipelineOn.value = false
   debugOverlayOn.value = false
 

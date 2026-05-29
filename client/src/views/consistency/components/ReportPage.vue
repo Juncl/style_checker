@@ -256,8 +256,8 @@ import ImagePanel from './ImagePanel.vue'
 import NodeTree from './NodeTree.vue'
 import { imageUrl } from '../../../api/index.ts'
 
-const iconDev = '/src/assets/icon-dev.png'
-const iconDesign = '/src/assets/icon-design.png'
+import iconDev from '@/assets/icon-dev.png'
+import iconDesign from '@/assets/icon-design.png'
 
 const props = defineProps({
   result: {

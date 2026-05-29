@@ -1,4 +1,4 @@
-import { post } from '../../../api/request'
+import { post } from '../../../api/requestOut'
 
 const TOKEN_KEY = 'uiplusToken'
 
