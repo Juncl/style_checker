@@ -92,11 +92,18 @@
               <template v-if="debugMode">
                 <!-- 传送码模式 -->
                 <div v-if="debugStep3Mode" class="up-url-group">
+                  <div v-if="urlLoading" class="url-loading-overlay">
+                    <el-icon class="spin"><Loading /></el-icon>
+                  </div>
                   <div class="up-step-title up-step-title--center up-step-title--row">
                     <span>Step3：输入传送码</span>
                     <button class="debug-inline-toggle" @click="debugStep3Mode = false" title="切换到文件上传">⇄ 切换</button>
                   </div>
-                  <div class="up-url-card">
+                  <div v-if="urlValid" class="up-drop has-file">
+                    <el-icon class="up-drop-check"><CircleCheck /></el-icon>
+                    <span class="up-drop-done">设计稿已获取</span>
+                  </div>
+                  <div v-else class="up-url-card">
                     <el-input
                       v-model="annotationUrl"
                       type="textarea"
@@ -107,7 +114,7 @@
                     <el-button
                       type="primary"
                       class="up-url-btn"
-                      :disabled="!annotationUrl.trim()"
+                      :disabled="!annotationUrl.trim() || !uploadFiles.arkuiJson || !uploadFiles.arkuiImage"
                       @click="validateAnnotationUrl"
                     >确认</el-button>
                   </div>
@@ -154,10 +161,17 @@
 
               <!-- 非 debugger 模式：URL / 传送码输入 -->
               <div v-else class="up-url-group">
+                <div v-if="urlLoading" class="url-loading-overlay">
+                  <el-icon class="spin"><Loading /></el-icon>
+                </div>
                 <div class="up-step-title up-step-title--center">
                   <span>Step3：输入标注视图 URL / 传送码</span>
                 </div>
-                <div class="up-url-card">
+                <div v-if="urlValid" class="up-drop has-file">
+                  <el-icon class="up-drop-check"><CircleCheck /></el-icon>
+                  <span class="up-drop-done">设计稿已获取</span>
+                </div>
+                <div v-else class="up-url-card">
                   <el-input
                     v-model="annotationUrl"
                     type="textarea"
@@ -168,7 +182,7 @@
                   <el-button
                     type="primary"
                     class="up-url-btn"
-                    :disabled="!annotationUrl.trim()"
+                    :disabled="!annotationUrl.trim() || !uploadFiles.arkuiJson || !uploadFiles.arkuiImage"
                     @click="validateAnnotationUrl"
                   >确认</el-button>
                 </div>
@@ -308,6 +322,8 @@ const emit = defineEmits([
 ])
 
 const annotationUrl = ref('')
+const urlLoading   = ref(false)
+const urlValid     = ref(false)
 // 当前对比的平台 key（与父组件双向同步）
 const selectedPlatform = ref(props.currentPlatform || 'hmPhone')
 watch(() => props.currentPlatform, v => { if (v && v !== selectedPlatform.value) selectedPlatform.value = v })
@@ -356,29 +372,35 @@ async function validateAnnotationUrl() {
   const code = annotationUrl.value.trim()
   if (!code) return
 
-  const result = await getJsonImage({ url: code })
+  urlLoading.value = true
+  try {
+    const result = await getJsonImage({ url: code })
 
-  if (!result.valid) {
-    ElMessage.error(result.errorMsg || '传送码不合规，请检查输入')
-    return
+    if (!result.valid) {
+      ElMessage.error(result.errorMsg || '传送码不合规，请检查输入')
+      return
+    }
+
+    if (result.designJson) {
+      const jsonBlob = new Blob([JSON.stringify(result.designJson)], { type: 'application/json' })
+      const jsonFile = new File([jsonBlob], 'design.json', { type: 'application/json' })
+      emit('step-picked', { type: 'designJson', file: jsonFile })
+    }
+
+    if (result.designImageUrl) {
+      const [meta, b64] = result.designImageUrl.split(',')
+      const mimeType = meta.match(/:(.*?);/)?.[1] || 'image/png'
+      const ext = mimeType.split('/')[1] || 'png'
+      const imageBlob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: mimeType })
+      const imageFile = new File([imageBlob], `design.${ext}`, { type: mimeType })
+      emit('step-picked', { type: 'designImage', file: imageFile })
+    }
+
+    urlValid.value = true
+    ElMessage.success('设计稿获取成功')
+  } finally {
+    urlLoading.value = false
   }
-
-  if (result.designJson) {
-    const jsonBlob = new Blob([JSON.stringify(result.designJson)], { type: 'application/json' })
-    const jsonFile = new File([jsonBlob], 'design.json', { type: 'application/json' })
-    emit('step-picked', { type: 'designJson', file: jsonFile })
-  }
-
-  if (result.designImageUrl) {
-    const [meta, b64] = result.designImageUrl.split(',')
-    const mimeType = meta.match(/:(.*?);/)?.[1] || 'image/png'
-    const ext = mimeType.split('/')[1] || 'png'
-    const imageBlob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: mimeType })
-    const imageFile = new File([imageBlob], `design.${ext}`, { type: mimeType })
-    emit('step-picked', { type: 'designImage', file: imageFile })
-  }
-
-  ElMessage.success('设计稿获取成功')
 }
 
 

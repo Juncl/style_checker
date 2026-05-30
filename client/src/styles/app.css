@@ -1318,10 +1318,25 @@ body {
 
 /* ── URL / 传送码输入卡片 ── */
 .up-url-group {
+  position: relative;
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.url-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(4px);
+  font-size: 36px;
+  color: var(--octo-primary);
 }
 
 .up-url-card {
