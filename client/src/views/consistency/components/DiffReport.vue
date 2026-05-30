@@ -50,7 +50,13 @@
         <div class="diff-card-head">
           <span class="diff-card-name" :title="cardName(d)">{{ cardName(d) }}</span>
           <span class="diff-card-ops">
-            <el-icon class="diff-card-more"><MoreFilled /></el-icon>
+            <span class="diff-card-more">
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="1.667" cy="8" r="1" fill="rgb(25,25,25)" />
+                <circle cx="8" cy="8" r="1" fill="rgb(25,25,25)" />
+                <circle cx="14.333" cy="8" r="1" fill="rgb(25,25,25)" />
+              </svg>
+            </span>
             <el-icon class="diff-card-fold" @click.stop="toggleFold(foldKey(d))">
               <ArrowUp v-if="!isFolded(foldKey(d))" />
               <ArrowDown v-else />
@@ -92,7 +98,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, defineComponent, h } from 'vue'
-import { Search, CircleCheck, MoreFilled, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
+import { Search, CircleCheck, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 
 const ColorDot = defineComponent({
   props: { hex: String },
@@ -208,11 +214,15 @@ const hoverDiffKeys = computed(() => {
 let _skipScrollOnce = false
 
 watch(() => props.activePair, (val) => {
-  if (!val) return
+  if (!val) {
+    selectedIdx.value = -1
+    return
+  }
   if (_skipScrollOnce) {
     _skipScrollOnce = false
     return
   }
+  selectedIdx.value = -1
   nextTick(() => {
     const listEl = listRef.value
     if (!listEl) return
@@ -222,7 +232,7 @@ watch(() => props.activePair, (val) => {
     if (card) {
       const cardTop    = card.getBoundingClientRect().top
       const listTop    = listEl.getBoundingClientRect().top
-      listEl.scrollTop = listEl.scrollTop + (cardTop - listTop)
+      listEl.scrollTo({ top: listEl.scrollTop + (cardTop - listTop), behavior: 'smooth' })
     }
   })
 })
@@ -428,7 +438,7 @@ function issueLabel(property) {
 
 .diff-card.active-from-node {
   background: var(--octo-primary-subtle);
-  border-color: var(--octo-border-default);
+  border-color: var(--octo-primary);
 }
 
 .diff-card.hover-from-node {
@@ -464,6 +474,8 @@ function issueLabel(property) {
 }
 
 .diff-card-more {
+  display: inline-flex;
+  align-items: center;
   font-size: 16px;
 }
 
@@ -537,20 +549,28 @@ function issueLabel(property) {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  padding: 0 6px;
-  border-radius: 4px;
   font-size: 14px;
   line-height: 22px;
 }
 
 .diff-cmp-val--dev {
   color: var(--report-dev-color);
-  background: var(--report-dev-bg);
 }
 
 .diff-cmp-val--design {
   color: var(--report-design-color);
+}
+
+.diff-cmp-val--dev .diff-val-text {
+  background: var(--report-dev-bg);
+  padding: 0 6px;
+  border-radius: 4px;
+}
+
+.diff-cmp-val--design .diff-val-text {
   background: var(--report-design-bg);
+  padding: 0 6px;
+  border-radius: 4px;
 }
 
 .diff-val-text {
