@@ -1,5 +1,5 @@
 import router from '../../../router'
-import { reportTrack } from '../../../api/index'
+import { reportTrack } from '../../../api/api'
 
 /**
  * 入口埋点

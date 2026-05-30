@@ -1,5 +1,5 @@
 import router from '../../../router'
-import { fetchDeliverable } from '../../../api/index'
+import { fetchDeliverable } from '../../../api/api'
 
 /**
  * Step 6：URL 含 deliverableId 时，拉取预存检查结果和图片，直接渲染报告页

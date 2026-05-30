@@ -1,4 +1,4 @@
-import { http, mockHttp } from './requestOut'
+import { http } from './requestOut'
 import { type PlatformKey, PLATFORMS, DEFAULT_PLATFORM, ZH_BY_KEY, KEY_BY_ZH } from './constants'
 
 export { PLATFORMS, DEFAULT_PLATFORM } from './constants'
@@ -42,25 +42,3 @@ export const checkUpload = (
 export const imageUrl = (caseId: string, type: string, platform: PlatformKey = DEFAULT_PLATFORM): string =>
   `/devlint/api/cases/${caseId}/image/${type}?platform=${encodeURIComponent(platform)}`
 
-interface TrackParams {
-  deliverableId: string
-  pageId: string
-  versionId: string
-}
-
-// 预留打点接口，后续补充真实接口地址和参数
-export async function reportTrack(_params: TrackParams): Promise<void> {
-  // TODO: 调用后台打点接口，例如：
-  // await post('/track/entry', params)
-}
-
-interface DeliverableResponse {
-  result: unknown
-  designImageBase64: string
-  arkuiImageBase64: string
-}
-
-// 根据 deliverableId 拉取预存的检查结果和图片
-export async function fetchDeliverable(deliverableId: string): Promise<DeliverableResponse> {
-  return mockHttp.get(`/deliverable/${deliverableId}`).then(r => r.data)
-}

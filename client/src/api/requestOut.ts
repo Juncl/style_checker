@@ -1,17 +1,6 @@
 import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios'
 
-export const http     = axios.create({ baseURL: '/devlint/api' })
-export const mockHttp = axios.create({ baseURL: '/mock' })
-
-// 请求拦截器：自动注入 uiplusToken
-http.interceptors.request.use(config => {
-  const token = localStorage.getItem('uiplusToken')
-  if (token) {
-    config.headers = config.headers ?? {}
-    config.headers['Authorization'] = `Bearer ${token}`
-  }
-  return config
-})
+export const http = axios.create({ baseURL: '/devlint/api' })
 
 export function request<T = unknown>(config: AxiosRequestConfig): Promise<T> {
   return http.request<T, AxiosResponse<T>>(config).then(r => r.data)
