@@ -1148,8 +1148,8 @@ body {
   height: 792px;
   flex-shrink: 0;
   overflow: hidden;
-  background: #EEF1F8;
-  box-shadow: 0 8px 28px rgba(70, 80, 130, 0.14);
+  background: #F8F8FA;
+  box-shadow: 0 8px 28px rgba(70, 80, 130, 0.08);
 }
 
 /* 手机内的彩色渐变球背景 */
@@ -1157,11 +1157,11 @@ body {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(460px 420px at 6% 14%, rgba(79, 135, 255, 0.62), transparent 72%),
-    radial-gradient(320px 240px at 92% 4%, rgba(79, 211, 255, 0.55), transparent 72%),
-    radial-gradient(340px 380px at 100% 60%, rgba(213, 79, 255, 0.42), transparent 72%),
-    radial-gradient(300px 220px at 16% 102%, rgba(79, 135, 255, 0.50), transparent 72%),
-    radial-gradient(300px 220px at 80% 102%, rgba(137, 79, 255, 0.42), transparent 72%);
+    radial-gradient(460px 420px at 6% 14%, rgba(79, 135, 255, 0.18), transparent 72%),
+    radial-gradient(320px 240px at 92% 4%, rgba(79, 211, 255, 0.14), transparent 72%),
+    radial-gradient(340px 380px at 100% 60%, rgba(213, 79, 255, 0.12), transparent 72%),
+    radial-gradient(300px 220px at 16% 102%, rgba(79, 135, 255, 0.14), transparent 72%),
+    radial-gradient(300px 220px at 80% 102%, rgba(137, 79, 255, 0.12), transparent 72%);
 }
 
 /* 顶部 / 底部点阵装饰 */
@@ -1403,7 +1403,7 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 32px;
   padding: 16px;
   overflow: hidden;
 }
@@ -1418,7 +1418,7 @@ body {
   padding: 16px;
   border-radius: 12px;
   border: 1px dashed var(--octo-border-separator);
-  background: var(--octo-bg-canvas);
+  background: url('@/assets/svg/report-bg.svg') no-repeat center center / 100% 100%;
 }
 
 .report-empty-img {
@@ -1429,7 +1429,7 @@ body {
 }
 
 .report-empty-hint {
-  margin: 0;
+  margin: -12px 0 0;
   font-size: 14px;
   line-height: 22px;
   color: var(--octo-text-secondary);
@@ -1490,7 +1490,7 @@ body {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding-bottom: 8px;
+  padding-bottom: 12px;
   flex-shrink: 0;
 }
 
@@ -1545,7 +1545,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px;
+  padding: 8px 8px 8px 0;
   border-radius: 8px;
   border: 1px solid transparent;
   background: var(--octo-surface-page);

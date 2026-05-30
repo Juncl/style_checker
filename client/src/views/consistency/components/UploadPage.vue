@@ -191,7 +191,7 @@
       <!-- 空状态卡片 -->
       <div class="report-empty">
         <img :src="iconEmpty" class="report-empty-img" alt="" />
-        <p class="report-empty-hint">请完成操作指引，<br />导入待检查页面后开始检查</p>
+        <p class="report-empty-hint">请完成操作指引<br />导入待检查页面后开始检查</p>
         <div class="report-device-row">
           <select class="report-device-select" :value="selectedPlatform" @change="onPlatformSwitch($event.target.value)">
             <option value="hmPhone">鸿蒙-手机</option>
@@ -213,7 +213,7 @@
       <div class="cases-block">
         <div class="cases-head">
           <span class="cases-head-title">试用案例</span>
-          <span class="cases-head-hint">👏 点击下方案例即刻体验~</span>
+          <span class="cases-head-hint">点击下方案例即刻体验~</span>
           <!-- debugger 模式：平台下拉框，切换会刷新 case 组 -->
           <select
             v-if="debugMode"
@@ -259,7 +259,7 @@ import { CircleCheck, Loading, ArrowRight, ArrowDown } from '@element-plus/icons
 import { imageUrl } from '../../../api/index.ts'
 import iconJson from '@/assets/upload-json.png'
 import iconImage from '@/assets/upload-image.png'
-import iconEmpty from '@/assets/empty-report.png'
+import iconEmpty from '@/assets/svg/empty-report.svg'
 import iconDev from '@/assets/icon-dev.png'
 import iconDesign from '@/assets/icon-design.png'
 
