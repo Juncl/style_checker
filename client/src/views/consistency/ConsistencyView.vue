@@ -60,6 +60,21 @@
       @update:debug-pipeline-on="debugPipelineOn = $event"
       @update:debug-overlay-on="debugOverlayOn = $event"
     />
+    <div
+      id="pixso_render"
+      style="
+        position:fixed;
+        left:0;
+        bottom:0;
+        width: 100px;
+        height: 100px;
+        z-index:10000;
+        background-color: red;
+        opacity: 0;
+        pointer-events: none;
+      "
+      v-show="true">
+    </div>
   </AppLayout>
 </template>
 

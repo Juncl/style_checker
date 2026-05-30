@@ -253,6 +253,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { getJsonImage } from '../../utils/getJsonImage'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, Loading, ArrowRight, ArrowDown } from '@element-plus/icons-vue'
 import { imageUrl } from '../../../api/index.ts'
@@ -351,29 +352,35 @@ async function detectPlatformFromJson(file) {
 }
 
 // ── 传送码校验（共用于debugger和非debugger模式）──
-function validateAnnotationUrl() {
+async function validateAnnotationUrl() {
   const code = annotationUrl.value.trim()
   if (!code) return
 
-  // 调用校验函数（当前所有输入都返回不合规）
-  const result = checkTransmissionCode(code)
+  const result = await getJsonImage({ url: code })
 
   if (!result.valid) {
-    ElMessage.error('传送码不合规，请检查输入')
+    ElMessage.error(result.errorMsg || '传送码不合规，请检查输入')
     return
   }
 
-  // 后续：当合规时处理返回的json和image base64
-  // console.log('合规:', result.json, result.image)
+  if (result.designJson) {
+    const jsonBlob = new Blob([JSON.stringify(result.designJson)], { type: 'application/json' })
+    const jsonFile = new File([jsonBlob], 'design.json', { type: 'application/json' })
+    emit('step-picked', { type: 'designJson', file: jsonFile })
+  }
+
+  if (result.designImageUrl) {
+    const [meta, b64] = result.designImageUrl.split(',')
+    const mimeType = meta.match(/:(.*?);/)?.[1] || 'image/png'
+    const ext = mimeType.split('/')[1] || 'png'
+    const imageBlob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: mimeType })
+    const imageFile = new File([imageBlob], `design.${ext}`, { type: mimeType })
+    emit('step-picked', { type: 'designImage', file: imageFile })
+  }
+
+  ElMessage.success('设计稿获取成功')
 }
 
-// ── 空函数：传送码字符串校验（目前所有输入都返回不合规）──
-function checkTransmissionCode(code) {
-  // 预留函数，后续在这里添加真实的校验逻辑
-  // 入参：code (字符串)
-  // 出参：{ valid: boolean, json?: base64, image?: base64 }
-  return { valid: false }
-}
 
 // ── 4个独立的 trigger 函数，带顺序控制 ──
 function triggerStep1() {
