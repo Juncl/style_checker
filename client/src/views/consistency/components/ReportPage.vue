@@ -138,6 +138,7 @@
             :selected-id="selectedPair?.arkui?.id || null"
             :inspector-node="selectedPair?.arkui || null"
             :style-diffs="selectedArkuiDiffs"
+            :external-hovered-id="hoveredArkuiCrossId"
             :debug-mode="debugMode"
             :debug-pipeline-visible="debugPipelineOn"
             :debug-visible="debugOverlayOn"
@@ -171,6 +172,7 @@
             :inspector-node="selectedPair?.design || null"
             :style-diffs="selectedDesignDiffs"
             :locked-ids="lockedNodeIds"
+            :external-hovered-id="hoveredDesignCrossId"
             :debug-mode="debugMode"
             :debug-pipeline-visible="debugPipelineOn"
             :debug-visible="debugOverlayOn"
@@ -225,6 +227,7 @@
       :hover-pair="hoverPairForDiff"
       :debug-mode="debugMode"
       @select="$emit('diff-select', $event)"
+      @diff-hover="hoveredDiffPair = $event"
     />
 
     <div v-show="debugMode && rightTab === 'tree'" class="tree-source-switch">
@@ -369,6 +372,7 @@ const emptyLockedIds = new Set()
 // ── 左侧 canvas → 右侧 DiffReport 联动 ──────────────────────────────────────
 const hoveredArkuiNodeId  = ref(null)
 const hoveredDesignNodeId = ref(null)
+const hoveredDiffPair     = ref(null)   // 右侧差异栏 hover 传来的 { arkuiNodeId, designNodeId }
 
 const activePairForDiff = computed(() => {
   if (!props.selectedPair) return null
@@ -384,6 +388,21 @@ const hoverPairForDiff = computed(() => {
     arkuiNodeId:  hoveredArkuiNodeId.value  ?? null,
     designNodeId: hoveredDesignNodeId.value ?? null,
   }
+})
+
+// hover 时，在 pairs 里查找对方画布的映射节点 id
+// 右侧差异栏 hover 优先，否则退回到跨画布联动
+const hoveredDesignCrossId = computed(() => {
+  if (hoveredDiffPair.value?.designNodeId) return hoveredDiffPair.value.designNodeId
+  if (!hoveredArkuiNodeId.value) return null
+  const pair = props.result?.pairs?.find(p => p.arkui?.id === hoveredArkuiNodeId.value)
+  return pair?.design?.id ?? null
+})
+const hoveredArkuiCrossId = computed(() => {
+  if (hoveredDiffPair.value?.arkuiNodeId) return hoveredDiffPair.value.arkuiNodeId
+  if (!hoveredDesignNodeId.value) return null
+  const pair = props.result?.pairs?.find(p => p.design?.id === hoveredDesignNodeId.value)
+  return pair?.arkui?.id ?? null
 })
 
 function onArkuiHover(id) {

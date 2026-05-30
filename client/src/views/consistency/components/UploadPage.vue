@@ -114,7 +114,7 @@
                     <el-button
                       type="primary"
                       class="up-url-btn"
-                      :disabled="!annotationUrl.trim() || !uploadFiles.arkuiJson || !uploadFiles.arkuiImage"
+                      :disabled="!annotationUrl.trim()"
                       @click="validateAnnotationUrl"
                     >确认</el-button>
                   </div>
@@ -182,7 +182,7 @@
                   <el-button
                     type="primary"
                     class="up-url-btn"
-                    :disabled="!annotationUrl.trim() || !uploadFiles.arkuiJson || !uploadFiles.arkuiImage"
+                    :disabled="!annotationUrl.trim()"
                     @click="validateAnnotationUrl"
                   >确认</el-button>
                 </div>

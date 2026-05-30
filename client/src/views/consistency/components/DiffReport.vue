@@ -45,6 +45,8 @@
           'hover-from-node':  hoverDiffKeys.has(foldKey(d)) && selectedIdx !== idx && !activeDiffKeys.has(foldKey(d))
         }]"
         @click="selectItem(d, idx)"
+        @mouseenter="emit('diff-hover', { arkuiNodeId: d.arkuiNodeId, designNodeId: d.designNodeId })"
+        @mouseleave="emit('diff-hover', null)"
       >
         <!-- 卡片头 -->
         <div class="diff-card-head">
@@ -127,7 +129,7 @@ const props = defineProps({
   hoverPair:  { type: Object,  default: null },
   debugMode:  { type: Boolean, default: false },
 })
-const emit = defineEmits(['select'])
+const emit = defineEmits(['select', 'diff-hover'])
 
 const ISSUE_GROUPS = [
   { key: 'all', label: '全部' },
