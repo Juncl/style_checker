@@ -17,15 +17,39 @@
           <span class="up-tab-sep">/</span>
           <span class="up-tab-text">20260306 10:50:15</span>
           <el-icon class="up-tab-arrow"><ArrowRight /></el-icon>
+          <button
+            v-if="devPreview || devPreviewLoading"
+            class="up-tab-action"
+            @click="$emit('clear-dev-preview')"
+          >重新上传</button>
         </div>
-        <!-- 舞台：手机模型 -->
+        <!-- 舞台 -->
         <div
-          class="up-stage"
+          :class="['up-stage', devPreview && !devPreviewLoading ? 'up-stage--report' : '']"
           @dragover.prevent="$emit('drag-over', true)"
           @dragleave.prevent="$emit('drag-over', false)"
           @drop.prevent="$emit('drop', $event)"
         >
-          <div class="phone-card">
+          <!-- 解析中 -->
+          <div v-if="devPreviewLoading" class="phone-card">
+            <div class="phone-bg"></div>
+            <div class="phone-content phone-content--center">
+              <div class="preview-loading">
+                <el-icon class="spin" size="32"><Loading /></el-icon>
+                <span class="preview-loading-text">正在解析节点…</span>
+              </div>
+            </div>
+          </div>
+          <!-- 节点预览 -->
+          <ImagePanel
+            v-else-if="devPreview"
+            :src="blobDevSrc"
+            :canvas-w="devPreview.canvas.w"
+            :canvas-h="devPreview.canvas.h"
+            :nodes="devPreview.nodes"
+          />
+          <!-- 上传卡片 -->
+          <div v-else class="phone-card">
             <div class="phone-bg"></div>
             <div class="phone-content">
               <div class="up-upload-card">
@@ -48,7 +72,6 @@
                     <span v-else class="up-drop-done">{{ uploadFiles.arkuiJson.name }}</span>
                   </div>
                 </div>
-
                 <!-- Step2 -->
                 <div class="up-step">
                   <div class="up-step-title up-step-title--center">
@@ -82,10 +105,34 @@
           <span class="up-tab-sep">/</span>
           <span class="up-tab-text">主题购买页面示例</span>
           <el-icon class="up-tab-arrow"><ArrowRight /></el-icon>
+          <button
+            v-if="designPreview || designPreviewLoading"
+            class="up-tab-action"
+            @click="$emit('clear-design-preview')"
+          >重新上传</button>
         </div>
-        <!-- 舞台：手机模型 -->
-        <div class="up-stage">
-          <div class="phone-card">
+        <!-- 舞台 -->
+        <div :class="['up-stage', designPreview && !designPreviewLoading ? 'up-stage--report' : '']">
+          <!-- 解析中 -->
+          <div v-if="designPreviewLoading" class="phone-card">
+            <div class="phone-bg"></div>
+            <div class="phone-content phone-content--center">
+              <div class="preview-loading">
+                <el-icon class="spin" size="32"><Loading /></el-icon>
+                <span class="preview-loading-text">正在解析节点…</span>
+              </div>
+            </div>
+          </div>
+          <!-- 节点预览 -->
+          <ImagePanel
+            v-else-if="designPreview"
+            :src="blobDesignSrc"
+            :canvas-w="designPreview.canvas.w"
+            :canvas-h="designPreview.canvas.h"
+            :nodes="designPreview.nodes"
+          />
+          <!-- 上传卡片 -->
+          <div v-else class="phone-card">
             <div class="phone-bg"></div>
             <div class="phone-content">
               <!-- debugger 模式 -->
@@ -99,11 +146,7 @@
                     <span>Step3：输入传送码</span>
                     <button class="debug-inline-toggle" @click="debugStep3Mode = false" title="切换到文件上传">⇄ 切换</button>
                   </div>
-                  <div v-if="urlValid" class="up-drop has-file">
-                    <el-icon class="up-drop-check"><CircleCheck /></el-icon>
-                    <span class="up-drop-done">设计稿已获取</span>
-                  </div>
-                  <div v-else class="up-url-card">
+                  <div class="up-url-card">
                     <el-input
                       v-model="annotationUrl"
                       type="textarea"
@@ -119,7 +162,6 @@
                     >确认</el-button>
                   </div>
                 </div>
-
                 <!-- 文件上传模式 -->
                 <div v-else class="up-upload-card">
                   <div class="up-step-title up-step-title--center up-step-title--row">
@@ -167,11 +209,7 @@
                 <div class="up-step-title up-step-title--center">
                   <span>Step3：输入标注视图 URL / 传送码</span>
                 </div>
-                <div v-if="urlValid" class="up-drop has-file">
-                  <el-icon class="up-drop-check"><CircleCheck /></el-icon>
-                  <span class="up-drop-done">设计稿已获取</span>
-                </div>
-                <div v-else class="up-url-card">
+                <div class="up-url-card">
                   <el-input
                     v-model="annotationUrl"
                     type="textarea"
@@ -217,7 +255,7 @@
         <el-button
           type="primary"
           :loading="loading"
-          :disabled="!uploadFiles.designJson || !uploadFiles.arkuiJson || (selectedPlatform !== 'web' && !uploadFiles.arkuiImage) || !uploadFiles.designImage"
+          :disabled="!canStartCheck"
           class="report-start-btn"
           @click="$emit('run-upload', selectedPlatform)"
         >开始对比</el-button>
@@ -228,7 +266,6 @@
         <div class="cases-head">
           <span class="cases-head-title">试用案例</span>
           <span class="cases-head-hint">点击下方案例即刻体验~</span>
-          <!-- debugger 模式：平台下拉框，切换会刷新 case 组 -->
           <select
             v-if="debugMode"
             class="cases-platform-select"
@@ -266,11 +303,12 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { getJsonImage } from '../../utils/getJsonImage'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, Loading, ArrowRight, ArrowDown } from '@element-plus/icons-vue'
 import { imageUrl } from '../../../api/index.ts'
+import ImagePanel from './ImagePanel.vue'
 import iconJson from '@/assets/upload-json.png'
 import iconImage from '@/assets/upload-image.png'
 import iconEmpty from '@/assets/svg/empty-report.svg'
@@ -309,7 +347,32 @@ const props = defineProps({
   currentPlatform: {
     type: String,
     default: 'hmPhone'
-  }
+  },
+  // 预览相关 props
+  devPreview: {
+    type: Object,
+    default: null   // { nodes, canvas: { w, h } } | null
+  },
+  designPreview: {
+    type: Object,
+    default: null
+  },
+  devPreviewLoading: {
+    type: Boolean,
+    default: false
+  },
+  designPreviewLoading: {
+    type: Boolean,
+    default: false
+  },
+  blobDevSrc: {
+    type: String,
+    default: ''
+  },
+  blobDesignSrc: {
+    type: String,
+    default: ''
+  },
 })
 
 const emit = defineEmits([
@@ -318,56 +381,65 @@ const emit = defineEmits([
   'drop',
   'run-upload',
   'select-case',
-  'platform-switch'
+  'platform-switch',
+  'clear-dev-preview',
+  'clear-design-preview',
 ])
 
 const annotationUrl = ref('')
-const urlLoading   = ref(false)
-const urlValid     = ref(false)
-// 当前对比的平台 key（与父组件双向同步）
+const urlLoading    = ref(false)
 const selectedPlatform = ref(props.currentPlatform || 'hmPhone')
 watch(() => props.currentPlatform, v => { if (v && v !== selectedPlatform.value) selectedPlatform.value = v })
 
-// 4个独立的picker input
+// 当父组件清除设计侧数据时，重置本地 URL 输入状态
+watch(() => props.uploadFiles.designJson, newVal => {
+  if (!newVal) {
+    annotationUrl.value = ''
+    urlLoading.value    = false
+  }
+})
+
+// debugger 模式下设计侧的子模式
+const debugStep3Mode = ref(true)  // true: 传送码模式，false: 文件上传模式
+
 const pickerStep1 = ref(null)
 const pickerStep2 = ref(null)
 const pickerStep3 = ref(null)
 const pickerStep4 = ref(null)
 
-// debugger模式下的状态
-const debugStep3Mode = ref(true) // true: 传送码模式，false: 文件上传模式
+// "开始对比"按钮可用条件
+const canStartCheck = computed(() => {
+  const f = props.uploadFiles
+  if (!f.designJson || !f.arkuiJson) return false
+  if (selectedPlatform.value !== 'web' && !f.arkuiImage) return false
+  if (!f.designImage) return false
+  return true
+})
 
 function caseImageUrl(caseId) {
   return imageUrl(caseId, 'arkui', props.currentPlatform)
 }
 
-// debugger 模式：用户切换平台下拉框时通知父组件刷新 case 列表
 function onPlatformSwitch(platform) {
   selectedPlatform.value = platform
   emit('platform-switch', platform)
 }
 
-// 从开发侧 JSON 自动识别平台（上传 ArkUI/Web JSON 后调用）
 async function detectPlatformFromJson(file) {
   try {
     const text = await file.text()
     const json = JSON.parse(text)
-    // web 标识：deviceType === 'web' 或 name === 'viewport'
     if (json.deviceType === 'web') return 'web'
     if (json.name === 'viewport') return 'web'
-    // ArkUI：content.$resolution 存在
     if (json.content && json.content.width != null) {
       const w = parseFloat(json.content.width)
       if (Number.isFinite(w) && w < 600) return 'hmWatch'
       return 'hmPhone'
     }
-  } catch (e) {
-    // 解析失败不切换平台
-  }
+  } catch { /* 解析失败不切换平台 */ }
   return null
 }
 
-// ── 传送码校验（共用于debugger和非debugger模式）──
 async function validateAnnotationUrl() {
   const code = annotationUrl.value.trim()
   if (!code) return
@@ -375,39 +447,28 @@ async function validateAnnotationUrl() {
   urlLoading.value = true
   try {
     const result = await getJsonImage({ url: code })
-
     if (!result.valid) {
       ElMessage.error(result.errorMsg || '传送码不合规，请检查输入')
       return
     }
-
     if (result.designJson) {
       const jsonBlob = new Blob([JSON.stringify(result.designJson)], { type: 'application/json' })
-      const jsonFile = new File([jsonBlob], 'design.json', { type: 'application/json' })
-      emit('step-picked', { type: 'designJson', file: jsonFile })
+      emit('step-picked', { type: 'designJson', file: new File([jsonBlob], 'design.json', { type: 'application/json' }) })
     }
-
     if (result.designImageUrl) {
       const [meta, b64] = result.designImageUrl.split(',')
       const mimeType = meta.match(/:(.*?);/)?.[1] || 'image/png'
       const ext = mimeType.split('/')[1] || 'png'
       const imageBlob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: mimeType })
-      const imageFile = new File([imageBlob], `design.${ext}`, { type: mimeType })
-      emit('step-picked', { type: 'designImage', file: imageFile })
+      emit('step-picked', { type: 'designImage', file: new File([imageBlob], `design.${ext}`, { type: mimeType }) })
     }
-
-    urlValid.value = true
     ElMessage.success('设计稿获取成功')
   } finally {
     urlLoading.value = false
   }
 }
 
-
-// ── 4个独立的 trigger 函数，带顺序控制 ──
-function triggerStep1() {
-  pickerStep1.value?.click()
-}
+function triggerStep1() { pickerStep1.value?.click() }
 
 function triggerStep2() {
   if (!props.uploadFiles.arkuiJson) {
@@ -433,7 +494,6 @@ function triggerStep4() {
   pickerStep4.value?.click()
 }
 
-// ── 4个独立的文件选中处理函数 ──
 async function onStep1Picked(event) {
   const file = event.target.files?.[0]
   if (!file) return
@@ -443,7 +503,6 @@ async function onStep1Picked(event) {
     return
   }
   emit('step-picked', { type: 'arkuiJson', file })
-  // 自动识别平台：读 JSON 内容做特征匹配
   const detected = await detectPlatformFromJson(file)
   if (detected && detected !== selectedPlatform.value) {
     selectedPlatform.value = detected
@@ -490,3 +549,23 @@ function onStep4Picked(event) {
   event.target.value = ''
 }
 </script>
+
+<style scoped>
+.phone-content--center {
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: #555;
+}
+
+.preview-loading-text {
+  font-size: 12px;
+  color: #777;
+}
+</style>

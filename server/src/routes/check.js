@@ -365,4 +365,90 @@ function matchDirectionFromRequest(req) {
   return value === 'design' || value === 'design-first' ? 'design' : DEFAULT_MATCH_DIRECTION
 }
 
+// ── 预览解析：开发侧（返回过滤后节点树 + 画布）─────────────────────────────────
+router.post(
+  '/parse/dev',
+  upload.fields([
+    { name: 'arkuiJson',  maxCount: 1 },
+    { name: 'arkuiImage', maxCount: 1 },
+  ]),
+  async (req, res) => {
+    try {
+      const files = req.files
+      if (!files?.arkuiJson) {
+        return res.status(400).json({ error: '缺少 arkuiJson 文件' })
+      }
+      const platform = getPlatform(platformFromRequest(req))
+      const rawText  = files.arkuiJson[0].buffer.toString('utf-8')
+      const arkuiInput = rawText.trimStart().startsWith('{') || rawText.trimStart().startsWith('[')
+        ? JSON.parse(rawText)
+        : rawText  // dump 格式
+
+      const devResult = platform.devType === 'web'
+        ? await parseWeb(arkuiInput, { imageBuffer: files.arkuiImage?.[0]?.buffer })
+        : await parseArkui(arkuiInput, { imageBuffer: files.arkuiImage?.[0]?.buffer })
+
+      res.json({
+        nodes: devResult.nodes.map(n => ({
+          id: n.id, name: n.name, type: n.type,
+          rawType: n.rawType || null,
+          textContent: n.textContent || null,
+          path: n.path, rect: n.rect, style: n.style,
+          visible: n.visible !== false,
+          visualOccluded: !!n.visualOccluded,
+        })),
+        canvas: {
+          w: devResult.canvasWidthVp,
+          h: devResult.canvasHeightVp,
+          resolution: devResult.resolution,
+        },
+      })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: err.message })
+    }
+  }
+)
+
+// ── 预览解析：设计侧（不依赖 arkui 画布宽度，使用设计稿原始坐标系）───────────────
+router.post(
+  '/parse/design',
+  upload.fields([
+    { name: 'designJson',  maxCount: 1 },
+    { name: 'designImage', maxCount: 1 },
+  ]),
+  async (req, res) => {
+    try {
+      const files = req.files
+      if (!files?.designJson) {
+        return res.status(400).json({ error: '缺少 designJson 文件' })
+      }
+      const platform   = getPlatform(platformFromRequest(req))
+      const designJson = JSON.parse(files.designJson[0].buffer.toString('utf-8'))
+
+      // arkuiCanvasWidthVp 不传 → buildDesignTree 内 scale=1，节点使用设计稿原始坐标
+      const designResult = await parseDesign(designJson, {
+        imageBuffer: files.designImage?.[0]?.buffer,
+        arkuiCanvasWidthVp: undefined,
+        designScale: platform.designScale,
+      })
+
+      res.json({
+        nodes: designResult.nodes.map(n => ({
+          id: n.id, name: n.name, type: n.type,
+          rawType: n.rawType || null,
+          textContent: n.textContent || null,
+          path: n.path, rect: n.rect, style: n.style,
+          visible: n.visible !== false,
+          visualOccluded: !!n.visualOccluded,
+        })),
+        canvas: { w: designResult.canvasWidth, h: designResult.canvasHeight },
+      })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: err.message })
+    }
+  }
+)
+
 export default router

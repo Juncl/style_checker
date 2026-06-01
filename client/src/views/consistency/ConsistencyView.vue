@@ -11,12 +11,20 @@
       :is-drag-over="isDragOver && !loading"
       :debug-mode="debugMode"
       :current-platform="currentPlatform"
+      :dev-preview="devPreview"
+      :design-preview="designPreview"
+      :dev-preview-loading="devPreviewLoading"
+      :design-preview-loading="designPreviewLoading"
+      :blob-dev-src="blobUrls.arkui"
+      :blob-design-src="blobUrls.design"
       @step-picked="onStepPicked"
       @drag-over="isDragOver = $event"
       @drop="onDrop"
       @run-upload="runUpload"
       @select-case="selectCase"
       @platform-switch="onPlatformSwitch"
+      @clear-dev-preview="clearDevPreview"
+      @clear-design-preview="clearDesignPreview"
     />
 
     <div v-if="loading" class="center-placeholder-wrapper">
@@ -48,6 +56,7 @@
       :selected-case="selectedCase"
       :case-names="CASE_NAMES"
       :current-platform="currentPlatform"
+      :rerun-loading="rerunLoading"
       @select-case="selectCase"
       @arkui-node-click="onArkuiNodeClick"
       @design-node-click="onDesignNodeClick"
@@ -55,6 +64,9 @@
       @clear-pair="selectedPair = null"
       @share="handleShare"
       @recheck="resetResult"
+      @recheck-dev="recheckDev"
+      @recheck-design="recheckDesign"
+      @rerun="rerunCheck"
       @diff-select="onDiffSelect"
       @toggle-lock="onToggleLock"
       @update:debug-pipeline-on="debugPipelineOn = $event"
@@ -83,7 +95,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
-import { fetchCases, checkCase, checkUpload, imageUrl } from '../../api/index.ts'
+import { fetchCases, checkCase, checkUpload, imageUrl, parseDevUpload, parseDesignUpload } from '../../api/index.ts'
 import { initApp } from './init/index'
 import { savePlatform } from './init/restorePlatform'
 import AppLayout from './components/AppLayout.vue'
@@ -107,6 +119,13 @@ const uploadPageRef = ref(null)
 const debugMode      = ref(false)
 const debugPipelineOn = ref(false)
 const debugOverlayOn = ref(false)
+const rerunLoading   = ref(false)
+
+// 上传页预览状态：文件上传后自动解析并展示
+const devPreview          = ref(null)   // { nodes, canvas } | null
+const designPreview       = ref(null)   // { nodes, canvas } | null
+const devPreviewLoading   = ref(false)
+const designPreviewLoading = ref(false)
 
 
 const designNodes = computed(() => result.value?.allDesignNodes ?? [])
@@ -224,15 +243,25 @@ onUnmounted(revokeBlobUrls)
 function onStepPicked({ type, file }) {
   if (!file) return
   const next = { ...uploadFiles.value }
-  if (type === 'arkuiJson')      next.arkuiJson   = file
-  else if (type === 'arkuiImage') next.arkuiImage = file
-  else if (type === 'designJson') next.designJson = file
+  if (type === 'arkuiJson')       next.arkuiJson   = file
+  else if (type === 'arkuiImage') next.arkuiImage  = file
+  else if (type === 'designJson') next.designJson  = file
   else if (type === 'designImage') next.designImage = file
   selectedCase.value = ''
   uploadFiles.value = next
   revokeBlobUrls()
   if (next.designImage) blobUrls.value.design = URL.createObjectURL(next.designImage)
   if (next.arkuiImage)  blobUrls.value.arkui  = URL.createObjectURL(next.arkuiImage)
+
+  // 更新了开发侧文件 → 满足条件时触发节点预览
+  if (type === 'arkuiJson' || type === 'arkuiImage') {
+    const devReady = next.arkuiJson && (currentPlatform.value === 'web' || next.arkuiImage)
+    if (devReady) triggerDevPreview(next)
+  }
+  // 更新了设计侧文件（含 URL/传送码回调）→ 两者都齐时触发预览
+  if (type === 'designJson' || type === 'designImage') {
+    if (next.designJson && next.designImage) triggerDesignPreview(next)
+  }
 }
 
 function onDrop(e) {
@@ -265,7 +294,17 @@ function assignFiles(files) {
   if (next.designImage) blobUrls.value.design = URL.createObjectURL(next.designImage)
   if (next.arkuiImage)  blobUrls.value.arkui  = URL.createObjectURL(next.arkuiImage)
 
-  if (next.designJson && next.arkuiJson && next.arkuiImage) nextTick(runUpload)
+  const devReady    = next.arkuiJson && (currentPlatform.value === 'web' || next.arkuiImage)
+  const designReady = next.designJson && next.designImage
+
+  if (devReady && designReady) {
+    // 全部就绪 → 直接运行全量对比，不需要单独预览
+    nextTick(runUpload)
+  } else {
+    // 部分就绪 → 触发可用侧的节点预览
+    if (devReady) triggerDevPreview(next)
+    if (designReady) triggerDesignPreview(next)
+  }
 }
 
 const designImgSrc = computed(() =>
@@ -307,14 +346,125 @@ watch(debugMode, value => {
   if (!value) debugOverlayOn.value = false
 })
 
+// ── 预览解析 ─────────────────────────────────────────────────────────────────
+
+async function triggerDevPreview(files) {
+  devPreview.value   = null
+  devPreviewLoading.value = true
+  try {
+    devPreview.value = await parseDevUpload(
+      files.arkuiJson,
+      files.arkuiImage ?? null,
+      currentPlatform.value,
+    )
+  } catch { /* 静默失败，不阻断主流程 */ }
+  finally { devPreviewLoading.value = false }
+}
+
+async function triggerDesignPreview(files) {
+  designPreview.value   = null
+  designPreviewLoading.value = true
+  try {
+    designPreview.value = await parseDesignUpload(
+      files.designJson,
+      files.designImage ?? null,
+      currentPlatform.value,
+    )
+  } catch { /* 静默失败 */ }
+  finally { designPreviewLoading.value = false }
+}
+
+// ── 重置 ───────────────────────────────────────────────────────────────────
+
 function resetResult() {
   result.value        = null
   selectedCase.value  = ''
   activeDiff.value    = null
   selectedPair.value  = null
   lockedNodeIds.value = new Set()
+  devPreview.value    = null
+  designPreview.value = null
   revokeBlobUrls()
   uploadFiles.value   = { designJson: null, arkuiJson: null, designImage: null, arkuiImage: null }
+}
+
+// 报告页"开发侧重新上传"：保留设计侧数据，仅清空 arkui
+function recheckDev() {
+  uploadFiles.value = { ...uploadFiles.value, arkuiJson: null, arkuiImage: null }
+  devPreview.value  = null
+  devPreviewLoading.value = false
+  if (blobUrls.value.arkui) {
+    URL.revokeObjectURL(blobUrls.value.arkui)
+    blobUrls.value = { ...blobUrls.value, arkui: '' }
+  }
+  result.value        = null
+  activeDiff.value    = null
+  selectedPair.value  = null
+  lockedNodeIds.value = new Set()
+}
+
+// 报告页"设计侧重新上传"：保留 arkui 侧数据，仅清空 design
+function recheckDesign() {
+  uploadFiles.value = { ...uploadFiles.value, designJson: null, designImage: null }
+  designPreview.value = null
+  designPreviewLoading.value = false
+  if (blobUrls.value.design) {
+    URL.revokeObjectURL(blobUrls.value.design)
+    blobUrls.value = { ...blobUrls.value, design: '' }
+  }
+  result.value        = null
+  activeDiff.value    = null
+  selectedPair.value  = null
+  lockedNodeIds.value = new Set()
+}
+
+// 上传页内"重新上传"按钮：仅清空对应侧
+function clearDevPreview() {
+  uploadFiles.value = { ...uploadFiles.value, arkuiJson: null, arkuiImage: null }
+  devPreview.value  = null
+  devPreviewLoading.value = false
+  if (blobUrls.value.arkui) {
+    URL.revokeObjectURL(blobUrls.value.arkui)
+    blobUrls.value = { ...blobUrls.value, arkui: '' }
+  }
+}
+
+function clearDesignPreview() {
+  uploadFiles.value = { ...uploadFiles.value, designJson: null, designImage: null }
+  designPreview.value = null
+  designPreviewLoading.value = false
+  if (blobUrls.value.design) {
+    URL.revokeObjectURL(blobUrls.value.design)
+    blobUrls.value = { ...blobUrls.value, design: '' }
+  }
+}
+
+async function rerunCheck() {
+  activeDiff.value    = null
+  selectedPair.value  = null
+  lockedNodeIds.value = new Set()
+  rerunLoading.value  = true
+  try {
+    if (selectedCase.value) {
+      result.value = await checkCase(selectedCase.value, currentPlatform.value)
+    } else if (uploadFiles.value.designJson && uploadFiles.value.arkuiJson) {
+      result.value = await checkUpload(
+        uploadFiles.value.designJson,
+        uploadFiles.value.arkuiJson,
+        uploadFiles.value.designImage,
+        uploadFiles.value.arkuiImage,
+        currentPlatform.value,
+      )
+    } else {
+      ElMessage.warning('没有可用的数据，请重新上传')
+      return
+    }
+    ElMessage.success('重新对比完成')
+  } catch (e) {
+    ElMessage.error(`分析失败：${e.response?.data?.error || e.message}`)
+  } finally {
+    rerunLoading.value = false
+  }
 }
 
 function handleShare() {

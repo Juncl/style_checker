@@ -125,7 +125,7 @@
           <span class="up-tab-sep">/</span>
           <span class="up-tab-text">20260306 10:50:15</span>
           <el-icon class="up-tab-arrow"><ArrowRight /></el-icon>
-          <button class="up-tab-action" @click="$emit('recheck')">重新上传</button>
+          <button class="up-tab-action" @click="$emit('recheck-dev')">重新上传</button>
         </div>
         <div class="up-stage up-stage--report" @click="$emit('clear-pair')">
           <ImagePanel
@@ -160,7 +160,7 @@
           <span class="up-tab-sep">/</span>
           <span class="up-tab-text">主题购买页面示例</span>
           <el-icon class="up-tab-arrow"><ArrowRight /></el-icon>
-          <button class="up-tab-action" @click="$emit('recheck')">重新上传</button>
+          <button class="up-tab-action" @click="$emit('recheck-design')">重新上传</button>
         </div>
         <div class="up-stage up-stage--report" @click="$emit('clear-pair')">
           <ImagePanel
@@ -191,7 +191,7 @@
   </main>
 
   <!-- ── 右侧差异报告面板 ── -->
-  <aside class="right-panel up-right-panel">
+  <aside class="right-panel up-right-panel" style="position: relative;">
     <!-- 标签栏 -->
     <div class="up-tabbar up-tabbar--report">
       <span class="report-tab-title">差异报告</span>
@@ -200,7 +200,7 @@
         <span class="report-link-sep"></span>
         <button class="report-link">历史报告</button>
         <span class="report-link-sep"></span>
-        <button class="report-link" @click="$emit('recheck')">重新对比</button>
+        <button class="report-link" @click="$emit('rerun')">重新对比</button>
       </div>
     </div>
 
@@ -257,12 +257,19 @@
       @select="treeSide === 'design' ? $emit('design-node-click', $event) : $emit('arkui-node-click', $event)"
       @toggle-lock="$emit('toggle-lock', $event)"
     />
+
+    <transition name="fade">
+      <div v-if="rerunLoading" class="rerun-loading-mask">
+        <el-icon class="rerun-spin" size="28"><Loading /></el-icon>
+        <span>正在重新对比…</span>
+      </div>
+    </transition>
   </aside>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { ArrowRight, Crop } from '@element-plus/icons-vue'
+import { ArrowRight, Crop, Loading } from '@element-plus/icons-vue'
 import DiffReport from './DiffReport.vue'
 import ImagePanel from './ImagePanel.vue'
 import NodeTree from './NodeTree.vue'
@@ -351,6 +358,10 @@ const props = defineProps({
   currentPlatform: {
     type: String,
     default: 'hmPhone'
+  },
+  rerunLoading: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -360,7 +371,10 @@ const emit = defineEmits([
   'clear-diff',
   'clear-pair',
   'share',
-  'recheck',
+  'recheck',        // 完整重置（已弃用但保留兼容）
+  'recheck-dev',    // 仅重置开发侧，保留设计侧
+  'recheck-design', // 仅重置设计侧，保留开发侧
+  'rerun',
   'diff-select',
   'toggle-lock',
   'update:debug-pipeline-on',
@@ -523,3 +537,28 @@ function validationBg(status) {
   return 'transparent'
 }
 </script>
+
+<style scoped>
+.rerun-loading-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+  color: #555;
+}
+
+.rerun-spin {
+  animation: rerun-rotate 0.8s linear infinite;
+}
+
+@keyframes rerun-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+</style>

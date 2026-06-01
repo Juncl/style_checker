@@ -42,3 +42,42 @@ export const checkUpload = (
 export const imageUrl = (caseId: string, type: string, platform: PlatformKey = DEFAULT_PLATFORM): string =>
   `/devlint/api/cases/${caseId}/image/${type}?platform=${encodeURIComponent(platform)}`
 
+export interface ParsedPreview {
+  nodes: unknown[]
+  canvas: { w: number; h: number; resolution?: number }
+}
+
+export const parseDevUpload = (
+  arkuiJsonFile: File,
+  arkuiImageFile: File | null = null,
+  platform: string = DEFAULT_PLATFORM,
+): Promise<ParsedPreview> => {
+  const resolvedPlatform: PlatformKey =
+    KEY_BY_ZH[platform] ??
+    (PLATFORMS.includes(platform as PlatformKey) ? (platform as PlatformKey) : DEFAULT_PLATFORM)
+  const form = new FormData()
+  form.append('arkuiJson', arkuiJsonFile)
+  if (arkuiImageFile) form.append('arkuiImage', arkuiImageFile)
+  form.append('platform', resolvedPlatform)
+  return http.post('/parse/dev', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then(r => r.data)
+}
+
+export const parseDesignUpload = (
+  designJsonFile: File,
+  designImageFile: File | null = null,
+  platform: string = DEFAULT_PLATFORM,
+): Promise<ParsedPreview> => {
+  const resolvedPlatform: PlatformKey =
+    KEY_BY_ZH[platform] ??
+    (PLATFORMS.includes(platform as PlatformKey) ? (platform as PlatformKey) : DEFAULT_PLATFORM)
+  const form = new FormData()
+  form.append('designJson', designJsonFile)
+  if (designImageFile) form.append('designImage', designImageFile)
+  form.append('platform', resolvedPlatform)
+  return http.post('/parse/design', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then(r => r.data)
+}
+
