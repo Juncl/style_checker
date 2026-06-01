@@ -41,7 +41,7 @@
             :title="item.diff?.description || ''"
           >
             <span class="prop-key">{{ item.label }}</span>
-            <span class="prop-val">
+            <span :class="['prop-val', item.truncate && 'prop-val--truncate']" :title="item.truncate ? item.val : undefined">
               <span v-if="item.color" class="color-dot" :style="{ background: item.color }"></span>
               {{ item.val }}
             </span>
@@ -567,18 +567,19 @@ const displayStyle = computed(() => {
   const s = props.inspectorNode?.style
   if (!s) return []
   const rows = []
-  const add = (key, val, color = null, label = null) => rows.push({
+  const add = (key, val, color = null, label = null, truncate = false) => rows.push({
     key,
     label: label || key,
     val: String(val),
     color: toCssColor(color),
     diff: diffForStyleKey(key),
+    truncate,
   })
 
   if (s.fontSize      != null) add('fontSize',      `${s.fontSize}vp`, null, '字号')
   if (s.fontWeight    != null) add('fontWeight',    s.fontWeight, null, '字重')
   if (s.fontColor)             add('fontColor',     s.fontColor, s.fontColor, '颜色')
-  if (s.fontFamily)            add('fontFamily',    s.fontFamily, null, '字体')
+  if (s.fontFamily)            add('fontFamily',    s.fontFamily, null, '字体', true)
   if (s.textAlign)             add('textAlign',     s.textAlign, null, '对齐')
   if (s.lineHeight    != null) add('lineHeight',    `${s.lineHeight}vp`, null, '行高')
   if (s.letterSpacing != null) add('letterSpacing', `${s.letterSpacing}px`, null, '字间距')

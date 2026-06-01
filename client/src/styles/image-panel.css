@@ -165,6 +165,15 @@
   word-break: break-all;
 }
 
+.prop-val--truncate {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-wrap: nowrap;
+  cursor: default;
+}
+
 .color-dot {
   width: 10px;
   height: 10px;

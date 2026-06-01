@@ -1149,7 +1149,7 @@ body {
   flex-shrink: 0;
   overflow: hidden;
   background: #F8F8FA;
-  box-shadow: 0 8px 28px rgba(70, 80, 130, 0.08);
+  border: 1px solid var(--octo-border-separator);
 }
 
 /* 手机内的彩色渐变球背景 */

@@ -65,9 +65,6 @@ export function compareStyles(pair, opts = {}) {
     topologyScore: pair.topologyScore ?? null,
     regionScore: pair.regionScore ?? null,
   }
-  // web 平台不对比 padding（当前 diffPadding 已停用；保留 platform 参数为后续恢复留口）
-  void platform
-
   // ── 文字节点属性 ──────────────────────────────────────────────────────────
   if (dn.type === 'text' && an.type === 'text') {
     if (!isTitlebarType(an)) {
@@ -75,7 +72,7 @@ export function compareStyles(pair, opts = {}) {
     }
     diffFontWeight(diffs, ctx, ds.fontWeight, as_.fontWeight)
     diffColor(diffs, ctx, 'fontColor',       ds.fontColor,   as_.fontColor,   '颜色')
-    diffFontFamily(diffs, ctx, ds.fontFamily, as_.fontFamily)
+    if (platform !== 'web') diffFontFamily(diffs, ctx, ds.fontFamily, as_.fontFamily)
     diffBlur(diffs, ctx, ds.blur, as_.blur, 'blur', '模糊')
     diffShadow(diffs, ctx, ds.shadow, as_.shadow)
     diffOpacity(diffs, ctx, ds.opacity, as_.opacity)
