@@ -29,14 +29,23 @@
   margin: 0;
 }
 
-/* 边框 + 外阴影直接作用在截图上：用 box-shadow 描边，不占布局、不影响 canvas 对齐 */
+.zoom-clip {
+  position: absolute;
+  overflow: auto;
+  outline: 1px solid var(--octo-border-separator);
+}
+
+.zoom-layer {
+  transform-origin: 0 0;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+
 .img-wrapper img {
   display: block;
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  position: relative;
-  box-shadow: 0 0 0 1px var(--octo-border-separator), 0 8px 28px rgba(70, 80, 130, 0.14);
+  width: 100%;
+  height: 100%;
 }
 
 .overlay-canvas {

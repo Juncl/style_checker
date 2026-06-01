@@ -1,15 +1,19 @@
 <template>
   <div class="img-panel" ref="panelRef">
     <div class="img-wrapper" ref="wrapperRef" @click.self="emit('bg-click')">
-      <img :src="src" ref="imgRef" :alt="label" @load="onImgLoad" />
-      <canvas
-        ref="canvasRef"
-        class="overlay-canvas"
-        @click="onCanvasClick"
-        @dblclick="onCanvasDblClick"
-        @mousemove="onMouseMove"
-        @mouseleave="onMouseLeave"
-      />
+      <div class="zoom-clip" ref="zoomClipRef">
+        <div class="zoom-layer" ref="zoomLayerRef" :style="zoomStyle">
+          <img :src="src" ref="imgRef" :alt="label" @load="onImgLoad" />
+          <canvas
+            ref="canvasRef"
+            class="overlay-canvas"
+            @click="onCanvasClick"
+            @dblclick="onCanvasDblClick"
+            @mousemove="onMouseMove"
+            @mouseleave="onMouseLeave"
+          />
+        </div>
+      </div>
     </div>
 
     <Transition name="inspector-fade">
@@ -19,6 +23,7 @@
         class="node-inspector"
         :class="{ dragging: isDraggingInspector }"
         :style="inspectorPos"
+        @click.stop
       >
         <div
           class="inspector-header"
@@ -75,11 +80,13 @@ const props = defineProps({
   debugPairMap:  { type: Object,  default: () => ({}) },
 })
 
-const emit = defineEmits(['node-click', 'bg-click', 'node-hover'])
+const emit = defineEmits(['node-click', 'bg-click', 'node-hover', 'zoom'])
 
 const panelRef     = ref(null)
 const labelRef     = ref(null)
 const wrapperRef   = ref(null)
+const zoomClipRef  = ref(null)
+const zoomLayerRef = ref(null)
 const imgRef       = ref(null)
 const canvasRef    = ref(null)
 const inspectorRef = ref(null)
@@ -88,6 +95,14 @@ const inspectorPos = ref({})
 const isDraggingInspector = ref(false)
 const inspectorDragPos = ref(null)
 const dragStart = ref(null)
+
+const zoomScale   = ref(1)
+const zoomOriginX = ref(0)
+const zoomOriginY = ref(0)
+const zoomStyle = computed(() => ({
+  transform: `scale(${zoomScale.value})`,
+  transformOrigin: `${zoomOriginX.value}px ${zoomOriginY.value}px`,
+}))
 
 // 本地同步记录当前选中 id，用于双击下钻
 // 不能直接用 props.selectedId：dblclick 触发时 Vue 响应式更新尚未完成
@@ -98,18 +113,43 @@ watch(() => props.selectedId, id => { localSelectedId.value = id })
 
 let ro = null
 onMounted(() => {
-  ro = new ResizeObserver(() => { draw(); updateInspectorPos() })
+  ro = new ResizeObserver(() => { updateClipSize(); draw(); updateInspectorPos() })
   if (wrapperRef.value) ro.observe(wrapperRef.value)
   window.addEventListener('pointermove', onInspectorDrag)
   window.addEventListener('pointerup', endInspectorDrag)
+  canvasRef.value?.addEventListener('wheel', onCanvasWheel, { passive: false })
 })
 onUnmounted(() => {
   ro?.disconnect()
   window.removeEventListener('pointermove', onInspectorDrag)
   window.removeEventListener('pointerup', endInspectorDrag)
+  canvasRef.value?.removeEventListener('wheel', onCanvasWheel)
 })
 
-function onImgLoad() { nextTick(() => { draw(); updateInspectorPos() }) }
+function onImgLoad() { nextTick(() => { updateClipSize(); draw(); updateInspectorPos() }) }
+
+function updateClipSize() {
+  const wrapper = wrapperRef.value
+  const img     = imgRef.value
+  const clip    = zoomClipRef.value
+  if (!wrapper || !img || !clip) return
+  const nW = img.naturalWidth
+  const nH = img.naturalHeight
+  if (!nW || !nH) return
+  const wW = wrapper.clientWidth
+  const wH = wrapper.clientHeight
+  const ratio = nW / nH
+  let clipW, clipH
+  if (ratio > wW / wH) {
+    clipW = wW; clipH = wW / ratio
+  } else {
+    clipH = wH; clipW = wH * ratio
+  }
+  clip.style.width  = clipW + 'px'
+  clip.style.height = clipH + 'px'
+  clip.style.left   = ((wW - clipW) / 2) + 'px'
+  clip.style.top    = ((wH - clipH) / 2) + 'px'
+}
 
 watch(() => props.highlight,     () => nextTick(draw))
 watch(() => props.highlightPair, () => nextTick(draw))
@@ -179,7 +219,8 @@ function onCanvasClick(e) {
   if (!coords) return
   const hit = findHitNode(coords.px, coords.py)
   if (hit) {
-    localSelectedId.value = hit.id   // 同步更新本地状态，dblclick 可立即读到
+    e.stopPropagation()  // 命中节点时阻止冒泡，避免触发 stage 的 clear-pair
+    localSelectedId.value = hit.id
     emit('node-click', hit.id)
   } else {
     emit('bg-click')
@@ -188,11 +229,11 @@ function onCanvasClick(e) {
 
 /** 双击下钻：在当前坐标的所有命中节点中循环选取下一层 */
 function onCanvasDblClick(e) {
+  e.stopPropagation()
   const coords = getCanvasCoords(e)
   if (!coords) return
   const hits = hitNodesAt(coords.px, coords.py)
   if (hits.length < 2) return
-  // 用本地状态查找当前位置，避免依赖尚未更新的 props
   const curIdx = hits.findIndex(n => n.id === localSelectedId.value)
   const nextIdx = curIdx >= 0 ? (curIdx + 1) % hits.length : 1
   const next = hits[nextIdx]
@@ -222,13 +263,25 @@ function onMouseLeave() {
   }
 }
 
+function onCanvasWheel(e) {
+  if (!e.ctrlKey) return
+  e.preventDefault()
+  const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
+  const clip = zoomClipRef.value
+  if (!clip) return
+  const rect = clip.getBoundingClientRect()
+  const normX = (e.clientX - rect.left) / rect.width
+  const normY = (e.clientY - rect.top) / rect.height
+  applyZoom(factor, normX, normY)
+  emit('zoom', { factor, normX, normY })
+}
+
 // ── 绘制 ────────────────────────────────────────────────────────────────────
 
 function draw() {
   const canvas = canvasRef.value
   const img    = imgRef.value
-  const wrapper = wrapperRef.value
-  if (!canvas || !img || !wrapper) return
+  if (!canvas || !img) return
 
   const W = img.clientWidth
   const H = img.clientHeight
@@ -237,14 +290,8 @@ function draw() {
   canvas.width  = W
   canvas.height = H
 
-  // 计算图片在 wrapper 中的偏移
-  const imgRect = img.getBoundingClientRect()
-  const wrapperRect = wrapper.getBoundingClientRect()
-  const offsetX = imgRect.left - wrapperRect.left
-  const offsetY = imgRect.top - wrapperRect.top
-
-  canvas.style.left = offsetX + 'px'
-  canvas.style.top = offsetY + 'px'
+  canvas.style.left = '0'
+  canvas.style.top  = '0'
 
   const ctx = canvas.getContext('2d')
   ctx.clearRect(0, 0, W, H)
@@ -406,33 +453,29 @@ function updateInspectorPos() {
   }
 
   const { rect } = props.inspectorNode
-  const img      = imgRef.value
-  const wrapper  = wrapperRef.value
-  if (!wrapper) return
+  const clip = zoomClipRef.value
+  if (!clip) return
 
-  const imgW     = img.clientWidth
-  const imgH     = img.clientHeight
-
-  // 计算图片在 wrapper 中的实际偏移（与 draw() 中保持一致）
-  const imgRect = img.getBoundingClientRect()
-  const wrapperRect = wrapper.getBoundingClientRect()
+  // zoom-clip 无 transform，位置稳定，用它计算节点在 panel 内的坐标
+  const clipW = clip.clientWidth
+  const clipH = clip.clientHeight
+  const clipRect  = clip.getBoundingClientRect()
   const panelRect = panelRef.value.getBoundingClientRect()
+  const clipOffsetX = clipRect.left - panelRect.left
+  const clipOffsetY = clipRect.top  - panelRect.top
 
-  const imgOffsetX = imgRect.left - wrapperRect.left
-  const imgOffsetY = imgRect.top - wrapperRect.top
-
-  const nx = rect.x / props.canvasW * imgW
-  const ny = rect.y / props.canvasH * imgH
-  const nw = rect.w / props.canvasW * imgW
-  const nh = rect.h / props.canvasH * imgH
+  const nx = rect.x / props.canvasW * clipW
+  const ny = rect.y / props.canvasH * clipH
+  const nw = rect.w / props.canvasW * clipW
+  const nh = rect.h / props.canvasH * clipH
 
   const inspectorW = inspectorRef.value?.offsetWidth || 190
   const inspectorH = inspectorRef.value?.offsetHeight || 220
   const nodeBox = {
-    left: imgOffsetX + nx,
-    top: imgOffsetY + ny,
-    right: imgOffsetX + nx + nw,
-    bottom: imgOffsetY + ny + nh,
+    left: clipOffsetX + nx,
+    top: clipOffsetY + ny,
+    right: clipOffsetX + nx + nw,
+    bottom: clipOffsetY + ny + nh,
   }
 
   const gap = 8
@@ -640,4 +683,26 @@ function toCssColor(color) {
   }
   return color
 }
+
+// ── Zoom（Ctrl+滚轮缩放，由父组件触发）────────────────────────────────────────
+
+// normX/normY 是鼠标相对于 zoom-clip 的归一化坐标（0-1）
+// transform-origin 跟随鼠标，只用 scale()，不平移
+function applyZoom(factor, normX, normY) {
+  const clip = zoomClipRef.value
+  if (!clip) return
+  zoomOriginX.value = normX * clip.clientWidth
+  zoomOriginY.value = normY * clip.clientHeight
+  zoomScale.value   = Math.max(1, Math.min(100, zoomScale.value * factor))
+  nextTick(draw)
+}
+
+function resetZoom() {
+  zoomScale.value   = 1
+  zoomOriginX.value = 0
+  zoomOriginY.value = 0
+  nextTick(draw)
+}
+
+defineExpose({ applyZoom, resetZoom })
 </script>

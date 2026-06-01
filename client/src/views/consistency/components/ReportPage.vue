@@ -127,8 +127,9 @@
           <el-icon class="up-tab-arrow"><ArrowRight /></el-icon>
           <button class="up-tab-action" @click="$emit('recheck')">重新上传</button>
         </div>
-        <div class="up-stage up-stage--report">
+        <div class="up-stage up-stage--report" @click="$emit('clear-pair')">
           <ImagePanel
+            ref="devPanelRef"
             :src="arkuiImgSrc"
             :highlight="null"
             :highlight-pair="null"
@@ -146,6 +147,7 @@
             @node-click="$emit('arkui-node-click', $event)"
             @node-hover="onArkuiHover"
             @bg-click="$emit('clear-pair')"
+            @zoom="onDevPanelZoom"
           />
         </div>
       </section>
@@ -160,8 +162,9 @@
           <el-icon class="up-tab-arrow"><ArrowRight /></el-icon>
           <button class="up-tab-action" @click="$emit('recheck')">重新上传</button>
         </div>
-        <div class="up-stage up-stage--report">
+        <div class="up-stage up-stage--report" @click="$emit('clear-pair')">
           <ImagePanel
+            ref="designPanelRef"
             :src="designImgSrc"
             :highlight="null"
             :highlight-pair="null"
@@ -180,6 +183,7 @@
             @node-click="$emit('design-node-click', $event)"
             @node-hover="onDesignHover"
             @bg-click="$emit('clear-pair')"
+            @zoom="onDesignPanelZoom"
           />
         </div>
       </section>
@@ -257,7 +261,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ArrowRight, Crop } from '@element-plus/icons-vue'
 import DiffReport from './DiffReport.vue'
 import ImagePanel from './ImagePanel.vue'
@@ -350,7 +354,7 @@ const props = defineProps({
   }
 })
 
-defineEmits([
+const emit = defineEmits([
   'arkui-node-click',
   'design-node-click',
   'clear-diff',
@@ -368,6 +372,25 @@ const rightTab = ref('diff')
 const treeSide = ref('design')
 const debugMappingExpanded = ref(false)
 const emptyLockedIds = new Set()
+
+const devPanelRef    = ref(null)
+const designPanelRef = ref(null)
+
+function onDevPanelZoom({ factor, normX, normY }) {
+  designPanelRef.value?.applyZoom(factor, normX, normY)
+}
+function onDesignPanelZoom({ factor, normX, normY }) {
+  devPanelRef.value?.applyZoom(factor, normX, normY)
+}
+
+function onWindowResize() {
+  devPanelRef.value?.resetZoom()
+  designPanelRef.value?.resetZoom()
+  emit('clear-pair')
+}
+
+onMounted(() => window.addEventListener('resize', onWindowResize))
+onUnmounted(() => window.removeEventListener('resize', onWindowResize))
 
 // ── 左侧 canvas → 右侧 DiffReport 联动 ──────────────────────────────────────
 const hoveredArkuiNodeId  = ref(null)
