@@ -2,9 +2,7 @@
   <!-- ── 中间主区：开发侧 + 设计侧 ── -->
   <main class="center-panel up-board">
     <div v-if="!loading" class="up-columns">
-      <!-- 隐藏的文件选择器 -->
-      <input ref="pickerStep1" type="file" accept=".json,.dump" style="display:none" @change="onStep1Picked" />
-      <input ref="pickerStep2" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.svg" style="display:none" @change="onStep2Picked" />
+      <!-- 隐藏的文件选择器（设计侧） -->
       <input ref="pickerStep3" type="file" accept=".json" style="display:none" @change="onStep3Picked" />
       <input ref="pickerStep4" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.svg" style="display:none" @change="onStep4Picked" />
 
@@ -49,50 +47,15 @@
             :nodes="devPreview.nodes"
           />
           <!-- 上传卡片 -->
-          <div v-else class="phone-card">
-            <div class="phone-bg"></div>
-            <div class="phone-content">
-              <div class="up-upload-card">
-                <!-- Step1 -->
-                <div class="up-step">
-                  <div class="up-step-title">
-                    <span>Step1：{{ selectedPlatform === 'web' ? '上传 JSON 文件' : '上传 ArkUI 树 JSON/DUMP' }}</span>
-                    <span class="up-help" :title="selectedPlatform === 'web' ? '上传 Web DOM 树 JSON 文件' : '下载工具导出 ArkUI 节点树 JSON 或 DUMP 后上传'">?</span>
-                  </div>
-                  <div
-                    :class="['up-drop', { 'has-file': uploadFiles.arkuiJson, 'drag-over': isDragOver }]"
-                    @click="triggerStep1"
-                  >
-                    <img v-if="!uploadFiles.arkuiJson" :src="iconJson" class="up-drop-icon" alt="" />
-                    <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
-                    <div v-if="!uploadFiles.arkuiJson" class="up-drop-text">
-                      <span class="up-link" @click.stop>下载导出 ArkUI 树工具</span>
-                      <span class="up-drop-sub">再将 JSON 文件拖到此处</span>
-                    </div>
-                    <span v-else class="up-drop-done">{{ uploadFiles.arkuiJson.name }}</span>
-                  </div>
-                </div>
-                <!-- Step2 -->
-                <div class="up-step">
-                  <div class="up-step-title up-step-title--center">
-                    <span>Step2：上传开发图片</span>
-                  </div>
-                  <div
-                    :class="['up-drop', { 'has-file': uploadFiles.arkuiImage, 'drag-over': isDragOver, 'is-disabled': !uploadFiles.arkuiJson }]"
-                    @click="triggerStep2"
-                  >
-                    <img v-if="!uploadFiles.arkuiImage" :src="iconImage" class="up-drop-icon" alt="" />
-                    <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
-                    <div v-if="!uploadFiles.arkuiImage" class="up-drop-text">
-                      <span class="up-drop-sub">将图片拖到此处或</span>
-                      <span class="up-link" @click.stop="triggerStep2">单击上传</span>
-                    </div>
-                    <span v-else class="up-drop-done">{{ uploadFiles.arkuiImage.name }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <DevUploadCard
+            v-else
+            :arkui-json="uploadFiles.arkuiJson"
+            :arkui-image="uploadFiles.arkuiImage"
+            :is-drag-over="isDragOver"
+            :platform="selectedPlatform"
+            @pick-json="onDevJsonPicked"
+            @pick-image="file => $emit('step-picked', { type: 'arkuiImage', file })"
+          />
         </div>
       </section>
 
@@ -309,6 +272,7 @@ import { ElMessage } from 'element-plus'
 import { CircleCheck, Loading, ArrowRight, ArrowDown } from '@element-plus/icons-vue'
 import { imageUrl } from '../../../api/index.ts'
 import ImagePanel from './ImagePanel.vue'
+import DevUploadCard from './DevUploadCard.vue'
 import iconJson from '@/assets/upload-json.png'
 import iconImage from '@/assets/upload-image.png'
 import iconEmpty from '@/assets/svg/empty-report.svg'
@@ -402,8 +366,6 @@ watch(() => props.uploadFiles.designJson, newVal => {
 // debugger 模式下设计侧的子模式
 const debugStep3Mode = ref(true)  // true: 传送码模式，false: 文件上传模式
 
-const pickerStep1 = ref(null)
-const pickerStep2 = ref(null)
 const pickerStep3 = ref(null)
 const pickerStep4 = ref(null)
 
@@ -468,14 +430,13 @@ async function validateAnnotationUrl() {
   }
 }
 
-function triggerStep1() { pickerStep1.value?.click() }
-
-function triggerStep2() {
-  if (!props.uploadFiles.arkuiJson) {
-    ElMessage.warning('请先完成 Step 1：上传 ArkUI 的 JSON')
-    return
+async function onDevJsonPicked(file) {
+  emit('step-picked', { type: 'arkuiJson', file })
+  const detected = await detectPlatformFromJson(file)
+  if (detected && detected !== selectedPlatform.value) {
+    selectedPlatform.value = detected
+    emit('platform-switch', detected)
   }
-  pickerStep2.value?.click()
 }
 
 function triggerStep3() {
@@ -492,36 +453,6 @@ function triggerStep4() {
     return
   }
   pickerStep4.value?.click()
-}
-
-async function onStep1Picked(event) {
-  const file = event.target.files?.[0]
-  if (!file) return
-  if (!file.name.endsWith('.json') && !file.name.endsWith('.dump')) {
-    ElMessage.error('请上传 .json 或 .dump 文件')
-    event.target.value = ''
-    return
-  }
-  emit('step-picked', { type: 'arkuiJson', file })
-  const detected = await detectPlatformFromJson(file)
-  if (detected && detected !== selectedPlatform.value) {
-    selectedPlatform.value = detected
-    emit('platform-switch', detected)
-  }
-  event.target.value = ''
-}
-
-function onStep2Picked(event) {
-  const file = event.target.files?.[0]
-  if (!file) return
-  const validExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']
-  if (!file.type.startsWith('image/') && !validExts.some(ext => file.name.toLowerCase().endsWith(ext))) {
-    ElMessage.error('请上传图片文件')
-    event.target.value = ''
-    return
-  }
-  emit('step-picked', { type: 'arkuiImage', file })
-  event.target.value = ''
 }
 
 function onStep3Picked(event) {

@@ -57,6 +57,11 @@
       :case-names="CASE_NAMES"
       :current-platform="currentPlatform"
       :rerun-loading="rerunLoading"
+      :dev-reuploading="devReuploading"
+      :dev-preview="devPreview"
+      :dev-preview-loading="devPreviewLoading"
+      :blob-dev-src="blobUrls.arkui"
+      :upload-files="uploadFiles"
       @select-case="selectCase"
       @arkui-node-click="onArkuiNodeClick"
       @design-node-click="onDesignNodeClick"
@@ -71,6 +76,8 @@
       @toggle-lock="onToggleLock"
       @update:debug-pipeline-on="debugPipelineOn = $event"
       @update:debug-overlay-on="debugOverlayOn = $event"
+      @step-picked="onStepPicked"
+      @clear-dev-preview="clearDevPreview"
     />
     <div
       id="pixso_render"
@@ -120,6 +127,7 @@ const debugMode      = ref(false)
 const debugPipelineOn = ref(false)
 const debugOverlayOn = ref(false)
 const rerunLoading   = ref(false)
+const devReuploading = ref(false)
 
 // 上传页预览状态：文件上传后自动解析并展示
 const devPreview          = ref(null)   // { nodes, canvas } | null
@@ -388,7 +396,7 @@ function resetResult() {
   uploadFiles.value   = { designJson: null, arkuiJson: null, designImage: null, arkuiImage: null }
 }
 
-// 报告页"开发侧重新上传"：保留设计侧数据，仅清空 arkui
+// 报告页"开发侧重新上传"：保留设计侧数据和报告页，仅清空 arkui，进入上传卡片模式
 function recheckDev() {
   uploadFiles.value = { ...uploadFiles.value, arkuiJson: null, arkuiImage: null }
   devPreview.value  = null
@@ -397,10 +405,10 @@ function recheckDev() {
     URL.revokeObjectURL(blobUrls.value.arkui)
     blobUrls.value = { ...blobUrls.value, arkui: '' }
   }
-  result.value        = null
   activeDiff.value    = null
   selectedPair.value  = null
   lockedNodeIds.value = new Set()
+  devReuploading.value = true
 }
 
 // 报告页"设计侧重新上传"：保留 arkui 侧数据，仅清空 design
@@ -459,6 +467,7 @@ async function rerunCheck() {
       ElMessage.warning('没有可用的数据，请重新上传')
       return
     }
+    devReuploading.value = false
     ElMessage.success('重新对比完成')
   } catch (e) {
     ElMessage.error(`分析失败：${e.response?.data?.error || e.message}`)

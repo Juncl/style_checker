@@ -125,10 +125,55 @@
           <span class="up-tab-sep">/</span>
           <span class="up-tab-text">20260306 10:50:15</span>
           <el-icon class="up-tab-arrow"><ArrowRight /></el-icon>
-          <button class="up-tab-action" @click="$emit('recheck-dev')">重新上传</button>
+          <button
+            v-if="!devReuploading"
+            class="up-tab-action"
+            @click="$emit('recheck-dev')"
+          >重新上传</button>
+          <button
+            v-else-if="devPreview || devPreviewLoading"
+            class="up-tab-action"
+            @click="$emit('clear-dev-preview')"
+          >重新上传</button>
         </div>
-        <div class="up-stage up-stage--report" @click="$emit('clear-pair')">
+        <div
+          :class="['up-stage', devReuploading && !devPreview && !devPreviewLoading ? '' : 'up-stage--report']"
+          @click="devReuploading ? undefined : $emit('clear-pair')"
+        >
+          <!-- 重新上传模式 -->
+          <template v-if="devReuploading">
+            <!-- 解析中 -->
+            <div v-if="devPreviewLoading" class="phone-card">
+              <div class="phone-bg"></div>
+              <div class="phone-content phone-content--center">
+                <div class="preview-loading">
+                  <el-icon class="spin" size="32"><Loading /></el-icon>
+                  <span class="preview-loading-text">正在解析节点…</span>
+                </div>
+              </div>
+            </div>
+            <!-- 新文件预览 -->
+            <ImagePanel
+              v-else-if="devPreview"
+              :src="blobDevSrc"
+              :canvas-w="devPreview.canvas.w"
+              :canvas-h="devPreview.canvas.h"
+              :nodes="devPreview.nodes"
+            />
+            <!-- 上传卡片 -->
+            <DevUploadCard
+              v-else
+              :arkui-json="uploadFiles?.arkuiJson ?? null"
+              :arkui-image="uploadFiles?.arkuiImage ?? null"
+              :platform="currentPlatform"
+              :show-download-link="false"
+              @pick-json="file => $emit('step-picked', { type: 'arkuiJson', file })"
+              @pick-image="file => $emit('step-picked', { type: 'arkuiImage', file })"
+            />
+          </template>
+          <!-- 正常报告模式 -->
           <ImagePanel
+            v-else
             ref="devPanelRef"
             :src="arkuiImgSrc"
             :highlight="null"
@@ -273,6 +318,7 @@ import { ArrowRight, Crop, Loading } from '@element-plus/icons-vue'
 import DiffReport from './DiffReport.vue'
 import ImagePanel from './ImagePanel.vue'
 import NodeTree from './NodeTree.vue'
+import DevUploadCard from './DevUploadCard.vue'
 import { imageUrl } from '../../../api/index.ts'
 
 import iconDev from '@/assets/icon-dev.png'
@@ -362,7 +408,27 @@ const props = defineProps({
   rerunLoading: {
     type: Boolean,
     default: false
-  }
+  },
+  devReuploading: {
+    type: Boolean,
+    default: false
+  },
+  devPreview: {
+    type: Object,
+    default: null
+  },
+  devPreviewLoading: {
+    type: Boolean,
+    default: false
+  },
+  blobDevSrc: {
+    type: String,
+    default: ''
+  },
+  uploadFiles: {
+    type: Object,
+    default: () => ({})
+  },
 })
 
 const emit = defineEmits([
@@ -371,15 +437,17 @@ const emit = defineEmits([
   'clear-diff',
   'clear-pair',
   'share',
-  'recheck',        // 完整重置（已弃用但保留兼容）
-  'recheck-dev',    // 仅重置开发侧，保留设计侧
-  'recheck-design', // 仅重置设计侧，保留开发侧
+  'recheck',
+  'recheck-dev',
+  'recheck-design',
   'rerun',
   'diff-select',
   'toggle-lock',
   'update:debug-pipeline-on',
   'update:debug-overlay-on',
   'select-case',
+  'step-picked',
+  'clear-dev-preview',
 ])
 
 const rightTab = ref('diff')
@@ -539,6 +607,24 @@ function validationBg(status) {
 </script>
 
 <style scoped>
+.phone-content--center {
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: #555;
+}
+
+.preview-loading-text {
+  font-size: 12px;
+  color: #777;
+}
+
 .rerun-loading-mask {
   position: absolute;
   inset: 0;
