@@ -74,7 +74,7 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, Loading } from '@element-plus/icons-vue'
-import { getJsonImage } from '../../utils/getJsonImage'
+import { getJsonImage } from '../../utils-inner/getJsonImage'
 import iconJson from '@/assets/upload-json.png'
 import iconImage from '@/assets/upload-image.png'
 

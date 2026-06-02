@@ -253,6 +253,7 @@
           <ImagePanel
             v-else
             ref="designPanelRef"
+            side="design"
             :src="designImgSrc"
             :highlight="null"
             :highlight-pair="null"
@@ -282,7 +283,7 @@
   <aside class="right-panel up-right-panel" style="position: relative;">
     <!-- 标签栏 -->
     <div class="up-tabbar up-tabbar--report">
-      <span class="report-tab-title">差异报告</span>
+      <span class="report-tab-title">分析结果</span>
       <div class="report-links">
         <button class="report-link" @click="$emit('share')">分享</button>
         <span class="report-link-sep"></span>

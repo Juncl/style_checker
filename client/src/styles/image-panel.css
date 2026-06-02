@@ -59,15 +59,13 @@
   position: absolute;
   z-index: 20;
   background: var(--octo-surface-page);
-  border: 1px solid var(--octo-border-default);
+  border: 0.5px solid var(--octo-border-input);
   border-radius: var(--octo-radius-lg);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   overflow: hidden;
-  max-height: 260px;
   max-width: 400px;
   display: flex;
   flex-direction: column;
-  backdrop-filter: blur(4px);
 }
 
 .node-inspector.dragging {
@@ -79,9 +77,9 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 7px 10px 5px;
-  border-bottom: 1px solid var(--octo-border-default);
-  background: var(--octo-bg-light);
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--octo-border-separator);
+  background: var(--octo-surface-page);
   flex-shrink: 0;
   cursor: grab;
   touch-action: none;
@@ -91,13 +89,13 @@
 .node-inspector.dragging .inspector-header { cursor: grabbing; }
 
 .inspector-name {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--octo-text-strong);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--octo-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 110px;
+  max-width: 200px;
 }
 
 .inspector-badge {
@@ -111,60 +109,29 @@
 
 .inspector-body {
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 0 0 8px 0;
 }
 
 .prop-row {
   display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 2px 10px;
-  font-size: 11px;
-  line-height: 1.6;
-  border-left: 3px solid transparent;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+  font-size: 14px;
+  line-height: 1.57;
 }
 
 .prop-row:hover { background: var(--octo-bg-light); }
-.prop-row.diff-error {
-  background: var(--octo-error-bg);
-  border-left-color: var(--octo-error);
-}
-.prop-row.diff-error .prop-key,
-.prop-row.diff-error .prop-val {
-  color: var(--octo-error);
-}
-
-.prop-row.diff-warning {
-  background: var(--octo-warning-bg);
-  border-left-color: var(--octo-warning);
-}
-
-.prop-row.diff-warning .prop-key,
-.prop-row.diff-warning .prop-val {
-  color: var(--octo-warning);
-}
-
-.prop-row.diff-info {
-  background: var(--octo-surface-disabled);
-  border-left-color: var(--octo-text-secondary);
-}
-
-.prop-row.diff-info .prop-key,
-.prop-row.diff-info .prop-val {
-  color: var(--octo-text-secondary);
-}
 
 .prop-key {
   color: var(--octo-text-secondary);
   flex-shrink: 0;
-  width: 82px;
-  word-break: break-all;
+  width: 56px;
 }
 
 .prop-val {
   color: var(--octo-text-primary);
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  font-size: 10.5px;
+  font-size: 14px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -172,6 +139,32 @@
   flex: 1;
   min-width: 0;
   word-break: break-all;
+}
+
+/* 差异值：只改右侧 val，整行不加背景 */
+.prop-row.diff-error .prop-val,
+.prop-row.diff-warning .prop-val {
+  color: var(--report-dev-color);
+  font-weight: 400;
+  background: var(--report-dev-bg);
+  border-radius: 2px;
+  padding: 0 4px;
+}
+
+.prop-row.diff-info .prop-val {
+  color: var(--octo-text-secondary);
+  background: var(--octo-surface-disabled);
+  border-radius: 2px;
+  padding: 0 4px;
+}
+
+/* 设计侧差异值：绿色系 */
+.inspector--design .prop-row.diff-error .prop-val,
+.inspector--design .prop-row.diff-warning .prop-val,
+.inspector--design .prop-row.diff-info .prop-val {
+  color: var(--report-design-color);
+  background: var(--report-design-bg);
+  font-weight: 500;
 }
 
 .prop-val--truncate {
@@ -184,8 +177,8 @@
 }
 
 .color-dot {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 2px;
   border: 1px solid rgba(0,0,0,0.12);
   flex-shrink: 0;

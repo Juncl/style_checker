@@ -279,7 +279,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { getJsonImage } from '../../utils/getJsonImage'
+import { getJsonImage } from '../../utils-inner/getJsonImage'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, Loading, ArrowRight, ArrowDown } from '@element-plus/icons-vue'
 import { imageUrl } from '../../../api/index.ts'

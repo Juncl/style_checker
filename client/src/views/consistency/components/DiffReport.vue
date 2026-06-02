@@ -1,6 +1,30 @@
 <template>
   <div class="diff-panel">
-    <!-- 工具栏：筛选标签 + 搜索 + 低置信开关 -->
+    <!-- 模式 tab：精准检查 / 模糊比对 -->
+    <div class="match-mode-tabs">
+      <div class="match-mode-slider" :class="{ 'match-mode-slider--right': matchMode === 'fuzzy' }"></div>
+      <button
+        :class="['match-mode-tab', { active: matchMode === 'precise' }]"
+        @click="matchMode = 'precise'"
+      >精准检查</button>
+      <div class="fuzzy-tab-wrap"
+        @mouseenter="fuzzyHovered = matchMode === 'precise'"
+        @mouseleave="fuzzyHovered = false"
+      >
+        <button
+          :class="['match-mode-tab', { active: matchMode === 'fuzzy' }]"
+          @click="matchMode = 'fuzzy'"
+        >模糊比对</button>
+        <transition name="tooltip-fade">
+          <div v-if="matchMode === 'precise' && fuzzyHovered" class="fuzzy-tooltip">
+            <span class="fuzzy-tooltip-arrow"></span>
+            匹配非精准结果，仅供参考
+          </div>
+        </transition>
+      </div>
+    </div>
+
+    <!-- 工具栏：筛选标签 + 搜索 -->
     <div class="diff-toolbar">
       <div class="diff-tabs">
         <button
@@ -22,10 +46,6 @@
         >
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <label class="diff-lowconf">
-          <span>低置信</span>
-          <el-switch v-model="showLowConfidence" />
-        </label>
       </div>
     </div>
 
@@ -50,7 +70,10 @@
       >
         <!-- 卡片头 -->
         <div class="diff-card-head">
-          <span class="diff-card-name" :title="cardName(d)">{{ cardName(d) }}</span>
+          <div class="diff-card-title">
+            <span v-if="d.confidence === 'low'" class="diff-low-badge">低置信</span>
+            <span class="diff-card-name" :title="cardName(d)">{{ cardName(d) }}</span>
+          </div>
           <span class="diff-card-ops">
             <span class="diff-card-more">
               <svg viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -141,15 +164,16 @@ const ISSUE_GROUPS = [
   { key: 'spacing', label: '间距' }, { key: 'fontSize.scale', label: '字体缩放' }, { key: 'other', label: '其它' },
 ]
 
-const activeIssue = ref('all')
-const showLowConfidence = ref(false)
-const search      = ref('')
+const activeIssue  = ref('all')
+const matchMode    = ref('precise')  // 'precise'=高中置信 | 'fuzzy'=高中低
+const fuzzyHovered = ref(false)
+const search       = ref('')
 const selectedIdx = ref(-1)
 const listRef     = ref(null)
 const folded      = ref(new Set())
 
 const visibleDiffs = computed(() =>
-  showLowConfidence.value ? props.diffs : props.diffs.filter(d => d.confidence !== 'low')
+  matchMode.value === 'fuzzy' ? props.diffs : props.diffs.filter(d => d.confidence !== 'low')
 )
 const IGNORED_ISSUE_PROPS = new Set(['textAlign'])
 const issueGroups = computed(() =>
@@ -177,9 +201,12 @@ const filteredDiffs = computed(() => {
       (d.designName || '').includes(q)
     )
   }
-  const sevOrder = { error: 0, warning: 1, info: 2 }
+  const confOrder  = { high: 0, medium: 1, low: 2 }
+  const sevOrder   = { error: 0, warning: 1, info: 2 }
   const issueOrder = Object.fromEntries(ISSUE_GROUPS.map((g, idx) => [g.key, idx]))
   return list.slice().sort((a, b) => {
+    const confDelta = (confOrder[a.confidence] ?? 1) - (confOrder[b.confidence] ?? 1)
+    if (confDelta !== 0) return confDelta
     const issueDelta = (issueOrder[issueKey(a.property)] ?? 99) - (issueOrder[issueKey(b.property)] ?? 99)
     if (activeIssue.value === 'all' && issueDelta !== 0) return issueDelta
     return (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9)
@@ -329,7 +356,7 @@ function issueLabel(property) {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
+  padding: 16px 16px 0;
 }
 
 .diff-tabs {
@@ -380,14 +407,53 @@ function issueLabel(property) {
   color: var(--octo-text-placeholder);
 }
 
-.diff-lowconf {
+.match-mode-tabs {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   flex-shrink: 0;
+  width: fit-content;
+  background: rgba(25, 25, 25, 0.05);
+  border-radius: 6px;
+  padding: 2px;
+  margin: 16px 16px 0;
+  position: relative;
+}
+
+.match-mode-slider {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc((100% - 6px) / 2);
+  height: calc(100% - 4px);
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+  transition: transform 200ms ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.match-mode-slider--right {
+  transform: translateX(calc(100% + 2px));
+}
+
+.match-mode-tab {
+  position: relative;
+  z-index: 1;
+  height: 28px;
+  padding: 0 16px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
   font-size: 14px;
   color: var(--octo-text-secondary);
   cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.match-mode-tab.active {
+  color: var(--octo-primary);
 }
 
 /* ── 卡片列表 ── */
@@ -395,7 +461,7 @@ function issueLabel(property) {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 16px 16px;
+  padding: 16px 16px 16px;
 }
 
 .diff-empty {
@@ -458,7 +524,30 @@ function issueLabel(property) {
   cursor: pointer;
 }
 
+.diff-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.diff-low-badge {
+  flex-shrink: 0;
+  height: 24px;
+  padding: 2px 8px;
+  background: rgba(208, 216, 253, 0.50);
+  color: #1F55B5;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
 .diff-card-name {
+  flex: 1;
+  min-width: 0;
   font-size: 14px;
   font-weight: 500;
   color: var(--octo-text-primary);
@@ -591,5 +680,50 @@ function issueLabel(property) {
   border-radius: 2px;
   border: 1px solid rgba(0, 0, 0, 0.12);
   flex-shrink: 0;
+}
+
+/* ── 模糊比对 tooltip ── */
+.fuzzy-tab-wrap {
+  position: relative;
+}
+
+.fuzzy-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: #fff;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 14px;
+  line-height: 22px;
+  color: #191919;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+  pointer-events: none;
+  z-index: 100;
+}
+
+.fuzzy-tooltip-arrow {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 6px solid #fff;
+}
+
+.tooltip-fade-enter-active,
+.tooltip-fade-leave-active {
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.tooltip-fade-enter-from,
+.tooltip-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-4px);
 }
 </style>

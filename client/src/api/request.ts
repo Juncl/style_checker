@@ -1,11 +1,18 @@
-import axios, { type AxiosRequestConfig } from 'axios'
+import axios from 'axios'
+import { ADMIN_BASE_URL } from './adminEnv'
 
-const mockHttp = axios.create({ baseURL: '/mock' })
+class Request {
+  http = axios.create({ baseURL: ADMIN_BASE_URL })
 
-export function get<T = unknown>(url: string, params?: Record<string, unknown>): Promise<T> {
-  return mockHttp.get<T>(url, { params }).then(r => r.data)
+  async get(url, _responseType, headers) {
+    const ret = await this.http.get(url, { headers })
+    return ret.data
+  }
+
+  async post(url, data) {
+    const ret = await this.http.post(url, data)
+    return ret.data
+  }
 }
 
-export function post<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
-  return mockHttp.post<T>(url, data, config).then(r => r.data)
-}
+export const Api = new Request()

@@ -1,9 +1,9 @@
-import { checkAuth } from './checkAuth'
-import { mountPixso } from './mountPixso'
-import { detectIframe } from './detectIframe'
+import { checkAuth } from './inner/checkAuth'
+import { mountPixso } from './inner/mountPixso'
+import { detectIframe } from './inner/detectIframe'
+import { trackEntry } from './inner/trackEntry'
+import { loadDeliverable } from './inner/loadDeliverable'
 import { restorePlatform } from './restorePlatform'
-import { trackEntry } from './trackEntry'
-import { loadDeliverable } from './loadDeliverable'
 
 type PlatformKey = 'hmPhone' | 'hmWatch' | 'web'
 

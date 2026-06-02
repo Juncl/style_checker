@@ -21,7 +21,7 @@
         v-if="inspectorNode && (displayStyle.length || debugMode)"
         ref="inspectorRef"
         class="node-inspector"
-        :class="{ dragging: isDraggingInspector }"
+        :class="{ dragging: isDraggingInspector, 'inspector--design': side === 'design' }"
         :style="inspectorPos"
         @click.stop
       >
@@ -74,6 +74,7 @@ const props = defineProps({
   styleDiffs:   { type: Array,   default: () => [] },
   lockedIds:         { type: Object,  default: () => new Set() }, // Set<string>，不参与图片点击
   externalHoveredId: { type: String,  default: null },
+  side:              { type: String,  default: 'dev' },   // 'dev' | 'design'
   debugMode:         { type: Boolean, default: false },
   debugPipelineVisible: { type: Boolean, default: false },
   debugVisible: { type: Boolean, default: false },
@@ -588,20 +589,14 @@ function toInspectorStyle(left, top) {
 
   const panelH = panel.clientHeight || 0
   const inspectorH = inspector.offsetHeight || 220
-  const defaultMaxH = 260
 
-  // 检查是否会被底部裁剪
-  let maxHeight = defaultMaxH
+  // 检查是否会被底部裁剪，仅在快超出时才限制高度
+  const style = { left: `${left}px`, top: `${top}px` }
   const bottomSpace = panelH - top
   if (bottomSpace < inspectorH) {
-    maxHeight = Math.max(40, bottomSpace - 8)
+    style.maxHeight = `${Math.max(40, bottomSpace - 8)}px`
   }
-
-  return {
-    left: `${left}px`,
-    top: `${top}px`,
-    maxHeight: `${maxHeight}px`,
-  }
+  return style
 }
 
 // ── 样式格式化 ──────────────────────────────────────────────────────────────
