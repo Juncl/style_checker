@@ -135,6 +135,10 @@ router.post('/check/case/:caseId', async (req, res) => {
     if (validationPath) {
       result.matchValidation = JSON.parse(readFileSync(validationPath, 'utf-8'))
     }
+    // 附带原始文件内容，供前端将 case 等价为手动上传的 4 个文件
+    result._rawDesignJson = designJson
+    result._rawDevContent = devContent
+    result._devImgExt     = devImgFile.endsWith('.jpeg') ? 'jpeg' : 'png'
     res.json(result)
   } catch (err) {
     console.error(err)

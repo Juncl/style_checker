@@ -18,6 +18,11 @@ export const DEBUG_COLORS: string[] = [
   '#14b8a6', '#f97316', '#22c55e', '#a855f7', '#e11d48', '#2563eb',
 ]
 
+export const GUIDE_LINKS = {
+  terminal: 'https://www.baidu.com',
+  web:      'https://www.google.com',
+}
+
 export const FILE_SLOTS = [
   { key: 'designJson',  label: 'design.json', required: true,  match: (f: File) => /design/i.test(f.name) && f.name.endsWith('.json') },
   { key: 'arkuiJson',   label: 'arkui.json',  required: true,  match: (f: File) => /arkui/i.test(f.name)  && f.name.endsWith('.json') },

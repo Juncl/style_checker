@@ -58,9 +58,13 @@
       :current-platform="currentPlatform"
       :rerun-loading="rerunLoading"
       :dev-reuploading="devReuploading"
+      :design-reuploading="designReuploading"
       :dev-preview="devPreview"
       :dev-preview-loading="devPreviewLoading"
+      :design-preview="designPreview"
+      :design-preview-loading="designPreviewLoading"
       :blob-dev-src="blobUrls.arkui"
+      :blob-design-src="blobUrls.design"
       :upload-files="uploadFiles"
       @select-case="selectCase"
       @arkui-node-click="onArkuiNodeClick"
@@ -78,6 +82,7 @@
       @update:debug-overlay-on="debugOverlayOn = $event"
       @step-picked="onStepPicked"
       @clear-dev-preview="clearDevPreview"
+      @clear-design-preview="clearDesignPreview"
     />
     <div
       id="pixso_render"
@@ -126,8 +131,9 @@ const uploadPageRef = ref(null)
 const debugMode      = ref(false)
 const debugPipelineOn = ref(false)
 const debugOverlayOn = ref(false)
-const rerunLoading   = ref(false)
-const devReuploading = ref(false)
+const rerunLoading      = ref(false)
+const devReuploading    = ref(false)
+const designReuploading = ref(false)
 
 // 上传页预览状态：文件上传后自动解析并展示
 const devPreview          = ref(null)   // { nodes, canvas } | null
@@ -248,25 +254,42 @@ function revokeBlobUrls() {
 }
 onUnmounted(revokeBlobUrls)
 
-function onStepPicked({ type, file }) {
+async function onStepPicked({ type, file }) {
   if (!file) return
   const next = { ...uploadFiles.value }
-  if (type === 'arkuiJson')       next.arkuiJson   = file
-  else if (type === 'arkuiImage') next.arkuiImage  = file
-  else if (type === 'designJson') next.designJson  = file
-  else if (type === 'designImage') next.designImage = file
+  if (type === 'arkuiJson')        next.arkuiJson    = file
+  else if (type === 'arkuiImage')  next.arkuiImage   = file
+  else if (type === 'designJson')  next.designJson   = file
+  else if (type === 'designImage') next.designImage  = file
   selectedCase.value = ''
   uploadFiles.value = next
-  revokeBlobUrls()
-  if (next.designImage) blobUrls.value.design = URL.createObjectURL(next.designImage)
-  if (next.arkuiImage)  blobUrls.value.arkui  = URL.createObjectURL(next.arkuiImage)
 
-  // 更新了开发侧文件 → 满足条件时触发节点预览
+  // 按侧更新 blob URL，避免影响另一侧的图片显示
   if (type === 'arkuiJson' || type === 'arkuiImage') {
-    const devReady = next.arkuiJson && (currentPlatform.value === 'web' || next.arkuiImage)
-    if (devReady) triggerDevPreview(next)
+    if (blobUrls.value.arkui) URL.revokeObjectURL(blobUrls.value.arkui)
+    blobUrls.value = { ...blobUrls.value, arkui: next.arkuiImage ? URL.createObjectURL(next.arkuiImage) : '' }
+  } else {
+    if (blobUrls.value.design) URL.revokeObjectURL(blobUrls.value.design)
+    blobUrls.value = { ...blobUrls.value, design: next.designImage ? URL.createObjectURL(next.designImage) : '' }
   }
-  // 更新了设计侧文件（含 URL/传送码回调）→ 两者都齐时触发预览
+
+  // arkuiJson 上传时，由 json 内容决定平台，更新全局状态和缓存
+  if (type === 'arkuiJson') {
+    const detected = await detectPlatformFromJson(file)
+    if (detected && detected !== currentPlatform.value) {
+      currentPlatform.value = detected
+      savePlatform(detected)
+      cases.value = []
+      try { cases.value = await fetchCases(detected) }
+      catch { ElMessage.warning(`无法加载 ${detected} 的 Case 列表`) }
+    }
+  }
+
+  // 开发侧 json + 图片都齐才触发节点预览
+  if (type === 'arkuiJson' || type === 'arkuiImage') {
+    if (next.arkuiJson && next.arkuiImage) triggerDevPreview(next)
+  }
+  // 设计侧 json + 图片都齐才触发预览
   if (type === 'designJson' || type === 'designImage') {
     if (next.designJson && next.designImage) triggerDesignPreview(next)
   }
@@ -302,7 +325,7 @@ function assignFiles(files) {
   if (next.designImage) blobUrls.value.design = URL.createObjectURL(next.designImage)
   if (next.arkuiImage)  blobUrls.value.arkui  = URL.createObjectURL(next.arkuiImage)
 
-  const devReady    = next.arkuiJson && (currentPlatform.value === 'web' || next.arkuiImage)
+  const devReady    = next.arkuiJson && next.arkuiImage
   const designReady = next.designJson && next.designImage
 
   if (devReady && designReady) {
@@ -315,12 +338,8 @@ function assignFiles(files) {
   }
 }
 
-const designImgSrc = computed(() =>
-  selectedCase.value ? imageUrl(selectedCase.value, 'design', currentPlatform.value) : blobUrls.value.design
-)
-const arkuiImgSrc = computed(() =>
-  selectedCase.value ? imageUrl(selectedCase.value, 'arkui', currentPlatform.value) : blobUrls.value.arkui
-)
+const designImgSrc = computed(() => blobUrls.value.design)
+const arkuiImgSrc  = computed(() => blobUrls.value.arkui)
 
 onMounted(async () => {
   const { platform, deliverable } = await initApp()
@@ -346,8 +365,24 @@ async function onPlatformSwitch(platform) {
   currentPlatform.value = platform
   savePlatform(platform)
   selectedCase.value = ''
+  cases.value = []
   try { cases.value = await fetchCases(platform) }
   catch { ElMessage.warning(`无法加载 ${platform} 的 Case 列表`) }
+}
+
+async function detectPlatformFromJson(file) {
+  try {
+    const text = await file.text()
+    const json = JSON.parse(text)
+    if (json.deviceType === 'web') return 'web'
+    if (json.name === 'viewport') return 'web'
+    if (json.content && json.content.width != null) {
+      const w = parseFloat(json.content.width)
+      if (Number.isFinite(w) && w < 600) return 'hmWatch'
+      return 'hmPhone'
+    }
+  } catch { /* 解析失败不切换平台 */ }
+  return null
 }
 
 watch(debugMode, value => {
@@ -411,7 +446,7 @@ function recheckDev() {
   devReuploading.value = true
 }
 
-// 报告页"设计侧重新上传"：保留 arkui 侧数据，仅清空 design
+// 报告页"设计侧重新上传"：保留 arkui 侧数据和 result，仅清空 design 文件并进入上传卡片模式
 function recheckDesign() {
   uploadFiles.value = { ...uploadFiles.value, designJson: null, designImage: null }
   designPreview.value = null
@@ -420,10 +455,10 @@ function recheckDesign() {
     URL.revokeObjectURL(blobUrls.value.design)
     blobUrls.value = { ...blobUrls.value, design: '' }
   }
-  result.value        = null
-  activeDiff.value    = null
-  selectedPair.value  = null
-  lockedNodeIds.value = new Set()
+  activeDiff.value        = null
+  selectedPair.value      = null
+  lockedNodeIds.value     = new Set()
+  designReuploading.value = true
 }
 
 // 上传页内"重新上传"按钮：仅清空对应侧
@@ -453,9 +488,7 @@ async function rerunCheck() {
   lockedNodeIds.value = new Set()
   rerunLoading.value  = true
   try {
-    if (selectedCase.value) {
-      result.value = await checkCase(selectedCase.value, currentPlatform.value)
-    } else if (uploadFiles.value.designJson && uploadFiles.value.arkuiJson) {
+    if (uploadFiles.value.designJson && uploadFiles.value.arkuiJson) {
       result.value = await checkUpload(
         uploadFiles.value.designJson,
         uploadFiles.value.arkuiJson,
@@ -467,7 +500,8 @@ async function rerunCheck() {
       ElMessage.warning('没有可用的数据，请重新上传')
       return
     }
-    devReuploading.value = false
+    devReuploading.value    = false
+    designReuploading.value = false
     ElMessage.success('重新对比完成')
   } catch (e) {
     ElMessage.error(`分析失败：${e.response?.data?.error || e.message}`)
@@ -602,7 +636,54 @@ async function selectCase(id) {
   loading.value       = true
   result.value        = null
   revokeBlobUrls()
-  try { result.value = await checkCase(id, currentPlatform.value) }
+  try {
+    const data = await checkCase(id, currentPlatform.value)
+
+    // 从响应中取出原始文件内容，构造 File 对象（等价于用户手动上传 4 个文件）
+    const rawDesignJson = data._rawDesignJson
+    const rawDevContent = data._rawDevContent
+    const devImgExt     = data._devImgExt || 'png'
+    delete data._rawDesignJson
+    delete data._rawDevContent
+    delete data._devImgExt
+    result.value = data
+
+    // 构造 JSON File 对象
+    const designJsonBlob = new Blob([JSON.stringify(rawDesignJson)], { type: 'application/json' })
+    const designJsonFile = new File([designJsonBlob], 'design.json', { type: 'application/json' })
+    let devJsonFile
+    if (typeof rawDevContent === 'string') {
+      const blob = new Blob([rawDevContent], { type: 'text/plain' })
+      devJsonFile = new File([blob], 'arkui.dump', { type: 'text/plain' })
+    } else {
+      const blob = new Blob([JSON.stringify(rawDevContent)], { type: 'application/json' })
+      devJsonFile = new File([blob], 'arkui.json', { type: 'application/json' })
+    }
+
+    // 并行 fetch 图片，转 File 对象
+    const arkuiImgUrl  = imageUrl(id, 'arkui',  currentPlatform.value)
+    const designImgUrl = imageUrl(id, 'design', currentPlatform.value)
+    const [arkuiImgBlob, designImgBlob] = await Promise.all([
+      fetch(arkuiImgUrl).then(r => r.blob()),
+      fetch(designImgUrl).then(r => r.blob()),
+    ])
+    const arkuiImgFile  = new File([arkuiImgBlob],  `arkui.${devImgExt}`,  { type: arkuiImgBlob.type  || `image/${devImgExt}` })
+    const designImgFile = new File([designImgBlob], 'design.png', { type: designImgBlob.type || 'image/png' })
+
+    // 存入 uploadFiles，此后与手动上传路径完全一致
+    uploadFiles.value = {
+      designJson:  designJsonFile,
+      arkuiJson:   devJsonFile,
+      designImage: designImgFile,
+      arkuiImage:  arkuiImgFile,
+    }
+
+    // 创建 blob URL 用于图片显示
+    blobUrls.value = {
+      arkui:  URL.createObjectURL(arkuiImgBlob),
+      design: URL.createObjectURL(designImgBlob),
+    }
+  }
   catch (e) { ElMessage.error(`分析失败：${e.response?.data?.error || e.message}`) }
   finally    { loading.value = false }
 }

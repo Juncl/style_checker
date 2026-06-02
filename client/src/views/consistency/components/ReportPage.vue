@@ -205,10 +205,53 @@
           <span class="up-tab-sep">/</span>
           <span class="up-tab-text">主题购买页面示例</span>
           <el-icon class="up-tab-arrow"><ArrowRight /></el-icon>
-          <button class="up-tab-action" @click="$emit('recheck-design')">重新上传</button>
+          <button
+            v-if="!designReuploading"
+            class="up-tab-action"
+            @click="$emit('recheck-design')"
+          >重新上传</button>
+          <button
+            v-else-if="designPreview || designPreviewLoading"
+            class="up-tab-action"
+            @click="$emit('clear-design-preview')"
+          >重新上传</button>
         </div>
-        <div class="up-stage up-stage--report" @click="$emit('clear-pair')">
+        <div
+          :class="['up-stage', designReuploading && !designPreview && !designPreviewLoading ? '' : 'up-stage--report']"
+          @click="designReuploading ? undefined : $emit('clear-pair')"
+        >
+          <!-- 重新上传模式 -->
+          <template v-if="designReuploading">
+            <!-- 解析中 -->
+            <div v-if="designPreviewLoading" class="phone-card">
+              <div class="phone-bg"></div>
+              <div class="phone-content phone-content--center">
+                <div class="preview-loading">
+                  <el-icon class="spin" size="32"><Loading /></el-icon>
+                  <span class="preview-loading-text">正在解析节点…</span>
+                </div>
+              </div>
+            </div>
+            <!-- 新文件预览 -->
+            <ImagePanel
+              v-else-if="designPreview"
+              :src="blobDesignSrc"
+              :canvas-w="designPreview.canvas.w"
+              :canvas-h="designPreview.canvas.h"
+              :nodes="designPreview.nodes"
+            />
+            <!-- 上传卡片 -->
+            <DesignUploadCard
+              v-else
+              :design-json="uploadFiles?.designJson ?? null"
+              :design-image="uploadFiles?.designImage ?? null"
+              :debug-mode="debugMode"
+              @step-picked="$emit('step-picked', $event)"
+            />
+          </template>
+          <!-- 正常报告模式 -->
           <ImagePanel
+            v-else
             ref="designPanelRef"
             :src="designImgSrc"
             :highlight="null"
@@ -245,7 +288,12 @@
         <span class="report-link-sep"></span>
         <button class="report-link">历史报告</button>
         <span class="report-link-sep"></span>
-        <button class="report-link" @click="$emit('rerun')">重新对比</button>
+        <button
+          class="report-link"
+          :class="{ 'report-link--disabled': !canRerun }"
+          :disabled="!canRerun"
+          @click="$emit('rerun')"
+        >重新对比</button>
       </div>
     </div>
 
@@ -319,6 +367,7 @@ import DiffReport from './DiffReport.vue'
 import ImagePanel from './ImagePanel.vue'
 import NodeTree from './NodeTree.vue'
 import DevUploadCard from './DevUploadCard.vue'
+import DesignUploadCard from './DesignUploadCard.vue'
 import { imageUrl } from '../../../api/index.ts'
 
 import iconDev from '@/assets/icon-dev.png'
@@ -413,6 +462,10 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  designReuploading: {
+    type: Boolean,
+    default: false
+  },
   devPreview: {
     type: Object,
     default: null
@@ -421,7 +474,19 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  designPreview: {
+    type: Object,
+    default: null
+  },
+  designPreviewLoading: {
+    type: Boolean,
+    default: false
+  },
   blobDevSrc: {
+    type: String,
+    default: ''
+  },
+  blobDesignSrc: {
     type: String,
     default: ''
   },
@@ -440,6 +505,7 @@ const emit = defineEmits([
   'recheck',
   'recheck-dev',
   'recheck-design',
+  'clear-design-preview',
   'rerun',
   'diff-select',
   'toggle-lock',
@@ -452,6 +518,12 @@ const emit = defineEmits([
 
 const rightTab = ref('diff')
 const treeSide = ref('design')
+
+const canRerun = computed(() => {
+  const devOk    = !props.devReuploading    || !!props.devPreview
+  const designOk = !props.designReuploading || !!props.designPreview
+  return devOk && designOk && !props.rerunLoading
+})
 const debugMappingExpanded = ref(false)
 const emptyLockedIds = new Set()
 

@@ -1,0 +1,27 @@
+<svg viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="56.000000" height="56.000000" fill="none">
+	<defs>
+		<linearGradient id="paint_linear_0" x1="3" x2="42.5227852" y1="3" y2="45.5184631" gradientUnits="userSpaceOnUse">
+			<stop stop-color="rgb(176,191,253)" offset="0" stop-opacity="1" />
+			<stop stop-color="rgb(32,112,243)" offset="1" stop-opacity="1" />
+		</linearGradient>
+		<radialGradient id="paint_radial_0" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="matrix(26.6968,0,0,26.6968,34.5217,33.9783)">
+			<stop stop-color="rgb(89,145,255)" offset="0" stop-opacity="1" />
+			<stop stop-color="rgb(128,171,253)" offset="0.426257253" stop-opacity="1" />
+			<stop stop-color="rgb(195,214,255)" offset="1" stop-opacity="1" />
+		</radialGradient>
+		<linearGradient id="paint_linear_1" x1="34.5217171" x2="34.5217171" y1="14.9565125" y2="52.9999962" gradientUnits="userSpaceOnUse">
+			<stop stop-color="rgb(255,255,255)" offset="0" stop-opacity="1" />
+			<stop stop-color="rgb(255,255,255)" offset="1" stop-opacity="0" />
+		</linearGradient>
+	</defs>
+	<rect id="ic_nce_template_management_material" width="56.000000" height="56.000000" x="0.000000" y="0.000000" />
+	<g id="ic_nce_template_management_material-模板管理">
+		<path id="path" d="M22.5652 28L10.6086 28L10.6086 17.1304C10.6086 13.5286 13.5285 10.6087 17.1304 10.6087L22.5652 10.6087L22.5652 28Z" fill="rgb(32,112,243)" fill-rule="evenodd" />
+		<path id="path" d="M10.6086 28L10.6086 17.1304C10.6086 13.5286 13.5285 10.6087 17.1304 10.6087L22.5652 10.6087L22.5652 28L10.6086 28Z" fill-rule="evenodd" stroke="rgb(32,112,243)" stroke-linejoin="round" stroke-width="2.173913" />
+		<rect id="path" width="50.000000" height="50.000000" x="3.000000" y="3.000000" rx="6.521739" fill="url(#paint_linear_0)" />
+		<path id="path" d="M53 21.4783L42.1304 21.4783C42.1304 17.8764 39.2106 14.9565 35.6087 14.9565C32.0068 14.9565 29.087 17.8764 29.087 21.4783L3 21.4783" opacity="0.400000006" fill-rule="evenodd" stroke="rgb(255,255,255)" stroke-linejoin="round" stroke-width="1.304348" />
+		<path id="path" d="M50 6.52174L39.1304 6.52174C39.1304 2.91988 36.2106 0 32.6087 0C29.0068 0 26.087 2.91988 26.087 6.52174L0 6.52174" opacity="0.400000006" fill-rule="evenodd" stroke="rgb(255,255,255)" stroke-linejoin="round" stroke-width="1.304348" transform="matrix(0,1,-1,0,22.5652,3)" />
+		<path id="path" d="M35.6087 14.9565C39.2105 14.9565 42.1304 17.8764 42.1304 21.4783L53 21.4783L53 46.4783C53 50.0801 50.0801 53 46.4782 53L16.0435 53L16.0435 42.1304C19.6453 42.1304 22.5652 39.2105 22.5652 35.6087C22.5652 32.0068 19.6453 29.0869 16.0435 29.0869L16.0435 21.4783L29.0869 21.4783C29.0869 17.8764 32.0068 14.9565 35.6087 14.9565Z" fill="url(#paint_radial_0)" fill-rule="evenodd" />
+		<path id="path" d="M42.1304 21.4783L53 21.4783L53 46.4783C53 50.0801 50.0801 53 46.4782 53L16.0435 53L16.0435 42.1304C19.6453 42.1304 22.5652 39.2105 22.5652 35.6087C22.5652 32.0068 19.6453 29.0869 16.0435 29.0869L16.0435 21.4783L29.0869 21.4783C29.0869 17.8764 32.0068 14.9565 35.6087 14.9565C39.2105 14.9565 42.1304 17.8764 42.1304 21.4783Z" fill-rule="nonzero" stroke="url(#paint_linear_1)" stroke-width="1.304348" />
+	</g>
+</svg>

@@ -106,24 +106,24 @@
                     <el-icon class="spin"><Loading /></el-icon>
                   </div>
                   <div class="up-step-title up-step-title--center up-step-title--row">
-                    <span>Step3：输入传送码</span>
+                    <span>Step3:输入传送码</span>
                     <button class="debug-inline-toggle" @click="debugStep3Mode = false" title="切换到文件上传">⇄ 切换</button>
                   </div>
                   <div class="up-url-card">
+                    <img :src="iconStep3" class="up-url-icon" alt="" />
                     <el-input
                       v-model="annotationUrl"
-                      type="textarea"
-                      :rows="7"
                       placeholder="请输入标注视图URL/传送码"
-                      class="up-url-textarea"
+                      class="up-url-input"
+                      @keyup.enter="validateAnnotationUrl"
                     />
-                    <el-button
-                      type="primary"
-                      class="up-url-btn"
-                      :disabled="!annotationUrl.trim()"
-                      @click="validateAnnotationUrl"
-                    >确认</el-button>
                   </div>
+                  <el-button
+                    type="primary"
+                    class="up-url-btn"
+                    :disabled="!annotationUrl.trim()"
+                    @click="validateAnnotationUrl"
+                  >确认</el-button>
                 </div>
                 <!-- 文件上传模式 -->
                 <div v-else class="up-upload-card">
@@ -170,23 +170,23 @@
                   <el-icon class="spin"><Loading /></el-icon>
                 </div>
                 <div class="up-step-title up-step-title--center">
-                  <span>Step3：输入标注视图 URL / 传送码</span>
+                  <span>Step3:输入标注视图URL/传送码</span>
                 </div>
                 <div class="up-url-card">
+                  <img :src="iconStep3" class="up-url-icon" alt="" />
                   <el-input
                     v-model="annotationUrl"
-                    type="textarea"
-                    :rows="7"
                     placeholder="请输入标注视图URL/传送码"
-                    class="up-url-textarea"
+                    class="up-url-input"
+                    @keyup.enter="validateAnnotationUrl"
                   />
-                  <el-button
-                    type="primary"
-                    class="up-url-btn"
-                    :disabled="!annotationUrl.trim()"
-                    @click="validateAnnotationUrl"
-                  >确认</el-button>
                 </div>
+                <el-button
+                  type="primary"
+                  class="up-url-btn"
+                  :disabled="!annotationUrl.trim()"
+                  @click="validateAnnotationUrl"
+                >确认</el-button>
               </div>
             </div>
           </div>
@@ -207,13 +207,20 @@
       <div class="report-empty">
         <img :src="iconEmpty" class="report-empty-img" alt="" />
         <p class="report-empty-hint">请完成操作指引<br />导入待检查页面后开始检查</p>
-        <div class="report-device-row">
-          <select class="report-device-select" :value="selectedPlatform" @change="onPlatformSwitch($event.target.value)">
-            <option value="hmPhone">鸿蒙-手机</option>
-            <option value="hmWatch">鸿蒙-手表</option>
-            <option value="web">web网页</option>
-          </select>
-          <el-icon class="report-device-arrow"><ArrowDown /></el-icon>
+        <div class="report-device-row" ref="platformDropdownRef">
+          <div class="report-device-trigger" @click="togglePlatformDropdown">
+            <span class="report-device-text">{{ platformLabel }}</span>
+            <el-icon class="report-device-arrow" :class="{ 'is-open': platformDropdownOpen }"><ArrowDown /></el-icon>
+          </div>
+          <div v-show="platformDropdownOpen" class="platform-dropdown-panel">
+            <div
+              v-for="opt in platformOptions"
+              :key="opt.value"
+              class="platform-dropdown-item"
+              :class="{ 'is-selected': selectedPlatform === opt.value }"
+              @click="selectPlatformOption(opt.value)"
+            >{{ opt.label }}</div>
+          </div>
         </div>
         <el-button
           type="primary"
@@ -229,16 +236,21 @@
         <div class="cases-head">
           <span class="cases-head-title">试用案例</span>
           <span class="cases-head-hint">点击下方案例即刻体验~</span>
-          <select
-            v-if="debugMode"
-            class="cases-platform-select"
-            :value="currentPlatform"
-            @change="onPlatformSwitch($event.target.value)"
-          >
-            <option value="hmPhone">鸿蒙-手机</option>
-            <option value="hmWatch">鸿蒙-手表</option>
-            <option value="web">web网页</option>
-          </select>
+          <div v-if="debugMode" class="cases-platform-dropdown" ref="casesPlatformRef">
+            <div class="cases-platform-trigger" @click="toggleCasesPlatform">
+              <span class="cases-platform-text">{{ platformLabel }}</span>
+              <el-icon class="cases-platform-arrow" :class="{ 'is-open': casesPlatformOpen }"><ArrowDown /></el-icon>
+            </div>
+            <div v-show="casesPlatformOpen" class="cases-platform-panel">
+              <div
+                v-for="opt in platformOptions"
+                :key="opt.value"
+                class="cases-platform-item"
+                :class="{ 'is-selected': currentPlatform === opt.value }"
+                @click="selectCasesPlatformOption(opt.value)"
+              >{{ opt.label }}</div>
+            </div>
+          </div>
         </div>
         <div v-if="!cases.length" class="cases-loading">加载中…</div>
         <div class="cases-list">
@@ -266,7 +278,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { getJsonImage } from '../../utils/getJsonImage'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, Loading, ArrowRight, ArrowDown } from '@element-plus/icons-vue'
@@ -276,6 +288,7 @@ import DevUploadCard from './DevUploadCard.vue'
 import iconJson from '@/assets/upload-json.png'
 import iconImage from '@/assets/upload-image.png'
 import iconEmpty from '@/assets/svg/empty-report.svg'
+import iconStep3 from '@/assets/svg/Step3-up.svg'
 import iconDev from '@/assets/icon-dev.png'
 import iconDesign from '@/assets/icon-design.png'
 
@@ -373,7 +386,7 @@ const pickerStep4 = ref(null)
 const canStartCheck = computed(() => {
   const f = props.uploadFiles
   if (!f.designJson || !f.arkuiJson) return false
-  if (selectedPlatform.value !== 'web' && !f.arkuiImage) return false
+  if (!f.arkuiImage) return false
   if (!f.designImage) return false
   return true
 })
@@ -387,20 +400,53 @@ function onPlatformSwitch(platform) {
   emit('platform-switch', platform)
 }
 
-async function detectPlatformFromJson(file) {
-  try {
-    const text = await file.text()
-    const json = JSON.parse(text)
-    if (json.deviceType === 'web') return 'web'
-    if (json.name === 'viewport') return 'web'
-    if (json.content && json.content.width != null) {
-      const w = parseFloat(json.content.width)
-      if (Number.isFinite(w) && w < 600) return 'hmWatch'
-      return 'hmPhone'
-    }
-  } catch { /* 解析失败不切换平台 */ }
-  return null
+const platformOptions = [
+  { value: 'hmPhone', label: '鸿蒙-手机' },
+  { value: 'hmWatch', label: '鸿蒙-手表' },
+  { value: 'web',     label: 'web网页'  },
+]
+
+const platformLabel = computed(() =>
+  platformOptions.find(o => o.value === selectedPlatform.value)?.label ?? '鸿蒙-手机'
+)
+
+const platformDropdownOpen  = ref(false)
+const platformDropdownRef   = ref(null)
+const casesPlatformOpen     = ref(false)
+const casesPlatformRef      = ref(null)
+
+function togglePlatformDropdown() {
+  platformDropdownOpen.value = !platformDropdownOpen.value
+  casesPlatformOpen.value = false
 }
+
+function toggleCasesPlatform() {
+  casesPlatformOpen.value = !casesPlatformOpen.value
+  platformDropdownOpen.value = false
+}
+
+function selectPlatformOption(val) {
+  platformDropdownOpen.value = false
+  onPlatformSwitch(val)
+}
+
+function selectCasesPlatformOption(val) {
+  casesPlatformOpen.value = false
+  onPlatformSwitch(val)
+}
+
+function handleDocumentClick(e) {
+  if (platformDropdownRef.value && !platformDropdownRef.value.contains(e.target)) {
+    platformDropdownOpen.value = false
+  }
+  if (casesPlatformRef.value && !casesPlatformRef.value.contains(e.target)) {
+    casesPlatformOpen.value = false
+  }
+}
+
+onMounted(() => document.addEventListener('click', handleDocumentClick))
+onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
+
 
 async function validateAnnotationUrl() {
   const code = annotationUrl.value.trim()
@@ -430,13 +476,8 @@ async function validateAnnotationUrl() {
   }
 }
 
-async function onDevJsonPicked(file) {
+function onDevJsonPicked(file) {
   emit('step-picked', { type: 'arkuiJson', file })
-  const detected = await detectPlatformFromJson(file)
-  if (detected && detected !== selectedPlatform.value) {
-    selectedPlatform.value = detected
-    emit('platform-switch', detected)
-  }
 }
 
 function triggerStep3() {
@@ -485,6 +526,7 @@ function onStep4Picked(event) {
 .phone-content--center {
   align-items: center;
   justify-content: center;
+  padding-top: 0;
 }
 
 .preview-loading {

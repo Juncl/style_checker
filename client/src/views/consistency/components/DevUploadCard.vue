@@ -8,11 +8,7 @@
         <!-- Step1 -->
         <div class="up-step">
           <div class="up-step-title">
-            <span>Step1：{{ platform === 'web' ? '上传 JSON 文件' : '上传 ArkUI 树 JSON/DUMP' }}</span>
-            <span
-              class="up-help"
-              :title="platform === 'web' ? '上传 Web DOM 树 JSON 文件' : '下载工具导出 ArkUI 节点树 JSON 或 DUMP 后上传'"
-            >?</span>
+            <span>Step1:{{ platform === 'web' ? '上传 JSON文件' : '上传 ArkUI树 JSON/DUMP文件' }}</span>
           </div>
           <div
             :class="['up-drop', { 'has-file': arkuiJson, 'drag-over': isDragOver }]"
@@ -21,14 +17,8 @@
             <img v-if="!arkuiJson" :src="iconJson" class="up-drop-icon" alt="" />
             <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
             <div v-if="!arkuiJson" class="up-drop-text">
-              <template v-if="showDownloadLink">
-                <span class="up-link" @click.stop>下载导出 ArkUI 树工具</span>
-                <span class="up-drop-sub">再将 JSON 文件拖到此处</span>
-              </template>
-              <template v-else>
-                <span class="up-drop-sub">将 JSON 文件拖到此处或</span>
-                <span class="up-link" @click.stop="triggerJson">单击上传</span>
-              </template>
+              <span class="up-drop-sub">获取指南：<span class="up-guide-links"><a class="up-link" :href="GUIDE_LINKS.terminal" target="_blank" rel="noopener" @click.stop>终端</a>｜<a class="up-link" :href="GUIDE_LINKS.web" target="_blank" rel="noopener" @click.stop>Web</a></span></span>
+              <span class="up-drop-sub">再将JSON文件拖到此处</span>
             </div>
             <span v-else class="up-drop-done">{{ arkuiJson.name }}</span>
           </div>
@@ -36,7 +26,7 @@
         <!-- Step2 -->
         <div class="up-step">
           <div class="up-step-title up-step-title--center">
-            <span>Step2：上传开发图片</span>
+            <span>Step2:上传开发图片</span>
           </div>
           <div
             :class="['up-drop', { 'has-file': arkuiImage, 'drag-over': isDragOver, 'is-disabled': !arkuiJson }]"
@@ -62,6 +52,7 @@ import { CircleCheck } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import iconJson from '@/assets/upload-json.png'
 import iconImage from '@/assets/upload-image.png'
+import { GUIDE_LINKS } from '@/views/utils/constants'
 
 const props = defineProps({
   arkuiJson:        { type: Object,  default: null },
