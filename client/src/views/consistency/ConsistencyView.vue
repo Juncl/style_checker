@@ -389,6 +389,18 @@ watch(debugMode, value => {
   if (!value) debugOverlayOn.value = false
 })
 
+// 报告页重新上传后，预览解析完成时提示用户点击重新对比
+watch(devPreview, val => {
+  if (val && result.value && devReuploading.value) {
+    ElMessage.success('上传成功，点击右侧重新对比分析')
+  }
+})
+watch(designPreview, val => {
+  if (val && result.value && designReuploading.value) {
+    ElMessage.success('上传成功，点击右侧重新对比分析')
+  }
+})
+
 // ── 预览解析 ─────────────────────────────────────────────────────────────────
 
 async function triggerDevPreview(files) {

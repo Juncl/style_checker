@@ -568,6 +568,56 @@ body {
 /* Element Plus 组件样式覆盖（Octo 规范） */
 /* ═══════════════════════════════════════════════════════════════════════ */
 
+/* ── ElMessage 消息提示弹窗 - 对标 Pixso 设计稿 43:2466 ── */
+/* 白底 + 圆角 8px + 阴影，无彩色背景和边框 */
+.el-message {
+  background: #FFFFFF !important;
+  border-color: transparent !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16) !important;
+  padding: 12px 16px !important;
+  min-height: 46px !important;
+  align-items: center !important;
+}
+
+/* 各类型：统一覆盖为白底、无边框 */
+.el-message--success,
+.el-message--warning,
+.el-message--error,
+.el-message--info {
+  --el-message-bg-color: #FFFFFF;
+  --el-message-border-color: transparent;
+}
+
+/* 文字：14px / 22px，主文本色 #191919（不随类型变色） */
+.el-message__content {
+  font-size: 14px !important;
+  line-height: 22px !important;
+  color: #191919 !important;
+}
+.el-message--success .el-message__content,
+.el-message--warning .el-message__content,
+.el-message--error   .el-message__content,
+.el-message--info    .el-message__content {
+  color: #191919 !important;
+}
+
+/* 图标：14px，各类型对应设计稿色值 */
+.el-message .el-message-icon--success { color: #09AA71 !important; font-size: 14px !important; }
+.el-message .el-message-icon--warning { color: #FCC800 !important; font-size: 14px !important; }
+.el-message .el-message-icon--error   { color: #E02128 !important; font-size: 14px !important; }
+.el-message .el-message-icon--info    { color: #2070F3 !important; font-size: 14px !important; }
+
+/* 关闭按钮：低调暗色，hover 加深 */
+.el-message .el-message__closeBtn {
+  color: rgba(25, 25, 25, 0.45) !important;
+  font-size: 12px !important;
+  transition: color 150ms ease !important;
+}
+.el-message .el-message__closeBtn:hover {
+  color: #191919 !important;
+}
+
 /* 按钮 - Octo 规范严格（高度 30-32px） */
 :deep(.el-button) {
   border-radius: var(--octo-radius-sm) !important;
@@ -1230,6 +1280,7 @@ body {
 
 /* 拖拽上传区 */
 .up-drop {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1238,35 +1289,48 @@ body {
   height: 200px;
   padding: 24px;
   border-radius: 12px;
-  border: 1.5px dashed rgba(255, 255, 255, 0.9);
   background: rgba(255, 255, 255, 0.45);
   backdrop-filter: blur(20px);
   cursor: pointer;
   text-align: center;
-  transition: border-color 150ms ease, background 150ms ease;
+  transition: background 150ms ease;
+}
+
+/* SVG 稀疏虚线边框（dasharray 6 6，CSS dashed 无法控制间距） */
+.up-drop::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='12' ry='12' fill='none' stroke='rgba(255,255,255,.9)' stroke-width='1.5' stroke-dasharray='6 6'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
+  pointer-events: none;
 }
 
 .up-drop:hover,
 .up-drop.drag-over {
-  border-color: var(--octo-primary);
   background: rgba(255, 255, 255, 0.8);
 }
 
-.up-drop.has-file {
-  border-color: var(--octo-success);
-  background: rgba(82, 196, 26, 0.1);
+.up-drop:hover::before,
+.up-drop.drag-over::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='12' ry='12' fill='none' stroke='%230067D1' stroke-width='1.5' stroke-dasharray='6 6'/%3E%3C/svg%3E");
 }
+
 
 .up-drop.is-disabled {
   cursor: not-allowed;
   opacity: 0.55;
-  border-color: rgba(255, 255, 255, 0.7);
   background: rgba(255, 255, 255, 0.45);
 }
 
 .up-drop.is-disabled:hover {
-  border-color: rgba(255, 255, 255, 0.7);
   background: rgba(255, 255, 255, 0.45);
+}
+
+.up-drop.is-disabled::before,
+.up-drop.is-disabled:hover::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='12' ry='12' fill='none' stroke='rgba(255,255,255,.7)' stroke-width='1.5' stroke-dasharray='6 6'/%3E%3C/svg%3E");
 }
 
 .up-drop-icon {
@@ -1315,10 +1379,9 @@ body {
 }
 
 .up-drop-done {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--octo-success);
-  word-break: break-all;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--octo-text-primary);
 }
 
 /* ── URL / 传送码输入卡片 ── */
@@ -1345,15 +1408,25 @@ body {
 }
 
 .up-url-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
   padding: 48px 24px;
   border-radius: 12px;
-  border: 1.5px dashed rgba(255, 255, 255, 0.9);
   background: rgba(255, 255, 255, 0.45);
   backdrop-filter: blur(20px);
+}
+
+.up-url-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='12' ry='12' fill='none' stroke='rgba(255,255,255,.9)' stroke-width='1.5' stroke-dasharray='6 6'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
+  pointer-events: none;
 }
 
 .up-url-icon {

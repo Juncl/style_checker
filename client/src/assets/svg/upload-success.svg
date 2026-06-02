@@ -1,0 +1,29 @@
+<svg viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="56.000000" height="56.000000" fill="none">
+	<defs>
+		<filter id="pixso_custom_mask_type_outline">
+			<feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0 " />
+		</filter>
+		<linearGradient id="paint_linear_0" x1="0.405801773" x2="45.8550339" y1="0.405828476" y2="48.2898941" gradientUnits="userSpaceOnUse">
+			<stop stop-color="rgb(99,213,168)" offset="0" stop-opacity="1" />
+			<stop stop-color="rgb(9,170,113)" offset="1" stop-opacity="1" />
+		</linearGradient>
+		<linearGradient id="paint_linear_1" x1="15" x2="41" y1="20.5" y2="35.5000038" gradientUnits="userSpaceOnUse">
+			<stop stop-color="rgb(255,255,255)" offset="0" stop-opacity="0.899999976" />
+			<stop stop-color="rgb(255,255,255)" offset="1" stop-opacity="0.699999988" />
+		</linearGradient>
+	</defs>
+	<mask id="mask_0" width="56.000000" height="56.000000" x="0.000000" y="0.000000" maskUnits="userSpaceOnUse">
+		<g filter="url(#pixso_custom_mask_type_outline)">
+			<g id="clip144_92">
+				<rect id="ic_public_infotex_tured-提示" width="56.000000" height="56.000000" x="0.000000" y="0.000000" fill="rgb(255,255,255)" />
+			</g>
+		</g>
+	</mask>
+	<rect id="ic_public_infotex_textured" width="56.000000" height="56.000000" x="0.000000" y="0.000000" />
+	<g id="clip path group" mask="url(#mask_0)">
+		<g id="组合 31789">
+			<ellipse id="path" rx="28.000000" ry="27.999973" cx="28" cy="28.0000038" fill="url(#paint_linear_0)" />
+			<path id="path8" d="M15 25.7093L25.2683 35.5L41 20.5" fill-rule="evenodd" stroke="url(#paint_linear_1)" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.000000" />
+		</g>
+	</g>
+</svg>

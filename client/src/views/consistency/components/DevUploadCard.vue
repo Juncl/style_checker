@@ -15,12 +15,12 @@
             @click="triggerJson"
           >
             <img v-if="!arkuiJson" :src="iconJson" class="up-drop-icon" alt="" />
-            <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
+            <img v-else :src="iconSuccess" class="up-drop-icon" alt="" />
             <div v-if="!arkuiJson" class="up-drop-text">
               <span class="up-drop-sub">获取指南：<span class="up-guide-links"><a class="up-link" :href="GUIDE_LINKS.terminal" target="_blank" rel="noopener" @click.stop>终端</a>｜<a class="up-link" :href="GUIDE_LINKS.web" target="_blank" rel="noopener" @click.stop>Web</a></span></span>
               <span class="up-drop-sub">再将JSON文件拖到此处</span>
             </div>
-            <span v-else class="up-drop-done">{{ arkuiJson.name }}</span>
+            <span v-else class="up-drop-done">上传成功</span>
           </div>
         </div>
         <!-- Step2 -->
@@ -33,12 +33,12 @@
             @click="triggerImage"
           >
             <img v-if="!arkuiImage" :src="iconImage" class="up-drop-icon" alt="" />
-            <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
+            <img v-else :src="iconSuccess" class="up-drop-icon" alt="" />
             <div v-if="!arkuiImage" class="up-drop-text">
               <span class="up-drop-sub">将图片拖到此处或</span>
               <span class="up-link" @click.stop="triggerImage">单击上传</span>
             </div>
-            <span v-else class="up-drop-done">{{ arkuiImage.name }}</span>
+            <span v-else class="up-drop-done">上传成功</span>
           </div>
         </div>
       </div>
@@ -48,10 +48,10 @@
 
 <script setup>
 import { ref } from 'vue'
-import { CircleCheck } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import iconJson from '@/assets/upload-json.png'
 import iconImage from '@/assets/upload-image.png'
+import iconSuccess from '@/assets/svg/upload-success.svg'
 import { GUIDE_LINKS } from '@/views/utils/constants'
 
 const props = defineProps({
