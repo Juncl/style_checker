@@ -1,8 +1,7 @@
 import axios from 'axios'
-import { ADMIN_BASE_URL } from './adminEnv'
 
 class Request {
-  http = axios.create({ baseURL: ADMIN_BASE_URL })
+  http = axios.create({ timeout: 60000 })
 
   async get(url, _responseType, headers) {
     const ret = await this.http.get(url, { headers })

@@ -12,9 +12,23 @@
         <div class="up-tabbar up-tabbar--soft">
           <img :src="iconDev" alt="" class="up-tab-icon" />
           <span class="up-tab-text">开发环境</span>
-          <span class="up-tab-sep">/</span>
-          <span class="up-tab-text">20260306 10:50:15</span>
-          <el-icon class="up-tab-arrow"><ArrowRight /></el-icon>
+          <div class="deliverable-dropdown" ref="deliverableDropdownRef">
+            <div class="deliverable-trigger" @click.stop="toggleDeliverableDropdown">
+              <span class="deliverable-trigger-sep">/</span>
+              <span class="deliverable-trigger-text">{{ selectedDeliverable?.name ?? '选择交付件' }}</span>
+              <el-icon class="deliverable-trigger-arrow" :class="{ 'is-open': deliverableDropdownOpen }"><ArrowDown /></el-icon>
+            </div>
+            <div v-show="deliverableDropdownOpen" class="deliverable-panel">
+              <div v-if="!deliverables.length" class="deliverable-empty">暂无交付件</div>
+              <div
+                v-for="d in deliverables"
+                :key="d.id"
+                class="deliverable-item"
+                :class="{ 'is-selected': selectedDeliverable?.id === d.id }"
+                @click="selectDeliverable(d)"
+              >{{ d.name }}</div>
+            </div>
+          </div>
           <button
             v-if="devPreview || devPreviewLoading"
             class="up-tab-action"
@@ -283,6 +297,7 @@ import { getJsonImage } from '../../utils-inner/getJsonImage'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, Loading, ArrowRight, ArrowDown } from '@element-plus/icons-vue'
 import { imageUrl } from '../../../api/index.ts'
+import { geConsistencyCheckDeliverables } from '../../../api/api.ts'
 import ImagePanel from './ImagePanel.vue'
 import DevUploadCard from './DevUploadCard.vue'
 import iconJson from '@/assets/upload-json.png'
@@ -363,6 +378,11 @@ const emit = defineEmits([
   'clear-design-preview',
 ])
 
+const deliverables          = ref([])
+const selectedDeliverable   = ref(null)
+const deliverableDropdownOpen = ref(false)
+const deliverableDropdownRef  = ref(null)
+
 const annotationUrl = ref('')
 const urlLoading    = ref(false)
 const selectedPlatform = ref(props.currentPlatform || 'hmPhone')
@@ -442,10 +462,27 @@ function handleDocumentClick(e) {
   if (casesPlatformRef.value && !casesPlatformRef.value.contains(e.target)) {
     casesPlatformOpen.value = false
   }
+  if (deliverableDropdownRef.value && !deliverableDropdownRef.value.contains(e.target)) {
+    deliverableDropdownOpen.value = false
+  }
 }
 
-onMounted(() => document.addEventListener('click', handleDocumentClick))
+onMounted(async () => {
+  document.addEventListener('click', handleDocumentClick)
+  deliverables.value = await geConsistencyCheckDeliverables() ?? []
+})
 onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
+
+function toggleDeliverableDropdown() {
+  deliverableDropdownOpen.value = !deliverableDropdownOpen.value
+  platformDropdownOpen.value = false
+  casesPlatformOpen.value = false
+}
+
+function selectDeliverable(d) {
+  selectedDeliverable.value = d
+  deliverableDropdownOpen.value = false
+}
 
 
 async function validateAnnotationUrl() {
@@ -523,6 +560,86 @@ function onStep4Picked(event) {
 </script>
 
 <style scoped>
+.deliverable-dropdown {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.deliverable-trigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.deliverable-trigger-sep {
+  font-size: 14px;
+  color: var(--octo-text-placeholder);
+}
+
+.deliverable-trigger-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--octo-text-primary);
+  white-space: nowrap;
+}
+
+.deliverable-trigger-arrow {
+  font-size: 14px;
+  color: var(--octo-text-secondary, #555);
+  transition: transform 200ms ease;
+}
+.deliverable-trigger-arrow.is-open {
+  transform: rotate(180deg);
+}
+
+.deliverable-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 1000;
+  background: #ffffff;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 160px;
+  max-width: 280px;
+}
+
+.deliverable-item {
+  height: 28px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  color: var(--octo-text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 150ms ease;
+}
+.deliverable-item:hover {
+  background: rgba(25, 25, 25, 0.05);
+}
+.deliverable-item.is-selected {
+  background: #E6F2FD;
+  color: var(--octo-primary);
+}
+
+.deliverable-empty {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--octo-text-placeholder);
+  text-align: center;
+}
+
 .phone-content--center {
   align-items: center;
   justify-content: center;
