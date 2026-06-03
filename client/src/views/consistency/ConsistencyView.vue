@@ -17,6 +17,7 @@
       :design-preview-loading="designPreviewLoading"
       :blob-dev-src="blobUrls.arkui"
       :blob-design-src="blobUrls.design"
+      :deliverables="deliverables"
       @step-picked="onStepPicked"
       @drag-over="isDragOver = $event"
       @drop="onDrop"
@@ -66,6 +67,8 @@
       :blob-dev-src="blobUrls.arkui"
       :blob-design-src="blobUrls.design"
       :upload-files="uploadFiles"
+      :deliverables="deliverables"
+      :pages="pages"
       @select-case="selectCase"
       @arkui-node-click="onArkuiNodeClick"
       @design-node-click="onDesignNodeClick"
@@ -108,6 +111,11 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { fetchCases, checkCase, checkUpload, imageUrl, parseDevUpload, parseDesignUpload } from '../../api/index.ts'
+import { getTeamList, getSonListByTeamId, addConsistencyCheckDeliverable, addConsistencyCheckPage, getResultsByPageId, getPagesByDeliverableId, getConsistencyCheckDeliverables } from '../../api/api.ts'
+import {
+  formatDateTime, fileToBase64, fileToText, buildProblems,
+  isBlankLikeNode, isInteractiveImageNode, isSelectableNode, resolveSelectableNode,
+} from '../utils/tools.ts'
 import { initApp } from './init/index'
 import { savePlatform } from './init/restorePlatform'
 import AppLayout from './components/AppLayout.vue'
@@ -134,6 +142,9 @@ const debugOverlayOn = ref(false)
 const rerunLoading      = ref(false)
 const devReuploading    = ref(false)
 const designReuploading = ref(false)
+
+const deliverables = ref([])
+const pages        = ref([])
 
 // 上传页预览状态：文件上传后自动解析并展示
 const devPreview          = ref(null)   // { nodes, canvas } | null
@@ -349,6 +360,8 @@ onMounted(async () => {
   debugPipelineOn.value = false
   debugOverlayOn.value = false
 
+  getConsistencyCheckDeliverables().then(list => { deliverables.value = list ?? [] })
+
   // Step 6：deliverableId 模式，直接渲染报告页，跳过上传和 fetchCases
   if (deliverable) {
     result.value = deliverable.result
@@ -552,85 +565,8 @@ function onArkuiNodeClick(nodeId) {
   activeDiff.value = null
 }
 
-function isInteractiveImageNode(node) {
-  return node &&
-    !isBlankLikeNode(node) &&
-    node.visible !== false &&
-    !isHiddenFrameworkTextNode(node) &&
-    !isOcrHiddenTextNode(node) &&
-    !node.visualOccluded &&
-    node.rect &&
-    node.rect.w > 4 &&
-    node.rect.h > 4
-}
-
-function isSelectableNode(node) {
-  return !!(node &&
-    node.visible !== false &&
-    !isHiddenFrameworkTextNode(node) &&
-    !isOcrHiddenTextNode(node) &&
-    !node.visualOccluded &&
-    node.rect?.w > 4 &&
-    node.rect?.h > 4)
-}
-
-function isBlankLikeNode(node) {
-  return String(node?.type || node?.name || '').trim().toLowerCase() === 'blank'
-}
-
-function isHiddenFrameworkTextNode(node) {
-  return !!(node && node.type === 'text' && node.hiddenFrameworkAncestor)
-}
-
-function isOcrHiddenTextNode(node) {
-  return !!(node &&
-    node.type === 'text' &&
-    (node.visualOccluded || node.ocrVisibility?.visible === false))
-}
-
 function nodeDiffsFor(key, nodeId) {
   return (result.value?.diffs ?? []).filter(d => d[key] === nodeId)
-}
-
-function resolveSelectableNode(nodes, nodeId) {
-  const node = nodes.find(n => n.id === nodeId)
-  if (!node) return null
-  if (isHiddenFrameworkTextNode(node) || isOcrHiddenTextNode(node)) return null
-  if (node.type === 'text' || !node.textContent) return node
-
-  const targetText = normalizeLooseText(node.textContent)
-  if (!targetText) return node
-
-  const descendants = nodes.filter(n =>
-    n.type === 'text' &&
-    normalizeLooseText(n.textContent) === targetText &&
-    isPathPrefix(node.path, n.path) &&
-    n.visible !== false &&
-    !n.visualOccluded &&
-    !isHiddenFrameworkTextNode(n) &&
-    !isOcrHiddenTextNode(n)
-  )
-
-  if (!descendants.length) return node
-  return descendants.sort((a, b) => {
-    const da = (a.path?.length ?? 0) - (node.path?.length ?? 0)
-    const db = (b.path?.length ?? 0) - (node.path?.length ?? 0)
-    if (da !== db) return db - da
-    return (a.rect.w * a.rect.h) - (b.rect.w * b.rect.h)
-  })[0]
-}
-
-function normalizeLooseText(text) {
-  return String(text || '').replace(/\s+/g, '').trim()
-}
-
-function isPathPrefix(prefix, path) {
-  if (!Array.isArray(prefix) || !Array.isArray(path)) return false
-  if (prefix.length >= path.length) return false
-  for (let i = 0; i < prefix.length; i++) {
-    if (prefix[i] !== path[i]) return false
-  }
-  return true
 }
 
 function onToggleLock(nodeId) {
@@ -695,9 +631,63 @@ async function selectCase(id) {
       arkui:  URL.createObjectURL(arkuiImgBlob),
       design: URL.createObjectURL(designImgBlob),
     }
+    submitResult()
   }
   catch (e) { ElMessage.error(`分析失败：${e.response?.data?.error || e.message}`) }
   finally    { loading.value = false }
+}
+
+// 对比完成后提交结果：新建交付件 → 新建页面（含版本数据）→ 刷新页面列表 → 更新 URL 参数
+// 后台静默执行，不阻塞主流程
+async function submitResult() {
+  try {
+    const teams = await getTeamList()
+    const teamId = Array.isArray(teams) ? teams[0]?.teamId : null
+    if (!teamId) return
+
+    const sonTeams = await getSonListByTeamId(teamId)
+    const subTeamId = Array.isArray(sonTeams) ? sonTeams[0]?.teamId : null
+    if (!subTeamId) return
+
+    const now           = formatDateTime(new Date())
+    const deliverableId = await addConsistencyCheckDeliverable(String(subTeamId), now)
+    if (!deliverableId) return
+
+    const [devBase64, designBase64, devJsonStr, designJsonStr] = await Promise.all([
+      fileToBase64(uploadFiles.value.arkuiImage),
+      fileToBase64(uploadFiles.value.designImage),
+      fileToText(uploadFiles.value.arkuiJson),
+      fileToText(uploadFiles.value.designJson),
+    ])
+
+    const pageId = await addConsistencyCheckPage({
+      deliverableId,
+      name:                  now,
+      deviceType:            currentPlatform.value,
+      versionName:           now,
+      devImageBase64Data:    devBase64,
+      devJson:               devJsonStr,
+      designImageBase64Data: designBase64,
+      designJson:            designJsonStr,
+      problems:              buildProblems(result.value),
+    })
+    if (!pageId) return
+
+    const pageResult = await getResultsByPageId(pageId, 1, 1)
+    const versionId  = Array.isArray(pageResult?.list) ? pageResult.list[0]?.id : null
+
+    // 从后台查询最新页面列表，更新下拉框数据
+    const pageList = await getPagesByDeliverableId(deliverableId)
+    pages.value = Array.isArray(pageList) ? pageList : []
+
+    if (deliverableId && pageId && versionId) {
+      const hashPath = window.location.hash.split('?')[0]
+      const params = `deliverableId=${deliverableId}&pageId=${pageId}&versionId=${versionId}`
+      window.history.replaceState(null, '', `${window.location.pathname}${hashPath}?${params}`)
+    }
+  } catch (e) {
+    console.error('提交结果失败', e)
+  }
 }
 
 async function runUpload(platform) {
@@ -717,6 +707,7 @@ async function runUpload(platform) {
       platform || currentPlatform.value,
     )
     ElMessage.success('分析完成')
+    submitResult()
   } catch (e) { ElMessage.error(`分析失败：${e.response?.data?.error || e.message}`) }
   finally     { loading.value = false }
 }
@@ -733,10 +724,4 @@ function onDiffSelect(diff) {
   }
 }
 
-function validationBg(status) {
-  if (status === 'wrong')   return 'rgba(239, 68, 68, 0.18)'
-  if (status === 'extra')   return 'rgba(234, 179, 8, 0.18)'
-  if (status === 'missing') return 'rgba(150, 150, 150, 0.18)'
-  return 'transparent'
-}
 </script>

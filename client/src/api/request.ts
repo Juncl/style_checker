@@ -8,8 +8,8 @@ class Request {
     return ret.data
   }
 
-  async post(url, data) {
-    const ret = await this.http.post(url, data)
+  async post(url: string, params?: unknown, timeout?: number, headers?: Record<string, string>) {
+    const ret = await this.http.post(url, params, { timeout, headers })
     return ret.data
   }
 }

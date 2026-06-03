@@ -122,9 +122,20 @@
         <div class="up-tabbar up-tabbar--soft">
           <img :src="iconDev" alt="" class="up-tab-icon" />
           <span class="up-tab-text">开发环境</span>
-          <span class="up-tab-sep">/</span>
-          <span class="up-tab-text">20260306 10:50:15</span>
-          <el-icon class="up-tab-arrow"><ArrowRight /></el-icon>
+          <DeliverableDropdown
+            :items="deliverables"
+            :selected="selectedDeliverable"
+            placeholder="选择"
+            empty-text="暂无交付件"
+            @select="selectedDeliverable = $event; selectedPage = null"
+          />
+          <DeliverableDropdown
+            :items="pages"
+            :selected="selectedPage"
+            placeholder="选择页面"
+            empty-text="暂无页面"
+            @select="selectedPage = $event"
+          />
           <button
             v-if="!devReuploading"
             class="up-tab-action"
@@ -202,9 +213,6 @@
         <div class="up-tabbar">
           <img :src="iconDesign" alt="" class="up-tab-icon" />
           <span class="up-tab-text">设计页面</span>
-          <span class="up-tab-sep">/</span>
-          <span class="up-tab-text">主题购买页面示例</span>
-          <el-icon class="up-tab-arrow"><ArrowRight /></el-icon>
           <button
             v-if="!designReuploading"
             class="up-tab-action"
@@ -363,13 +371,15 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { ArrowRight, Crop, Loading } from '@element-plus/icons-vue'
+import { Crop, Loading } from '@element-plus/icons-vue'
 import DiffReport from './DiffReport.vue'
 import ImagePanel from './ImagePanel.vue'
 import NodeTree from './NodeTree.vue'
 import DevUploadCard from './DevUploadCard.vue'
 import DesignUploadCard from './DesignUploadCard.vue'
+import DeliverableDropdown from './DeliverableDropdown.vue'
 import { imageUrl } from '../../../api/index.ts'
+import { validationBg, confidenceText, confidenceTagType, matchTypePass } from '../../utils/tools.ts'
 
 import iconDev from '@/assets/icon-dev.png'
 import iconDesign from '@/assets/icon-design.png'
@@ -495,6 +505,14 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
+  deliverables: {
+    type: Array,
+    default: () => []
+  },
+  pages: {
+    type: Array,
+    default: () => []
+  },
 })
 
 const emit = defineEmits([
@@ -516,6 +534,9 @@ const emit = defineEmits([
   'step-picked',
   'clear-dev-preview',
 ])
+
+const selectedDeliverable = ref(null)
+const selectedPage        = ref(null)
 
 const rightTab = ref('diff')
 const treeSide = ref('design')
@@ -631,52 +652,10 @@ const treeSelectedId = computed(() =>
     : props.selectedPair?.arkui?.id || null
 )
 
-function confidenceText(c) {
-  if (c === 'high')   return '高置信'
-  if (c === 'medium') return '中置信'
-  if (c === 'low')    return '低置信'
-  return c
-}
-
-function confidenceTagType(c) {
-  if (c === 'high')   return 'success'
-  if (c === 'medium') return 'warning'
-  if (c === 'low')    return 'danger'
-  return 'info'
-}
-
-const MATCH_TYPE_PASS = {
-  'text-content':              'Pass 1',
-  'dynamic-text-slot':         'Pass 2',
-  'dynamic-number-slot':       'Pass 2',
-  'text-row-slot':             'Pass 2',
-  'region-text-optimal':       'Pass 3',
-  'region-text-global-rescue': 'Pass 3',
-  'text-role':                 'Pass 3.5',
-  'anchor-topology':           'Pass 4',
-  'list-index':                'Pass 4.5',
-  'text-position':             'Pass 5',
-  'numeric-slot':              'Pass 5b',
-  'container-iou':             'Pass 5',
-  'container-geometry':        'Pass 6',
-  'spatial-bracket':           'Pass 6.5',
-  'rescue-iou':                'Pass 7',
-}
-
-function matchTypePass(matchType) {
-  return MATCH_TYPE_PASS[matchType] ?? null
-}
-
 function caseImageUrl(caseId) {
   return imageUrl(caseId, 'design', props.currentPlatform)
 }
 
-function validationBg(status) {
-  if (status === 'wrong')   return 'rgba(239, 68, 68, 0.18)'
-  if (status === 'extra')   return 'rgba(234, 179, 8, 0.18)'
-  if (status === 'missing') return 'rgba(150, 150, 150, 0.18)'
-  return 'transparent'
-}
 </script>
 
 <style scoped>
