@@ -10,7 +10,7 @@
  */
 
 import { buildArkuiTree } from './1-buildTree.js'
-import { buildDumpTree }  from './1-buildDumpTree.js'
+import { buildDumpTreeFromJson } from './1-buildDumpTree.js'
 import { pruneArkuiTree } from './2-pruneTree.js'
 import { annotateArkuiTree } from './3-annotateTree.js'
 import { flattenArkuiTree } from './4-flattenTree.js'
@@ -24,10 +24,10 @@ import { normalizeTree } from '../../utils/normalizeTree.js'
 export async function parseArkui(arkuiInput, opts = {}) {
   const { imageBuffer } = opts
 
-  // step 1: 建树（自动识别格式）
-  const isDump = typeof arkuiInput === 'string'
+  // step 1: 建树（根据 _sourceFormat 字段路由）
+  const isDump = arkuiInput?._sourceFormat === 'dump'
   const { canvasWidthVp, canvasHeightVp, resolution, root } = isDump
-    ? buildDumpTree(arkuiInput)
+    ? buildDumpTreeFromJson(arkuiInput)
     : buildArkuiTree(arkuiInput)
 
   // step 2: 剪枝（先硬后软）

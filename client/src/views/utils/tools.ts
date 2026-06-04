@@ -29,6 +29,22 @@ export function fileToText(file: File | null | undefined): Promise<string> {
   })
 }
 
+// Base64 DataURL → File 对象
+export function base64ToFile(base64: string, filename: string): File {
+  const [meta, data] = base64.split(',')
+  const mime = meta.match(/:(.*?);/)?.[1] ?? 'application/octet-stream'
+  const bytes = atob(data)
+  const arr = new Uint8Array(bytes.length)
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+  return new File([arr], filename, { type: mime })
+}
+
+// JSON 对象 → File 对象
+export function jsonToFile(json: unknown, filename: string): File {
+  const text = typeof json === 'string' ? json : JSON.stringify(json)
+  return new File([text], filename, { type: 'application/json' })
+}
+
 // 从算法结果的 diffs 中提取 problems 列表
 export function buildProblems(res: any): object[] {
   return (res?.diffs ?? []).map((d: any) => ({

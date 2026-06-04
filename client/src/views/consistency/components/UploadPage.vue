@@ -1,177 +1,83 @@
 <template>
-  <!-- ── 中间主区：开发侧 + 设计侧 ── -->
-  <main class="center-panel up-board">
-    <div v-if="!loading" class="up-columns">
-      <!-- 隐藏的文件选择器（设计侧） -->
-      <input ref="pickerStep3" type="file" accept=".json" style="display:none" @change="onStep3Picked" />
-      <input ref="pickerStep4" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.svg" style="display:none" @change="onStep4Picked" />
+  <div class="up-columns">
+    <!-- 隐藏的文件选择器（设计侧） -->
+    <input ref="pickerStep3" type="file" accept=".json" style="display:none" @change="onStep3Picked" />
+    <input ref="pickerStep4" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.svg" style="display:none" @change="onStep4Picked" />
 
-      <!-- ════ 开发侧 ════ -->
-      <section class="up-col up-col--dev">
-        <!-- 标签栏 -->
-        <div class="up-tabbar up-tabbar--soft">
-          <img :src="iconDev" alt="" class="up-tab-icon" />
-          <span class="up-tab-text">开发环境</span>
-          <DeliverableDropdown
-            :items="deliverables"
-            :selected="selectedDeliverable"
-            placeholder="选择"
-            empty-text="暂无交付件"
-            @select="selectDeliverable"
-          />
-          <button
-            v-if="devPreview || devPreviewLoading"
-            class="up-tab-action"
-            @click="$emit('clear-dev-preview')"
-          >重新上传</button>
-        </div>
-        <!-- 舞台 -->
-        <div
-          :class="['up-stage', devPreview && !devPreviewLoading ? 'up-stage--report' : '']"
-          @dragover.prevent="$emit('drag-over', true)"
-          @dragleave.prevent="$emit('drag-over', false)"
-          @drop.prevent="$emit('drop', $event)"
-        >
-          <!-- 解析中 -->
-          <div v-if="devPreviewLoading" class="phone-card">
-            <div class="phone-bg"></div>
-            <div class="phone-content phone-content--center">
-              <div class="preview-loading">
-                <el-icon class="spin" size="32"><Loading /></el-icon>
-                <span class="preview-loading-text">正在解析节点…</span>
-              </div>
+    <!-- ════ 开发侧 ════ -->
+    <section class="up-col up-col--dev">
+      <div
+        :class="['up-stage', devPreview && !devPreviewLoading ? 'up-stage--report' : '']"
+        @dragover.prevent="$emit('drag-over', true)"
+        @dragleave.prevent="$emit('drag-over', false)"
+        @drop.prevent="$emit('drop', $event)"
+      >
+        <!-- 解析中 -->
+        <div v-if="devPreviewLoading" class="phone-card">
+          <div class="phone-bg"></div>
+          <div class="phone-content phone-content--center">
+            <div class="preview-loading">
+              <el-icon class="spin" size="32"><Loading /></el-icon>
+              <span class="preview-loading-text">正在解析节点…</span>
             </div>
           </div>
-          <!-- 节点预览 -->
-          <ImagePanel
-            v-else-if="devPreview"
-            :src="blobDevSrc"
-            :canvas-w="devPreview.canvas.w"
-            :canvas-h="devPreview.canvas.h"
-            :nodes="devPreview.nodes"
-          />
-          <!-- 上传卡片 -->
-          <DevUploadCard
-            v-else
-            :arkui-json="uploadFiles.arkuiJson"
-            :arkui-image="uploadFiles.arkuiImage"
-            :is-drag-over="isDragOver"
-            :platform="selectedPlatform"
-            @pick-json="onDevJsonPicked"
-            @pick-image="file => $emit('step-picked', { type: 'arkuiImage', file })"
-          />
         </div>
-      </section>
+        <!-- 节点预览 -->
+        <ImagePanel
+          v-else-if="devPreview"
+          :src="blobDevSrc"
+          :canvas-w="devPreview.canvas.w"
+          :canvas-h="devPreview.canvas.h"
+          :nodes="devPreview.nodes"
+        />
+        <!-- 上传卡片 -->
+        <DevUploadCard
+          v-else
+          :arkui-json="uploadFiles.arkuiJson"
+          :arkui-image="uploadFiles.arkuiImage"
+          :is-drag-over="isDragOver"
+          :platform="currentPlatform"
+          @pick-json="onDevJsonPicked"
+          @pick-image="file => $emit('step-picked', { type: 'arkuiImage', file })"
+        />
+      </div>
+    </section>
 
-      <!-- ════ 设计侧 ════ -->
-      <section class="up-col up-col--design">
-        <!-- 标签栏 -->
-        <div class="up-tabbar">
-          <img :src="iconDesign" alt="" class="up-tab-icon" />
-          <span class="up-tab-text">设计页面</span>
-          <button
-            v-if="designPreview || designPreviewLoading"
-            class="up-tab-action"
-            @click="$emit('clear-design-preview')"
-          >重新上传</button>
-        </div>
-        <!-- 舞台 -->
-        <div :class="['up-stage', designPreview && !designPreviewLoading ? 'up-stage--report' : '']">
-          <!-- 解析中 -->
-          <div v-if="designPreviewLoading" class="phone-card">
-            <div class="phone-bg"></div>
-            <div class="phone-content phone-content--center">
-              <div class="preview-loading">
-                <el-icon class="spin" size="32"><Loading /></el-icon>
-                <span class="preview-loading-text">正在解析节点…</span>
-              </div>
+    <!-- ════ 设计侧 ════ -->
+    <section class="up-col up-col--design">
+      <div :class="['up-stage', designPreview && !designPreviewLoading ? 'up-stage--report' : '']">
+        <!-- 解析中 -->
+        <div v-if="designPreviewLoading" class="phone-card">
+          <div class="phone-bg"></div>
+          <div class="phone-content phone-content--center">
+            <div class="preview-loading">
+              <el-icon class="spin" size="32"><Loading /></el-icon>
+              <span class="preview-loading-text">正在解析节点…</span>
             </div>
           </div>
-          <!-- 节点预览 -->
-          <ImagePanel
-            v-else-if="designPreview"
-            :src="blobDesignSrc"
-            :canvas-w="designPreview.canvas.w"
-            :canvas-h="designPreview.canvas.h"
-            :nodes="designPreview.nodes"
-          />
-          <!-- 上传卡片 -->
-          <div v-else class="phone-card">
-            <div class="phone-bg"></div>
-            <div class="phone-content">
-              <!-- debugger 模式 -->
-              <template v-if="debugMode">
-                <!-- 传送码模式 -->
-                <div v-if="debugStep3Mode" class="up-url-group">
-                  <div v-if="urlLoading" class="url-loading-overlay">
-                    <el-icon class="spin"><Loading /></el-icon>
-                  </div>
-                  <div class="up-step-title up-step-title--center up-step-title--row">
-                    <span>Step3:输入传送码</span>
-                    <button class="debug-inline-toggle" @click="debugStep3Mode = false" title="切换到文件上传">⇄ 切换</button>
-                  </div>
-                  <div class="up-url-card">
-                    <img :src="iconStep3" class="up-url-icon" alt="" />
-                    <el-input
-                      v-model="annotationUrl"
-                      placeholder="请输入标注视图URL/传送码"
-                      class="up-url-input"
-                      @keyup.enter="validateAnnotationUrl"
-                    />
-                  </div>
-                  <el-button
-                    type="primary"
-                    class="up-url-btn"
-                    :disabled="!annotationUrl.trim()"
-                    @click="validateAnnotationUrl"
-                  >确认</el-button>
-                </div>
-                <!-- 文件上传模式 -->
-                <div v-else class="up-upload-card">
-                  <div class="up-step-title up-step-title--center up-step-title--row">
-                    <span>调试对比</span>
-                    <button class="debug-inline-toggle" @click="debugStep3Mode = true" title="返回传送码模式">⇄ 返回</button>
-                  </div>
-                  <div class="up-step">
-                    <div class="up-step-title up-step-title--center"><span>Step3：上传 JSON</span></div>
-                    <div
-                      :class="['up-drop', { 'has-file': uploadFiles.designJson, 'is-disabled': !uploadFiles.arkuiImage }]"
-                      @click="triggerStep3"
-                    >
-                      <img v-if="!uploadFiles.designJson" :src="iconJson" class="up-drop-icon" alt="" />
-                      <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
-                      <div v-if="!uploadFiles.designJson" class="up-drop-text">
-                        <span class="up-link" @click.stop="triggerStep3">单击上传</span>
-                        <span class="up-drop-sub">(.json)</span>
-                      </div>
-                      <span v-else class="up-drop-done">{{ uploadFiles.designJson.name }}</span>
-                    </div>
-                  </div>
-                  <div class="up-step">
-                    <div class="up-step-title up-step-title--center"><span>Step4：上传图片</span></div>
-                    <div
-                      :class="['up-drop', { 'has-file': uploadFiles.designImage, 'is-disabled': !uploadFiles.designJson }]"
-                      @click="triggerStep4"
-                    >
-                      <img v-if="!uploadFiles.designImage" :src="iconImage" class="up-drop-icon" alt="" />
-                      <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
-                      <div v-if="!uploadFiles.designImage" class="up-drop-text">
-                        <span class="up-link" @click.stop="triggerStep4">单击上传</span>
-                        <span class="up-drop-sub">(.png, .jpg ...)</span>
-                      </div>
-                      <span v-else class="up-drop-done">{{ uploadFiles.designImage.name }}</span>
-                    </div>
-                  </div>
-                </div>
-              </template>
-
-              <!-- 非 debugger 模式：URL / 传送码输入 -->
-              <div v-else class="up-url-group">
+        </div>
+        <!-- 节点预览 -->
+        <ImagePanel
+          v-else-if="designPreview"
+          :src="blobDesignSrc"
+          :canvas-w="designPreview.canvas.w"
+          :canvas-h="designPreview.canvas.h"
+          :nodes="designPreview.nodes"
+        />
+        <!-- 上传卡片 -->
+        <div v-else class="phone-card">
+          <div class="phone-bg"></div>
+          <div class="phone-content">
+            <!-- debugger 模式 -->
+            <template v-if="debugMode">
+              <!-- 传送码模式 -->
+              <div v-if="debugStep3Mode" class="up-url-group">
                 <div v-if="urlLoading" class="url-loading-overlay">
                   <el-icon class="spin"><Loading /></el-icon>
                 </div>
-                <div class="up-step-title up-step-title--center">
-                  <span>Step3:输入标注视图URL/传送码</span>
+                <div class="up-step-title up-step-title--center up-step-title--row">
+                  <span>Step3:输入传送码</span>
+                  <button class="debug-inline-toggle" @click="debugStep3Mode = false" title="切换到文件上传">⇄ 切换</button>
                 </div>
                 <div class="up-url-card">
                   <img :src="iconStep3" class="up-url-icon" alt="" />
@@ -189,276 +95,114 @@
                   @click="validateAnnotationUrl"
                 >确认</el-button>
               </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
-  </main>
+              <!-- 文件上传模式 -->
+              <div v-else class="up-upload-card">
+                <div class="up-step-title up-step-title--center up-step-title--row">
+                  <span>调试对比</span>
+                  <button class="debug-inline-toggle" @click="debugStep3Mode = true" title="返回传送码模式">⇄ 返回</button>
+                </div>
+                <div class="up-step">
+                  <div class="up-step-title up-step-title--center"><span>Step3：上传 JSON</span></div>
+                  <div
+                    :class="['up-drop', { 'has-file': uploadFiles.designJson, 'is-disabled': !uploadFiles.arkuiImage }]"
+                    @click="triggerStep3"
+                  >
+                    <img v-if="!uploadFiles.designJson" :src="iconJson" class="up-drop-icon" alt="" />
+                    <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
+                    <div v-if="!uploadFiles.designJson" class="up-drop-text">
+                      <span class="up-link" @click.stop="triggerStep3">单击上传</span>
+                      <span class="up-drop-sub">(.json)</span>
+                    </div>
+                    <span v-else class="up-drop-done">{{ uploadFiles.designJson.name }}</span>
+                  </div>
+                </div>
+                <div class="up-step">
+                  <div class="up-step-title up-step-title--center"><span>Step4：上传图片</span></div>
+                  <div
+                    :class="['up-drop', { 'has-file': uploadFiles.designImage, 'is-disabled': !uploadFiles.designJson }]"
+                    @click="triggerStep4"
+                  >
+                    <img v-if="!uploadFiles.designImage" :src="iconImage" class="up-drop-icon" alt="" />
+                    <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
+                    <div v-if="!uploadFiles.designImage" class="up-drop-text">
+                      <span class="up-link" @click.stop="triggerStep4">单击上传</span>
+                      <span class="up-drop-sub">(.png, .jpg ...)</span>
+                    </div>
+                    <span v-else class="up-drop-done">{{ uploadFiles.designImage.name }}</span>
+                  </div>
+                </div>
+              </div>
+            </template>
 
-  <!-- ── 右侧差异报告面板 ── -->
-  <aside class="right-panel up-right-panel">
-    <!-- 标签栏 -->
-    <div class="up-tabbar up-tabbar--report">
-      <span class="report-tab-title">差异报告</span>
-    </div>
-
-    <div class="report-body">
-      <!-- 空状态卡片 -->
-      <div class="report-empty">
-        <img :src="iconEmpty" class="report-empty-img" alt="" />
-        <p class="report-empty-hint">请完成操作指引<br />导入待检查页面后开始检查</p>
-        <div class="report-device-row" ref="platformDropdownRef">
-          <div class="report-device-trigger" @click="togglePlatformDropdown">
-            <span class="report-device-text">{{ platformLabel }}</span>
-            <el-icon class="report-device-arrow" :class="{ 'is-open': platformDropdownOpen }"><ArrowDown /></el-icon>
-          </div>
-          <div v-show="platformDropdownOpen" class="platform-dropdown-panel">
-            <div
-              v-for="opt in platformOptions"
-              :key="opt.value"
-              class="platform-dropdown-item"
-              :class="{ 'is-selected': selectedPlatform === opt.value }"
-              @click="selectPlatformOption(opt.value)"
-            >{{ opt.label }}</div>
-          </div>
-        </div>
-        <el-button
-          type="primary"
-          :loading="loading"
-          :disabled="!canStartCheck"
-          class="report-start-btn"
-          @click="$emit('run-upload', selectedPlatform)"
-        >开始对比</el-button>
-      </div>
-
-      <!-- 试用案例 -->
-      <div class="cases-block">
-        <div class="cases-head">
-          <span class="cases-head-title">试用案例</span>
-          <span class="cases-head-hint">点击下方案例即刻体验~</span>
-          <div v-if="debugMode" class="cases-platform-dropdown" ref="casesPlatformRef">
-            <div class="cases-platform-trigger" @click="toggleCasesPlatform">
-              <span class="cases-platform-text">{{ platformLabel }}</span>
-              <el-icon class="cases-platform-arrow" :class="{ 'is-open': casesPlatformOpen }"><ArrowDown /></el-icon>
-            </div>
-            <div v-show="casesPlatformOpen" class="cases-platform-panel">
-              <div
-                v-for="opt in platformOptions"
-                :key="opt.value"
-                class="cases-platform-item"
-                :class="{ 'is-selected': currentPlatform === opt.value }"
-                @click="selectCasesPlatformOption(opt.value)"
-              >{{ opt.label }}</div>
-            </div>
-          </div>
-        </div>
-        <div v-if="!cases.length" class="cases-loading">加载中…</div>
-        <div class="cases-list">
-          <div
-            v-for="c in cases"
-            :key="c.id"
-            :class="['case-row', { active: selectedCase === c.id }]"
-            @click="$emit('select-case', c.id)"
-          >
-            <div class="case-thumb">
-              <img :src="caseImageUrl(c.id)" class="case-thumb-img" :alt="c.id" />
-              <div v-if="loading && selectedCase === c.id" class="case-thumb-loading">
+            <!-- 非 debugger 模式：URL / 传送码输入 -->
+            <div v-else class="up-url-group">
+              <div v-if="urlLoading" class="url-loading-overlay">
                 <el-icon class="spin"><Loading /></el-icon>
               </div>
-            </div>
-            <div class="case-meta">
-              <span class="case-name">{{ c.id.replace('case', '案例 ') }}</span>
-              <span class="case-desc">{{ caseNames[c.id] || c.id }}</span>
+              <div class="up-step-title up-step-title--center">
+                <span>Step3:输入标注视图URL/传送码</span>
+              </div>
+              <div class="up-url-card">
+                <img :src="iconStep3" class="up-url-icon" alt="" />
+                <el-input
+                  v-model="annotationUrl"
+                  placeholder="请输入标注视图URL/传送码"
+                  class="up-url-input"
+                  @keyup.enter="validateAnnotationUrl"
+                />
+              </div>
+              <el-button
+                type="primary"
+                class="up-url-btn"
+                :disabled="!annotationUrl.trim()"
+                @click="validateAnnotationUrl"
+              >确认</el-button>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  </aside>
+    </section>
+  </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, watch } from 'vue'
 import { getJsonImage } from '../../utils-inner/getJsonImage'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, Loading } from '@element-plus/icons-vue'
-import { imageUrl } from '../../../api/index.ts'
 import ImagePanel from './ImagePanel.vue'
-import DeliverableDropdown from './DeliverableDropdown.vue'
 import DevUploadCard from './DevUploadCard.vue'
 import iconJson from '@/assets/upload-json.png'
 import iconImage from '@/assets/upload-image.png'
-import iconEmpty from '@/assets/svg/empty-report.svg'
 import iconStep3 from '@/assets/svg/Step3-up.svg'
-import iconDev from '@/assets/icon-dev.png'
-import iconDesign from '@/assets/icon-design.png'
 
 const props = defineProps({
-  uploadFiles: {
-    type: Object,
-    required: true
-  },
-  cases: {
-    type: Array,
-    default: () => []
-  },
-  selectedCase: {
-    type: String,
-    default: ''
-  },
-  loading: {
-    type: Boolean,
-    default: false
-  },
-  caseNames: {
-    type: Object,
-    default: () => ({})
-  },
-  isDragOver: {
-    type: Boolean,
-    default: false
-  },
-  debugMode: {
-    type: Boolean,
-    default: false
-  },
-  currentPlatform: {
-    type: String,
-    default: 'hmPhone'
-  },
-  // 预览相关 props
-  devPreview: {
-    type: Object,
-    default: null   // { nodes, canvas: { w, h } } | null
-  },
-  designPreview: {
-    type: Object,
-    default: null
-  },
-  devPreviewLoading: {
-    type: Boolean,
-    default: false
-  },
-  designPreviewLoading: {
-    type: Boolean,
-    default: false
-  },
-  blobDevSrc: {
-    type: String,
-    default: ''
-  },
-  blobDesignSrc: {
-    type: String,
-    default: ''
-  },
-  deliverables: {
-    type: Array,
-    default: () => []
-  },
+  uploadFiles:          { type: Object,  required: true },
+  isDragOver:           { type: Boolean, default: false },
+  debugMode:            { type: Boolean, default: false },
+  currentPlatform:      { type: String,  default: 'hmPhone' },
+  devPreview:           { type: Object,  default: null },
+  designPreview:        { type: Object,  default: null },
+  devPreviewLoading:    { type: Boolean, default: false },
+  designPreviewLoading: { type: Boolean, default: false },
+  blobDevSrc:           { type: String,  default: '' },
+  blobDesignSrc:        { type: String,  default: '' },
 })
 
-const emit = defineEmits([
-  'step-picked',
-  'drag-over',
-  'drop',
-  'run-upload',
-  'select-case',
-  'platform-switch',
-  'clear-dev-preview',
-  'clear-design-preview',
-])
+const emit = defineEmits(['step-picked', 'drag-over', 'drop'])
 
-const selectedDeliverable = ref(null)
+const annotationUrl  = ref('')
+const urlLoading     = ref(false)
+const debugStep3Mode = ref(true)
+const pickerStep3    = ref(null)
+const pickerStep4    = ref(null)
 
-const annotationUrl = ref('')
-const urlLoading    = ref(false)
-const selectedPlatform = ref(props.currentPlatform || 'hmPhone')
-watch(() => props.currentPlatform, v => { if (v && v !== selectedPlatform.value) selectedPlatform.value = v })
-
-// 当父组件清除设计侧数据时，重置本地 URL 输入状态
 watch(() => props.uploadFiles.designJson, newVal => {
   if (!newVal) {
     annotationUrl.value = ''
     urlLoading.value    = false
   }
 })
-
-// debugger 模式下设计侧的子模式
-const debugStep3Mode = ref(true)  // true: 传送码模式，false: 文件上传模式
-
-const pickerStep3 = ref(null)
-const pickerStep4 = ref(null)
-
-// "开始对比"按钮可用条件
-const canStartCheck = computed(() => {
-  const f = props.uploadFiles
-  if (!f.designJson || !f.arkuiJson) return false
-  if (!f.arkuiImage) return false
-  if (!f.designImage) return false
-  return true
-})
-
-function caseImageUrl(caseId) {
-  return imageUrl(caseId, 'arkui', props.currentPlatform)
-}
-
-function onPlatformSwitch(platform) {
-  selectedPlatform.value = platform
-  emit('platform-switch', platform)
-}
-
-const platformOptions = [
-  { value: 'hmPhone', label: '鸿蒙-手机' },
-  { value: 'hmWatch', label: '鸿蒙-手表' },
-  { value: 'web',     label: 'web网页'  },
-]
-
-const platformLabel = computed(() =>
-  platformOptions.find(o => o.value === selectedPlatform.value)?.label ?? '鸿蒙-手机'
-)
-
-const platformDropdownOpen  = ref(false)
-const platformDropdownRef   = ref(null)
-const casesPlatformOpen     = ref(false)
-const casesPlatformRef      = ref(null)
-
-function togglePlatformDropdown() {
-  platformDropdownOpen.value = !platformDropdownOpen.value
-  casesPlatformOpen.value = false
-}
-
-function toggleCasesPlatform() {
-  casesPlatformOpen.value = !casesPlatformOpen.value
-  platformDropdownOpen.value = false
-}
-
-function selectPlatformOption(val) {
-  platformDropdownOpen.value = false
-  onPlatformSwitch(val)
-}
-
-function selectCasesPlatformOption(val) {
-  casesPlatformOpen.value = false
-  onPlatformSwitch(val)
-}
-
-function handleDocumentClick(e) {
-  if (platformDropdownRef.value && !platformDropdownRef.value.contains(e.target)) {
-    platformDropdownOpen.value = false
-  }
-  if (casesPlatformRef.value && !casesPlatformRef.value.contains(e.target)) {
-    casesPlatformOpen.value = false
-  }
-}
-
-onMounted(() => document.addEventListener('click', handleDocumentClick))
-onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
-
-function selectDeliverable(d) {
-  selectedDeliverable.value = d
-}
-
 
 async function validateAnnotationUrl() {
   const code = annotationUrl.value.trim()
@@ -535,7 +279,6 @@ function onStep4Picked(event) {
 </script>
 
 <style scoped>
-
 .phone-content--center {
   align-items: center;
   justify-content: center;

@@ -4,6 +4,7 @@
  * - GET  /api/cases/:caseId/image/:type?platform=
  * - POST /api/check/case/:caseId?platform=   分析指定 case（从磁盘加载）
  * - POST /api/check/upload                   分析上传的文件（platform 从 form 字段读）
+ * - POST /api/check/dump-to-json             dump 文本 → 初版 JSON（带 _sourceFormat: 'dump'）
  */
 
 import { Router } from 'express'
@@ -18,6 +19,7 @@ import { matchNodes }  from '../matchers/nodeMatcher.js'
 import { compareAll }  from '../comparators/styleComparator.js'
 import { compareSpatialRelations } from '../comparators/spatialComparator.js'
 import { getPlatform, resolvePlatform } from '../config/platforms.js'
+import { buildDumpTree } from '../parsers/arkui/1-buildDumpTree.js'
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage() })
@@ -112,7 +114,9 @@ router.post('/check/case/:caseId', async (req, res) => {
       devContent = JSON.parse(readFileSync(jsonPath, 'utf-8'))
       devImgFile = platform.devImg
     } else if (dumpPath && existsSync(dumpPath)) {
-      devContent = readFileSync(dumpPath, 'utf-8')
+      const dumpText = readFileSync(dumpPath, 'utf-8')
+      const { canvasWidthVp, canvasHeightVp, resolution, root } = buildDumpTree(dumpText)
+      devContent = { _sourceFormat: 'dump', canvasWidthVp, canvasHeightVp, resolution, root }
       devImgFile = platform.dumpDevImg || platform.devImg
     } else {
       return res.status(404).json({ error: `Case ${caseId} 缺少开发侧文件` })
@@ -175,6 +179,25 @@ router.post(
         platform,
       })
       res.json(result)
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: err.message })
+    }
+  }
+)
+
+// ── dump 文本 → 初版 JSON ──────────────────────────────────────────────────────
+router.post(
+  '/check/dump-to-json',
+  upload.single('dumpFile'),
+  (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: '缺少 dumpFile 文件' })
+      }
+      const dumpText = req.file.buffer.toString('utf-8')
+      const { canvasWidthVp, canvasHeightVp, resolution, root } = buildDumpTree(dumpText)
+      res.json({ _sourceFormat: 'dump', canvasWidthVp, canvasHeightVp, resolution, root })
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: err.message })

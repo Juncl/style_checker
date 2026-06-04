@@ -1130,6 +1130,8 @@ body {
   background: var(--octo-surface-page);
   border-bottom: 1px solid var(--octo-border-separator);
   flex-shrink: 0;
+  position: relative;
+  z-index: 10;
 }
 
 .up-tabbar--soft {

@@ -42,6 +42,14 @@ export const checkUpload = (
 export const imageUrl = (caseId: string, type: string, platform: PlatformKey = DEFAULT_PLATFORM): string =>
   `/devlint/api/cases/${caseId}/image/${type}?platform=${encodeURIComponent(platform)}`
 
+export const convertDumpToJson = (dumpFile: File): Promise<unknown> => {
+  const form = new FormData()
+  form.append('dumpFile', dumpFile)
+  return http.post('/check/dump-to-json', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then(r => r.data)
+}
+
 export interface ParsedPreview {
   nodes: unknown[]
   canvas: { w: number; h: number; resolution?: number }

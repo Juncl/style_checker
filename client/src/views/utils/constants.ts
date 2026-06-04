@@ -25,7 +25,7 @@ export const GUIDE_LINKS = {
 
 export const FILE_SLOTS = [
   { key: 'designJson',  label: 'design.json', required: true,  match: (f: File) => /design/i.test(f.name) && f.name.endsWith('.json') },
-  { key: 'arkuiJson',   label: 'arkui.json',  required: true,  match: (f: File) => /arkui/i.test(f.name)  && f.name.endsWith('.json') },
+  { key: 'arkuiJson',   label: 'arkui.json',  required: true,  match: (f: File) => /arkui/i.test(f.name)  && (f.name.endsWith('.json') || f.name.endsWith('.dump')) },
   { key: 'designImage', label: 'design 图片', required: false, match: (f: File) => /design/i.test(f.name) && f.type.startsWith('image/') },
   { key: 'arkuiImage',  label: 'arkui 图片',  required: true,  match: (f: File) => /arkui/i.test(f.name)  && f.type.startsWith('image/') },
 ]

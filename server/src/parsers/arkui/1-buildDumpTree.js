@@ -47,6 +47,17 @@ export function buildDumpTree(dumpText) {
   return { canvasWidthVp, canvasHeightVp, resolution, root }
 }
 
+/**
+ * 接收 dump-to-json 接口返回的初版 JSON（带 _sourceFormat: 'dump'），
+ * 直接解构返回，供 parseArkui 流水线后续步骤使用。
+ * @param {{ _sourceFormat: string, canvasWidthVp: number, canvasHeightVp: number, resolution: number, root: object }} initJson
+ * @returns {{ canvasWidthVp, canvasHeightVp, resolution, root }}
+ */
+export function buildDumpTreeFromJson(initJson) {
+  const { canvasWidthVp, canvasHeightVp, resolution, root } = initJson
+  return { canvasWidthVp, canvasHeightVp, resolution, root }
+}
+
 // ─── 文本树解析 ────────────────────────────────────────────────────────────────
 
 function parseDumpText(text) {

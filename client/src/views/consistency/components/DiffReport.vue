@@ -1,5 +1,12 @@
 <template>
-  <div class="diff-panel">
+  <div class="diff-panel" @click="activeMoreCardKey = null">
+    <!-- 无差异状态：居中插图 -->
+    <div v-if="hasNoDiffs" class="diff-noproblem">
+      <img :src="noproblemSvg" class="noproblem-img" alt="" />
+      <p class="noproblem-text">真棒！未检查出问题~</p>
+    </div>
+
+    <template v-else>
     <!-- 模式 tab：精准检查 / 模糊比对 -->
     <div class="match-mode-tabs">
       <div class="match-mode-slider" :class="{ 'match-mode-slider--right': matchMode === 'fuzzy' }"></div>
@@ -75,12 +82,18 @@
             <span class="diff-card-name" :title="cardName(d)">{{ cardName(d) }}</span>
           </div>
           <span class="diff-card-ops">
-            <span class="diff-card-more">
+            <span v-if="notIssueKeys.has(foldKey(d))" class="not-issue-tag">非问题</span>
+            <span class="diff-card-more" @click.stop="toggleMoreMenu(foldKey(d))">
               <svg viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <circle cx="1.667" cy="8" r="1" fill="rgb(25,25,25)" />
                 <circle cx="8" cy="8" r="1" fill="rgb(25,25,25)" />
                 <circle cx="14.333" cy="8" r="1" fill="rgb(25,25,25)" />
               </svg>
+              <transition name="more-pop">
+                <div v-if="activeMoreCardKey === foldKey(d)" class="more-menu" @click.stop>
+                  <button class="more-menu-item" @click.stop="markNotIssue(foldKey(d))">非问题</button>
+                </div>
+              </transition>
             </span>
             <el-icon class="diff-card-fold" @click.stop="toggleFold(foldKey(d))">
               <ArrowUp v-if="!isFolded(foldKey(d))" />
@@ -118,12 +131,14 @@
         </div>
       </div>
     </div>
+    </template>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, nextTick, defineComponent, h } from 'vue'
 import { Search, CircleCheck, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
+import noproblemSvg from '../../../assets/svg/noproblem.svg'
 
 const ColorDot = defineComponent({
   props: { hex: String },
@@ -164,13 +179,17 @@ const ISSUE_GROUPS = [
   { key: 'spacing', label: '间距' }, { key: 'fontSize.scale', label: '字体缩放' }, { key: 'other', label: '其它' },
 ]
 
-const activeIssue  = ref('all')
-const matchMode    = ref('precise')  // 'precise'=高中置信 | 'fuzzy'=高中低
-const fuzzyHovered = ref(false)
-const search       = ref('')
-const selectedIdx = ref(-1)
-const listRef     = ref(null)
-const folded      = ref(new Set())
+const hasNoDiffs = computed(() => props.diffs.length === 0)
+
+const activeIssue      = ref('all')
+const matchMode        = ref('precise')  // 'precise'=高中置信 | 'fuzzy'=高中低
+const fuzzyHovered     = ref(false)
+const search           = ref('')
+const selectedIdx      = ref(-1)
+const listRef          = ref(null)
+const folded           = ref(new Set())
+const activeMoreCardKey = ref(null)
+const notIssueKeys     = ref(new Set())
 
 const visibleDiffs = computed(() =>
   matchMode.value === 'fuzzy' ? props.diffs : props.diffs.filter(d => d.confidence !== 'low')
@@ -282,6 +301,17 @@ function selectItem(d, idx) {
   }
 }
 
+// ── 非问题标记 ──
+function toggleMoreMenu(key) {
+  activeMoreCardKey.value = activeMoreCardKey.value === key ? null : key
+}
+function markNotIssue(key) {
+  const next = new Set(notIssueKeys.value)
+  next.add(key)
+  notIssueKeys.value = next
+  activeMoreCardKey.value = null
+}
+
 // ── 折叠状态（按节点+属性的稳定 key）──
 function foldKey(d) {
   return `${d.designNodeId || ''}|${d.arkuiNodeId || ''}|${d.property}`
@@ -348,6 +378,26 @@ function issueLabel(property) {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+}
+
+.diff-noproblem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+}
+
+.noproblem-img {
+  width: 160px;
+  height: 160px;
+}
+
+.noproblem-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--octo-text-secondary);
 }
 
 /* ── 工具栏 ── */
@@ -565,9 +615,70 @@ function issueLabel(property) {
 }
 
 .diff-card-more {
+  position: relative;
   display: inline-flex;
   align-items: center;
   font-size: 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 150ms ease;
+}
+
+.diff-card-more:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.not-issue-tag {
+  height: 22px;
+  padding: 2px 8px;
+  background: #9999991a;
+  color: #999;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 18px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  background: var(--octo-surface-page);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.06);
+  padding: 4px;
+  min-width: 80px;
+}
+
+.more-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--octo-text-primary);
+  border-radius: 4px;
+  transition: background 150ms ease;
+  white-space: nowrap;
+}
+
+.more-menu-item:hover {
+  background: var(--octo-surface-hover);
+}
+
+.more-pop-enter-active,
+.more-pop-leave-active {
+  transition: opacity 100ms ease, transform 100ms ease;
+}
+.more-pop-enter-from,
+.more-pop-leave-to {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.97);
 }
 
 .diff-card-fold {

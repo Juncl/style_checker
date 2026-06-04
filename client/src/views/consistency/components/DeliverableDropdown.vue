@@ -6,6 +6,11 @@
       <el-icon class="deliverable-trigger-arrow" :class="{ 'is-open': open }"><ArrowDown /></el-icon>
     </div>
     <div v-show="open" class="deliverable-panel">
+      <div v-if="showAddButton" class="deliverable-add-btn" @click="onAdd">
+        <el-icon class="deliverable-add-icon"><Plus /></el-icon>
+        <span>{{ addButtonText }}</span>
+      </div>
+      <div v-if="showAddButton" class="deliverable-separator"></div>
       <div v-if="!items.length" class="deliverable-empty">{{ emptyText }}</div>
       <div
         v-for="item in items"
@@ -20,21 +25,32 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowDown, Plus } from '@element-plus/icons-vue'
 
 const props = defineProps({
-  items:       { type: Array,  default: () => [] },
-  selected:    { type: Object, default: null },
-  placeholder: { type: String, default: '选择' },
-  emptyText:   { type: String, default: '暂无数据' },
+  items:          { type: Array,   default: () => [] },
+  selected:       { type: Object,  default: null },
+  placeholder:    { type: String,  default: '选择' },
+  emptyText:      { type: String,  default: '暂无数据' },
+  showAddButton:  { type: Boolean, default: false },
+  addButtonText:  { type: String,  default: '新增页面' },
 })
-const emit = defineEmits(['select'])
+const emit = defineEmits(['select', 'add'])
 
 const open        = ref(false)
 const dropdownRef = ref(null)
 
 function onSelect(item) {
+  if (item.id === props.selected?.id) {
+    open.value = false
+    return
+  }
   emit('select', item)
+  open.value = false
+}
+
+function onAdd() {
+  emit('add')
   open.value = false
 }
 
@@ -127,5 +143,37 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   font-size: 12px;
   color: var(--octo-text-placeholder);
   text-align: center;
+}
+
+.deliverable-add-btn {
+  height: 28px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px dashed #C9C9C9;
+  font-size: 14px;
+  color: var(--octo-text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  white-space: nowrap;
+  background: rgba(25, 25, 25, 0.05);
+  transition: background 150ms ease;
+}
+.deliverable-add-btn:hover {
+  background: rgba(25, 25, 25, 0.08);
+}
+
+.deliverable-add-icon {
+  font-size: 14px;
+  color: var(--octo-text-primary);
+  flex-shrink: 0;
+}
+
+.deliverable-separator {
+  height: 1px;
+  background: rgba(223, 223, 223, 1);
+  margin: 2px 0;
 }
 </style>

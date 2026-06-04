@@ -1,33 +1,6 @@
 <template>
   <AppLayout>
-    <UploadPage
-      v-if="!result"
-      ref="uploadPageRef"
-      :upload-files="uploadFiles"
-      :cases="cases"
-      :selected-case="selectedCase"
-      :loading="loading"
-      :case-names="CASE_NAMES"
-      :is-drag-over="isDragOver && !loading"
-      :debug-mode="debugMode"
-      :current-platform="currentPlatform"
-      :dev-preview="devPreview"
-      :design-preview="designPreview"
-      :dev-preview-loading="devPreviewLoading"
-      :design-preview-loading="designPreviewLoading"
-      :blob-dev-src="blobUrls.arkui"
-      :blob-design-src="blobUrls.design"
-      :deliverables="deliverables"
-      @step-picked="onStepPicked"
-      @drag-over="isDragOver = $event"
-      @drop="onDrop"
-      @run-upload="runUpload"
-      @select-case="selectCase"
-      @platform-switch="onPlatformSwitch"
-      @clear-dev-preview="clearDevPreview"
-      @clear-design-preview="clearDesignPreview"
-    />
-
+    <!-- loading 遮罩，覆盖整个 app-body -->
     <div v-if="loading" class="center-placeholder-wrapper">
       <div class="center-placeholder">
         <el-icon class="spin" size="48"><Loading /></el-icon>
@@ -35,58 +8,129 @@
       </div>
     </div>
 
-    <ReportPage
-      v-else-if="result"
-      :result="result"
-      :arkui-img-src="arkuiImgSrc"
-      :design-img-src="designImgSrc"
-      :design-nodes="designNodes"
-      :all-arkui-nodes="allArkuiNodes"
-      :arkui-nodes="arkuiNodes"
-      :selected-pair="selectedPair"
-      :active-diff="activeDiff"
-      :debug-mode="debugMode"
-      :debug-pipeline-on="debugPipelineOn"
-      :debug-overlay-on="debugOverlayOn"
-      :debug-pair-items="debugPairItems"
-      :debug-pair-map="debugPairMap"
-      :locked-node-ids="lockedNodeIds"
-      :selected-design-diffs="selectedDesignDiffs"
-      :selected-arkui-diffs="selectedArkuiDiffs"
-      :cases="cases"
-      :selected-case="selectedCase"
-      :case-names="CASE_NAMES"
-      :current-platform="currentPlatform"
-      :rerun-loading="rerunLoading"
-      :dev-reuploading="devReuploading"
-      :design-reuploading="designReuploading"
-      :dev-preview="devPreview"
-      :dev-preview-loading="devPreviewLoading"
-      :design-preview="designPreview"
-      :design-preview-loading="designPreviewLoading"
-      :blob-dev-src="blobUrls.arkui"
-      :blob-design-src="blobUrls.design"
-      :upload-files="uploadFiles"
-      :deliverables="deliverables"
-      :pages="pages"
-      @select-case="selectCase"
-      @arkui-node-click="onArkuiNodeClick"
-      @design-node-click="onDesignNodeClick"
-      @clear-diff="activeDiff = null"
-      @clear-pair="selectedPair = null"
-      @share="handleShare"
-      @recheck="resetResult"
-      @recheck-dev="recheckDev"
-      @recheck-design="recheckDesign"
-      @rerun="rerunCheck"
-      @diff-select="onDiffSelect"
-      @toggle-lock="onToggleLock"
-      @update:debug-pipeline-on="debugPipelineOn = $event"
-      @update:debug-overlay-on="debugOverlayOn = $event"
-      @step-picked="onStepPicked"
-      @clear-dev-preview="clearDevPreview"
-      @clear-design-preview="clearDesignPreview"
-    />
+    <!-- 中间主区 -->
+    <main class="center-panel up-board">
+      <ConsistencyTabbar
+        :view-mode="result ? 'report' : 'upload'"
+        :deliverables="deliverables"
+        :selected-deliverable="workingDeliverable"
+        :pages="pages"
+        :selected-page="workingPage"
+        :dev-preview="devPreview"
+        :dev-preview-loading="devPreviewLoading"
+        :design-preview="designPreview"
+        :design-preview-loading="designPreviewLoading"
+        :dev-reuploading="devReuploading"
+        :design-reuploading="designReuploading"
+        @select-deliverable="onSelectDeliverable"
+        @select-page="onSelectPage"
+        @add-page="onAddPage"
+        @clear-dev-preview="clearDevPreview"
+        @clear-design-preview="clearDesignPreview"
+        @recheck-dev="recheckDev"
+        @recheck-design="recheckDesign"
+      />
+
+      <UploadPage
+        v-if="!result"
+        ref="uploadPageRef"
+        :upload-files="uploadFiles"
+        :is-drag-over="isDragOver && !loading"
+        :debug-mode="debugMode"
+        :current-platform="currentPlatform"
+        :dev-preview="devPreview"
+        :design-preview="designPreview"
+        :dev-preview-loading="devPreviewLoading"
+        :design-preview-loading="designPreviewLoading"
+        :blob-dev-src="blobUrls.arkui"
+        :blob-design-src="blobUrls.design"
+        @step-picked="onStepPicked"
+        @drag-over="isDragOver = $event"
+        @drop="onDrop"
+      />
+
+      <ReportPage
+        v-if="result"
+        :result="result"
+        :arkui-img-src="arkuiImgSrc"
+        :design-img-src="designImgSrc"
+        :design-nodes="designNodes"
+        :all-arkui-nodes="allArkuiNodes"
+        :arkui-nodes="arkuiNodes"
+        :selected-pair="selectedPair"
+        :active-diff="activeDiff"
+        :debug-mode="debugMode"
+        :debug-pipeline-on="debugPipelineOn"
+        :debug-overlay-on="debugOverlayOn"
+        :debug-pair-items="debugPairItems"
+        :debug-pair-map="debugPairMap"
+        :locked-node-ids="lockedNodeIds"
+        :selected-design-diffs="selectedDesignDiffs"
+        :selected-arkui-diffs="selectedArkuiDiffs"
+        :selected-case="selectedCase"
+        :case-names="CASE_NAMES"
+        :current-platform="currentPlatform"
+        :dev-reuploading="devReuploading"
+        :design-reuploading="designReuploading"
+        :dev-preview="devPreview"
+        :dev-preview-loading="devPreviewLoading"
+        :design-preview="designPreview"
+        :design-preview-loading="designPreviewLoading"
+        :blob-dev-src="blobUrls.arkui"
+        :blob-design-src="blobUrls.design"
+        :upload-files="uploadFiles"
+        :hovered-arkui-cross-id="hoveredArkuiCrossId"
+        :hovered-design-cross-id="hoveredDesignCrossId"
+        @select-case="selectCase"
+        @arkui-node-click="onArkuiNodeClick"
+        @design-node-click="onDesignNodeClick"
+        @clear-pair="selectedPair = null"
+        @step-picked="onStepPicked"
+        @update:debug-pipeline-on="debugPipelineOn = $event"
+        @update:debug-overlay-on="debugOverlayOn = $event"
+        @arkui-hover="onArkuiHover"
+        @design-hover="onDesignHover"
+      />
+    </main>
+
+    <!-- 右侧面板 -->
+    <aside class="right-panel up-right-panel" style="position: relative;">
+      <UploadPanel
+        v-if="!result"
+        :loading="loading"
+        :selected-case="selectedCase"
+        :case-names="CASE_NAMES"
+        :current-platform="currentPlatform"
+        :upload-files="uploadFiles"
+        :debug-mode="debugMode"
+        @run-upload="runUpload"
+        @select-case="selectCase"
+        @platform-switch="onPlatformSwitch"
+      />
+      <ReportPanel
+        v-if="result"
+        :result="result"
+        :active-pair-for-diff="activePairForDiff"
+        :hover-pair-for-diff="hoverPairForDiff"
+        :debug-mode="debugMode"
+        :selected-pair="selectedPair"
+        :design-nodes="designNodes"
+        :all-arkui-nodes="allArkuiNodes"
+        :locked-node-ids="lockedNodeIds"
+        :rerun-loading="rerunLoading"
+        :can-rerun="canRerun"
+        :version-list="pageVersionList"
+        :working-version-id="workingVersionId"
+        @diff-select="onDiffSelect"
+        @diff-hover="hoveredDiffPair = $event"
+        @design-node-click="onDesignNodeClick"
+        @arkui-node-click="onArkuiNodeClick"
+        @toggle-lock="onToggleLock"
+        @rerun="rerunCheck"
+        @history-view="onHistoryView"
+      />
+    </aside>
+
     <div
       id="pixso_render"
       style="
@@ -110,48 +154,103 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
-import { fetchCases, checkCase, checkUpload, imageUrl, parseDevUpload, parseDesignUpload } from '../../api/index.ts'
-import { getTeamList, getSonListByTeamId, addConsistencyCheckDeliverable, addConsistencyCheckPage, getResultsByPageId, getPagesByDeliverableId, getConsistencyCheckDeliverables } from '../../api/api.ts'
+import { checkCase, checkUpload, imageUrl, parseDevUpload, parseDesignUpload, convertDumpToJson } from '../../api/index.ts'
+import { getTeamList, getSonListByTeamId, addConsistencyCheckDeliverable, addConsistencyCheckPage, getResultsByPageId, getPagesByDeliverableId, getConsistencyCheckDeliverables, fetchVersionJson } from '../../api/api.ts'
 import {
-  formatDateTime, fileToBase64, fileToText, buildProblems,
+  formatDateTime, fileToBase64, fileToText, buildProblems, base64ToFile, jsonToFile,
   isBlankLikeNode, isInteractiveImageNode, isSelectableNode, resolveSelectableNode,
 } from '../utils/tools.ts'
 import { initApp } from './init/index'
 import { savePlatform } from './init/restorePlatform'
 import AppLayout from './components/AppLayout.vue'
+import ConsistencyTabbar from './components/ConsistencyTabbar.vue'
 import UploadPage from './components/UploadPage.vue'
 import ReportPage from './components/ReportPage.vue'
+import UploadPanel from './components/UploadPanel.vue'
+import ReportPanel from './components/ReportPanel.vue'
 import '../../styles/app.css'
 import { CASE_NAMES_BY_PLATFORM, DEBUG_COLORS, FILE_SLOTS } from '../utils/constants'
 
 const route           = useRoute()
-const cases           = ref([])
 const currentPlatform = ref('hmPhone')
 const CASE_NAMES      = computed(() => CASE_NAMES_BY_PLATFORM[currentPlatform.value] || {})
-const selectedCase = ref('')
-const loading      = ref(false)
-const result       = ref(null)
-const activeDiff   = ref(null)
-const selectedPair   = ref(null)
-const lockedNodeIds  = ref(new Set())
-const isDragOver     = ref(false)
-const uploadPageRef = ref(null)
-const debugMode      = ref(false)
+const selectedCase    = ref('')
+const loading         = ref(false)
+const result          = ref(null)
+const activeDiff      = ref(null)
+const selectedPair    = ref(null)
+const lockedNodeIds   = ref(new Set())
+const isDragOver      = ref(false)
+const uploadPageRef   = ref(null)
+const debugMode       = ref(false)
 const debugPipelineOn = ref(false)
-const debugOverlayOn = ref(false)
+const debugOverlayOn  = ref(false)
 const rerunLoading      = ref(false)
 const devReuploading    = ref(false)
 const designReuploading = ref(false)
 
-const deliverables = ref([])
-const pages        = ref([])
+const deliverables     = ref([])
+const pages            = ref([])
+const workingDeliverable  = ref(null)
+const workingPage         = ref(null)
+const pageVersionList     = ref([])
+const workingVersionId    = ref(null)
 
-// 上传页预览状态：文件上传后自动解析并展示
-const devPreview          = ref(null)   // { nodes, canvas } | null
-const designPreview       = ref(null)   // { nodes, canvas } | null
-const devPreviewLoading   = ref(false)
+// 上传页预览状态
+const devPreview           = ref(null)
+const designPreview        = ref(null)
+const devPreviewLoading    = ref(false)
 const designPreviewLoading = ref(false)
 
+// ── hover 联动状态（从 ReportPage 提升）──────────────────────────────────────
+const hoveredArkuiNodeId  = ref(null)
+const hoveredDesignNodeId = ref(null)
+const hoveredDiffPair     = ref(null)
+
+const activePairForDiff = computed(() => {
+  if (!selectedPair.value) return null
+  return {
+    designNodeId: selectedPair.value.design?.id ?? null,
+    arkuiNodeId:  selectedPair.value.arkui?.id  ?? null,
+  }
+})
+
+const hoverPairForDiff = computed(() => {
+  if (!hoveredArkuiNodeId.value && !hoveredDesignNodeId.value) return null
+  return {
+    arkuiNodeId:  hoveredArkuiNodeId.value  ?? null,
+    designNodeId: hoveredDesignNodeId.value ?? null,
+  }
+})
+
+const hoveredDesignCrossId = computed(() => {
+  if (hoveredDiffPair.value?.designNodeId) return hoveredDiffPair.value.designNodeId
+  if (!hoveredArkuiNodeId.value) return null
+  const pair = result.value?.pairs?.find(p => p.arkui?.id === hoveredArkuiNodeId.value)
+  return pair?.design?.id ?? null
+})
+
+const hoveredArkuiCrossId = computed(() => {
+  if (hoveredDiffPair.value?.arkuiNodeId) return hoveredDiffPair.value.arkuiNodeId
+  if (!hoveredDesignNodeId.value) return null
+  const pair = result.value?.pairs?.find(p => p.design?.id === hoveredDesignNodeId.value)
+  return pair?.arkui?.id ?? null
+})
+
+function onArkuiHover(id) {
+  hoveredArkuiNodeId.value  = id
+  hoveredDesignNodeId.value = null
+}
+function onDesignHover(id) {
+  hoveredDesignNodeId.value = id
+  hoveredArkuiNodeId.value  = null
+}
+
+const canRerun = computed(() => {
+  const devOk    = !devReuploading.value    || !!devPreview.value
+  const designOk = !designReuploading.value || !!designPreview.value
+  return devOk && designOk && !rerunLoading.value
+})
 
 const designNodes = computed(() => result.value?.allDesignNodes ?? [])
 const allArkuiNodes = computed(() => result.value?.allArkuiNodes ?? [])
@@ -253,10 +352,8 @@ const debugPairMap = computed(() => {
   return map
 })
 
-
 const uploadFiles = ref({ designJson: null, arkuiJson: null, designImage: null, arkuiImage: null })
-
-const blobUrls = ref({ design: '', arkui: '' })
+const blobUrls    = ref({ design: '', arkui: '' })
 
 function revokeBlobUrls() {
   if (blobUrls.value.design) URL.revokeObjectURL(blobUrls.value.design)
@@ -267,15 +364,24 @@ onUnmounted(revokeBlobUrls)
 
 async function onStepPicked({ type, file }) {
   if (!file) return
+  let resolvedFile = file
+  if (type === 'arkuiJson' && file.name.endsWith('.dump')) {
+    try {
+      const initJson = await convertDumpToJson(file)
+      resolvedFile = jsonToFile(initJson, 'arkui.json')
+    } catch {
+      ElMessage.error('dump 文件转换失败，请检查文件格式')
+      return
+    }
+  }
   const next = { ...uploadFiles.value }
-  if (type === 'arkuiJson')        next.arkuiJson    = file
+  if (type === 'arkuiJson')        next.arkuiJson    = resolvedFile
   else if (type === 'arkuiImage')  next.arkuiImage   = file
   else if (type === 'designJson')  next.designJson   = file
   else if (type === 'designImage') next.designImage  = file
   selectedCase.value = ''
   uploadFiles.value = next
 
-  // 按侧更新 blob URL，避免影响另一侧的图片显示
   if (type === 'arkuiJson' || type === 'arkuiImage') {
     if (blobUrls.value.arkui) URL.revokeObjectURL(blobUrls.value.arkui)
     blobUrls.value = { ...blobUrls.value, arkui: next.arkuiImage ? URL.createObjectURL(next.arkuiImage) : '' }
@@ -284,23 +390,17 @@ async function onStepPicked({ type, file }) {
     blobUrls.value = { ...blobUrls.value, design: next.designImage ? URL.createObjectURL(next.designImage) : '' }
   }
 
-  // arkuiJson 上传时，由 json 内容决定平台，更新全局状态和缓存
   if (type === 'arkuiJson') {
     const detected = await detectPlatformFromJson(file)
     if (detected && detected !== currentPlatform.value) {
       currentPlatform.value = detected
       savePlatform(detected)
-      cases.value = []
-      try { cases.value = await fetchCases(detected) }
-      catch { ElMessage.warning(`无法加载 ${detected} 的 Case 列表`) }
     }
   }
 
-  // 开发侧 json + 图片都齐才触发节点预览
   if (type === 'arkuiJson' || type === 'arkuiImage') {
     if (next.arkuiJson && next.arkuiImage) triggerDevPreview(next)
   }
-  // 设计侧 json + 图片都齐才触发预览
   if (type === 'designJson' || type === 'designImage') {
     if (next.designJson && next.designImage) triggerDesignPreview(next)
   }
@@ -311,7 +411,7 @@ function onDrop(e) {
   assignFiles([...e.dataTransfer.files])
 }
 
-function assignFiles(files) {
+async function assignFiles(files) {
   const next = { ...uploadFiles.value }
   const unmatched = []
 
@@ -322,11 +422,23 @@ function assignFiles(files) {
   }
 
   const jsonFallback  = files.filter(f => f.name.endsWith('.json'))
+  const dumpFallback  = files.filter(f => f.name.endsWith('.dump'))
   const imageFallback = files.filter(f => f.type.startsWith('image/'))
   if (!next.designJson  && jsonFallback[0])  next.designJson  = jsonFallback[0]
   if (!next.arkuiJson   && jsonFallback[1])  next.arkuiJson   = jsonFallback[1]
+  if (!next.arkuiJson   && dumpFallback[0])  next.arkuiJson   = dumpFallback[0]
   if (!next.designImage && imageFallback[0]) next.designImage = imageFallback[0]
   if (!next.arkuiImage  && imageFallback[1]) next.arkuiImage  = imageFallback[1]
+
+  if (next.arkuiJson?.name.endsWith('.dump')) {
+    try {
+      const initJson = await convertDumpToJson(next.arkuiJson)
+      next.arkuiJson = jsonToFile(initJson, 'arkui.json')
+    } catch {
+      ElMessage.error('dump 文件转换失败，请检查文件格式')
+      return
+    }
+  }
 
   if (unmatched.length) ElMessage.info(`以下文件未能识别：${unmatched.join(', ')}`)
 
@@ -340,10 +452,8 @@ function assignFiles(files) {
   const designReady = next.designJson && next.designImage
 
   if (devReady && designReady) {
-    // 全部就绪 → 直接运行全量对比，不需要单独预览
     nextTick(runUpload)
   } else {
-    // 部分就绪 → 触发可用侧的节点预览
     if (devReady) triggerDevPreview(next)
     if (designReady) triggerDesignPreview(next)
   }
@@ -353,34 +463,78 @@ const designImgSrc = computed(() => blobUrls.value.design)
 const arkuiImgSrc  = computed(() => blobUrls.value.arkui)
 
 onMounted(async () => {
-  const { platform, deliverable } = await initApp()
+  const { platform } = await initApp()
   currentPlatform.value = platform
 
   debugMode.value = route.query['debugger'] === '1'
   debugPipelineOn.value = false
   debugOverlayOn.value = false
 
-  getConsistencyCheckDeliverables().then(list => { deliverables.value = list ?? [] })
+  const urlDeliverableId = route.query.deliverableId
+  const urlPageId        = route.query.pageId
+  const urlVersionId     = route.query.versionId
 
-  // Step 6：deliverableId 模式，直接渲染报告页，跳过上传和 fetchCases
-  if (deliverable) {
-    result.value = deliverable.result
-    blobUrls.value = { design: deliverable.designImgSrc, arkui: deliverable.arkuiImgSrc }
+  if (urlDeliverableId && urlPageId && urlVersionId) {
+    loading.value = true
+    try {
+      const [deliverableList, pageList] = await Promise.all([
+        getConsistencyCheckDeliverables(),
+        getPagesByDeliverableId(urlDeliverableId),
+      ])
+      deliverables.value = (deliverableList ?? []).sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0))
+
+      if (!Array.isArray(pageList) || pageList.length === 0) {
+        ElMessage.warning('找不到该交付件的页面数据')
+        window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash.split('?')[0]}`)
+        return
+      }
+      pages.value = pageList.slice().sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0))
+
+      const currentPage = pageList.find(p => String(p.id) === String(urlPageId))
+      if (!currentPage) {
+        ElMessage.warning(`找不到页面 ${urlPageId}`)
+        return
+      }
+      const deviceType = currentPage.deviceType ?? 'hmPhone'
+      workingDeliverable.value = (deliverableList ?? []).find(d => String(d.id) === String(urlDeliverableId)) ?? null
+      workingPage.value = currentPage
+
+      const versionResult = await getResultsByPageId(urlPageId, 1, 999)
+      const versionList   = versionResult?.list
+      pageVersionList.value  = Array.isArray(versionList) ? versionList : []
+      workingVersionId.value = urlVersionId ?? null
+      if (!Array.isArray(versionList) || versionList.length === 0) {
+        ElMessage.warning('该页面暂无版本记录')
+        return
+      }
+
+      const currentVersion = versionList.find(v => String(v.id) === String(urlVersionId))
+      if (!currentVersion) {
+        ElMessage.warning(`找不到版本 ${urlVersionId}`)
+        return
+      }
+
+      await loadHistoryVersion(currentVersion, deviceType)
+    } catch (e) {
+      console.error('历史结果加载失败', e)
+      ElMessage.warning('历史结果加载失败，请重试')
+    } finally {
+      loading.value = false
+    }
     return
   }
 
-  try { cases.value = await fetchCases(currentPlatform.value) }
-  catch { ElMessage.warning('无法加载内置 Case') }
+  getConsistencyCheckDeliverables().then(list => {
+    deliverables.value = (list ?? []).sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0))
+  })
+
 })
 
-async function onPlatformSwitch(platform) {
+function onPlatformSwitch(platform) {
   if (!platform || platform === currentPlatform.value) return
   currentPlatform.value = platform
   savePlatform(platform)
   selectedCase.value = ''
-  cases.value = []
-  try { cases.value = await fetchCases(platform) }
-  catch { ElMessage.warning(`无法加载 ${platform} 的 Case 列表`) }
 }
 
 async function detectPlatformFromJson(file) {
@@ -402,7 +556,6 @@ watch(debugMode, value => {
   if (!value) debugOverlayOn.value = false
 })
 
-// 报告页重新上传后，预览解析完成时提示用户点击重新对比
 watch(devPreview, val => {
   if (val && result.value && devReuploading.value) {
     ElMessage.success('上传成功，点击右侧重新对比分析')
@@ -414,8 +567,6 @@ watch(designPreview, val => {
   }
 })
 
-// ── 预览解析 ─────────────────────────────────────────────────────────────────
-
 async function triggerDevPreview(files) {
   devPreview.value   = null
   devPreviewLoading.value = true
@@ -425,7 +576,7 @@ async function triggerDevPreview(files) {
       files.arkuiImage ?? null,
       currentPlatform.value,
     )
-  } catch { /* 静默失败，不阻断主流程 */ }
+  } catch { /* 静默失败 */ }
   finally { devPreviewLoading.value = false }
 }
 
@@ -442,21 +593,23 @@ async function triggerDesignPreview(files) {
   finally { designPreviewLoading.value = false }
 }
 
-// ── 重置 ───────────────────────────────────────────────────────────────────
-
-function resetResult() {
-  result.value        = null
-  selectedCase.value  = ''
-  activeDiff.value    = null
-  selectedPair.value  = null
-  lockedNodeIds.value = new Set()
-  devPreview.value    = null
-  designPreview.value = null
+function onAddPage() {
+  workingPage.value          = { id: '__new__', name: '新增页面' }
+  result.value               = null
+  selectedCase.value         = ''
+  activeDiff.value           = null
+  selectedPair.value         = null
+  lockedNodeIds.value        = new Set()
+  devPreview.value           = null
+  designPreview.value        = null
+  devPreviewLoading.value    = false
+  designPreviewLoading.value = false
+  devReuploading.value       = false
+  designReuploading.value    = false
   revokeBlobUrls()
-  uploadFiles.value   = { designJson: null, arkuiJson: null, designImage: null, arkuiImage: null }
+  uploadFiles.value = { designJson: null, arkuiJson: null, designImage: null, arkuiImage: null }
 }
 
-// 报告页"开发侧重新上传"：保留设计侧数据和报告页，仅清空 arkui，进入上传卡片模式
 function recheckDev() {
   uploadFiles.value = { ...uploadFiles.value, arkuiJson: null, arkuiImage: null }
   devPreview.value  = null
@@ -471,7 +624,6 @@ function recheckDev() {
   devReuploading.value = true
 }
 
-// 报告页"设计侧重新上传"：保留 arkui 侧数据和 result，仅清空 design 文件并进入上传卡片模式
 function recheckDesign() {
   uploadFiles.value = { ...uploadFiles.value, designJson: null, designImage: null }
   designPreview.value = null
@@ -486,7 +638,6 @@ function recheckDesign() {
   designReuploading.value = true
 }
 
-// 上传页内"重新上传"按钮：仅清空对应侧
 function clearDevPreview() {
   uploadFiles.value = { ...uploadFiles.value, arkuiJson: null, arkuiImage: null }
   devPreview.value  = null
@@ -504,6 +655,42 @@ function clearDesignPreview() {
   if (blobUrls.value.design) {
     URL.revokeObjectURL(blobUrls.value.design)
     blobUrls.value = { ...blobUrls.value, design: '' }
+  }
+}
+
+async function submitRerunVersion() {
+  const pageId = workingPage.value?.id
+  if (!pageId || pageId === '__new__') return
+  try {
+    const now = formatDateTime(new Date())
+    const [devBase64, designBase64, devJsonStr, designJsonStr] = await Promise.all([
+      fileToBase64(uploadFiles.value.arkuiImage),
+      fileToBase64(uploadFiles.value.designImage),
+      fileToText(uploadFiles.value.arkuiJson),
+      fileToText(uploadFiles.value.designJson),
+    ])
+    await addConsistencyCheckPage({
+      id:                    String(pageId),
+      versionName:           now,
+      devImageBase64Data:    devBase64,
+      devJson:               devJsonStr,
+      designImageBase64Data: designBase64,
+      designJson:            designJsonStr,
+      problems:              buildProblems(result.value),
+    })
+
+    const pageResult = await getResultsByPageId(pageId, 1, 999)
+    pageVersionList.value  = pageResult?.list ?? []
+    const versionId = Array.isArray(pageResult?.list) ? pageResult.list[0]?.id : null
+    workingVersionId.value = versionId ?? null
+
+    const dId = workingDeliverable.value?.id
+    if (dId && versionId) {
+      const hashPath = window.location.hash.split('?')[0]
+      window.history.replaceState(null, '', `${window.location.pathname}${hashPath}?deliverableId=${dId}&pageId=${pageId}&versionId=${versionId}`)
+    }
+  } catch (e) {
+    console.error('重新对比存档失败', e)
   }
 }
 
@@ -528,15 +715,12 @@ async function rerunCheck() {
     devReuploading.value    = false
     designReuploading.value = false
     ElMessage.success('重新对比完成')
+    submitRerunVersion()
   } catch (e) {
     ElMessage.error(`分析失败：${e.response?.data?.error || e.message}`)
   } finally {
     rerunLoading.value = false
   }
-}
-
-function handleShare() {
-  ElMessage.info('分享功能开发中')
 }
 
 function onDesignNodeClick(nodeId) {
@@ -587,7 +771,6 @@ async function selectCase(id) {
   try {
     const data = await checkCase(id, currentPlatform.value)
 
-    // 从响应中取出原始文件内容，构造 File 对象（等价于用户手动上传 4 个文件）
     const rawDesignJson = data._rawDesignJson
     const rawDevContent = data._rawDevContent
     const devImgExt     = data._devImgExt || 'png'
@@ -596,19 +779,9 @@ async function selectCase(id) {
     delete data._devImgExt
     result.value = data
 
-    // 构造 JSON File 对象
-    const designJsonBlob = new Blob([JSON.stringify(rawDesignJson)], { type: 'application/json' })
-    const designJsonFile = new File([designJsonBlob], 'design.json', { type: 'application/json' })
-    let devJsonFile
-    if (typeof rawDevContent === 'string') {
-      const blob = new Blob([rawDevContent], { type: 'text/plain' })
-      devJsonFile = new File([blob], 'arkui.dump', { type: 'text/plain' })
-    } else {
-      const blob = new Blob([JSON.stringify(rawDevContent)], { type: 'application/json' })
-      devJsonFile = new File([blob], 'arkui.json', { type: 'application/json' })
-    }
+    const designJsonFile = jsonToFile(rawDesignJson, 'design.json')
+    const devJsonFile    = jsonToFile(rawDevContent,  'arkui.json')
 
-    // 并行 fetch 图片，转 File 对象
     const arkuiImgUrl  = imageUrl(id, 'arkui',  currentPlatform.value)
     const designImgUrl = imageUrl(id, 'design', currentPlatform.value)
     const [arkuiImgBlob, designImgBlob] = await Promise.all([
@@ -618,7 +791,6 @@ async function selectCase(id) {
     const arkuiImgFile  = new File([arkuiImgBlob],  `arkui.${devImgExt}`,  { type: arkuiImgBlob.type  || `image/${devImgExt}` })
     const designImgFile = new File([designImgBlob], 'design.png', { type: designImgBlob.type || 'image/png' })
 
-    // 存入 uploadFiles，此后与手动上传路径完全一致
     uploadFiles.value = {
       designJson:  designJsonFile,
       arkuiJson:   devJsonFile,
@@ -626,7 +798,6 @@ async function selectCase(id) {
       arkuiImage:  arkuiImgFile,
     }
 
-    // 创建 blob URL 用于图片显示
     blobUrls.value = {
       arkui:  URL.createObjectURL(arkuiImgBlob),
       design: URL.createObjectURL(designImgBlob),
@@ -637,21 +808,131 @@ async function selectCase(id) {
   finally    { loading.value = false }
 }
 
-// 对比完成后提交结果：新建交付件 → 新建页面（含版本数据）→ 刷新页面列表 → 更新 URL 参数
-// 后台静默执行，不阻塞主流程
+async function loadHistoryVersion(version, deviceType) {
+  const [devJsonData, designJsonData] = await Promise.all([
+    fetchVersionJson(version.devJsonUrl),
+    fetchVersionJson(version.designJsonUrl),
+  ])
+
+  const devImageFile    = base64ToFile(version.devBase64Data,    'arkui.jpg')
+  const designImageFile = base64ToFile(version.designBase64Data, 'design.jpg')
+  const devJsonFile     = jsonToFile(devJsonData,    'arkui.json')
+  const designJsonFile  = jsonToFile(designJsonData, 'design.json')
+
+  const [devParsed, designParsed] = await Promise.all([
+    parseDevUpload(devJsonFile, devImageFile, deviceType),
+    parseDesignUpload(designJsonFile, designImageFile, deviceType),
+  ])
+
+  const diffs = (version.problems ?? []).map(p => {
+    try { return JSON.parse(p.data) } catch { return null }
+  }).filter(Boolean)
+
+  const pairMap = new Map()
+  for (const diff of diffs) {
+    const key = `${diff.arkuiNodeId}::${diff.designNodeId}`
+    if (!pairMap.has(key)) pairMap.set(key, { arkuiNodeId: diff.arkuiNodeId, designNodeId: diff.designNodeId })
+  }
+  const arkuiNodeMap  = new Map((devParsed.nodes  ?? []).map(n => [n.id, n]))
+  const designNodeMap = new Map((designParsed.nodes ?? []).map(n => [n.id, n]))
+  const pairs = [...pairMap.values()]
+    .map(p => ({ arkui: arkuiNodeMap.get(p.arkuiNodeId), design: designNodeMap.get(p.designNodeId) }))
+    .filter(p => p.arkui && p.design)
+
+  const errorCount   = diffs.filter(d => d.severity === 'error').length
+  const warningCount = diffs.filter(d => d.severity === 'warning').length
+
+  result.value = {
+    pairs,
+    diffs,
+    canvas:               { arkui: devParsed.canvas, design: designParsed.canvas },
+    stats:                { errorCount, warningCount },
+    allArkuiNodes:        devParsed.nodes  ?? [],
+    allDesignNodes:       designParsed.nodes ?? [],
+    unmatchedDesignNodes: [],
+  }
+  blobUrls.value = { arkui: version.devBase64Data, design: version.designBase64Data }
+  uploadFiles.value = {
+    designJson:  designJsonFile,
+    arkuiJson:   devJsonFile,
+    designImage: designImageFile,
+    arkuiImage:  devImageFile,
+  }
+}
+
+// 统一的交付件切换逻辑（上传页 + 报告页共用）
+async function onSelectDeliverable(d) {
+  workingDeliverable.value = d
+  const pageList = await getPagesByDeliverableId(String(d.id))
+  pages.value = Array.isArray(pageList)
+    ? pageList.slice().sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0))
+    : []
+  if (pages.value.length === 0) return
+  await onSelectPage(pages.value[0])
+}
+
+// 统一的页面切换逻辑
+async function onSelectPage(page) {
+  workingPage.value = page
+  const versionResult = await getResultsByPageId(page.id, 1, 999)
+  pageVersionList.value  = versionResult?.list ?? []
+  const version = versionResult?.list?.[0]
+  workingVersionId.value = version?.id ?? null
+  if (!version) return
+  loading.value = true
+  try {
+    await loadHistoryVersion(version, page.deviceType ?? 'hmPhone')
+    const dId = workingDeliverable.value?.id
+    if (dId && page.id && version.id) {
+      const hashPath = window.location.hash.split('?')[0]
+      const params = `deliverableId=${dId}&pageId=${page.id}&versionId=${version.id}`
+      window.history.replaceState(null, '', `${window.location.pathname}${hashPath}?${params}`)
+    }
+  } catch (e) {
+    console.error('加载历史版本失败', e)
+    ElMessage.warning('加载历史版本失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+function onHistoryView(item) {
+  const dId = workingDeliverable.value?.id
+  const pId = workingPage.value?.id
+  if (!dId || !pId) return
+  const hashPath = window.location.hash.split('?')[0]
+  const params = `deliverableId=${dId}&pageId=${pId}&versionId=${item.id}`
+  window.history.replaceState(null, '', `${window.location.pathname}${hashPath}?${params}`)
+  window.location.reload()
+}
+
 async function submitResult() {
   try {
-    const teams = await getTeamList()
-    const teamId = Array.isArray(teams) ? teams[0]?.teamId : null
-    if (!teamId) return
+    const isNewPage = workingPage.value?.id === '__new__' && !!workingDeliverable.value?.id
+    const now = formatDateTime(new Date())
+    let deliverableId
 
-    const sonTeams = await getSonListByTeamId(teamId)
-    const subTeamId = Array.isArray(sonTeams) ? sonTeams[0]?.teamId : null
-    if (!subTeamId) return
+    if (isNewPage) {
+      // 新增页面：当前交付件下新建，跳过步骤 1-3
+      deliverableId = String(workingDeliverable.value.id)
+    } else {
+      // 正常存档：新建交付件（步骤 1-3）
+      const teams = await getTeamList()
+      const teamId = Array.isArray(teams) ? teams[0]?.teamId : null
+      if (!teamId) return
 
-    const now           = formatDateTime(new Date())
-    const deliverableId = await addConsistencyCheckDeliverable(String(subTeamId), now)
-    if (!deliverableId) return
+      const sonTeams = await getSonListByTeamId(teamId)
+      const subTeamId = Array.isArray(sonTeams) ? sonTeams[0]?.teamId : null
+      if (!subTeamId) return
+
+      deliverableId = await addConsistencyCheckDeliverable(String(subTeamId), now)
+      if (!deliverableId) return
+    }
+
+    // 步骤 4：新建页面
+    const existingPages = await getPagesByDeliverableId(String(deliverableId))
+    const pageCount = Array.isArray(existingPages) ? existingPages.length : 0
+    const pageName = `page${pageCount + 1}`
 
     const [devBase64, designBase64, devJsonStr, designJsonStr] = await Promise.all([
       fileToBase64(uploadFiles.value.arkuiImage),
@@ -661,8 +942,8 @@ async function submitResult() {
     ])
 
     const pageId = await addConsistencyCheckPage({
-      deliverableId,
-      name:                  now,
+      deliverableId:         String(deliverableId),
+      name:                  pageName,
       deviceType:            currentPlatform.value,
       versionName:           now,
       devImageBase64Data:    devBase64,
@@ -673,13 +954,27 @@ async function submitResult() {
     })
     if (!pageId) return
 
-    const pageResult = await getResultsByPageId(pageId, 1, 1)
+    // 步骤 5：取 versionId，同时更新页面版本列表
+    const pageResult = await getResultsByPageId(pageId, 1, 999)
+    pageVersionList.value  = pageResult?.list ?? []
     const versionId  = Array.isArray(pageResult?.list) ? pageResult.list[0]?.id : null
+    workingVersionId.value = versionId ?? null
 
-    // 从后台查询最新页面列表，更新下拉框数据
-    const pageList = await getPagesByDeliverableId(deliverableId)
-    pages.value = Array.isArray(pageList) ? pageList : []
+    // 步骤 6：刷新页面列表
+    const pageList = await getPagesByDeliverableId(String(deliverableId))
+    pages.value = Array.isArray(pageList)
+      ? pageList.slice().sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0))
+      : []
+    workingPage.value = pages.value.find(p => String(p.id) === String(pageId)) ?? null
 
+    // 非新增页面：同步刷新交付件列表和选中态
+    if (!isNewPage) {
+      const deliverableList = await getConsistencyCheckDeliverables()
+      deliverables.value = (deliverableList ?? []).sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0))
+      workingDeliverable.value = deliverables.value.find(d => String(d.id) === String(deliverableId)) ?? null
+    }
+
+    // 步骤 7：更新 URL
     if (deliverableId && pageId && versionId) {
       const hashPath = window.location.hash.split('?')[0]
       const params = `deliverableId=${deliverableId}&pageId=${pageId}&versionId=${versionId}`
@@ -723,5 +1018,4 @@ function onDiffSelect(diff) {
     selectedPair.value = null
   }
 }
-
 </script>
