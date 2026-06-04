@@ -12,11 +12,11 @@
  * 不指定节点 ID 时，输出 Pass 1 可信匹配（≥ 0.9）汇总。
  * 指定节点 ID 时，额外输出该 hm 节点的 Top 5 候选详情。
  *
- * 依赖：server 在 localhost:3000 运行（复用热 Tesseract worker 加速解析）
+ * 依赖：server 在 localhost:3012 运行（复用热 Tesseract worker 加速解析）
  */
 import { matchAllTextNodes } from '../src/matchers/allTextMatcher.js'
 
-const SERVER = 'http://localhost:3000'
+const SERVER = 'http://localhost:3012'
 
 const caseId      = process.argv[2] || 'case2'
 const targetHmId  = process.argv[3] || null

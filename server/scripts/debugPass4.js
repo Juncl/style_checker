@@ -14,7 +14,7 @@ import { computeIoU } from '../src/utils/matchGeometry.js'
 import { isStrongTitleSlotMatch, hasUsableText, isShortCjkLabel } from '../src/utils/textSemantics.js'
 import { comparePaths } from '../src/utils/pathOrder.js'
 
-const SERVER = 'http://localhost:3000'
+const SERVER = 'http://localhost:3012'
 
 // ── 参数解析 ─────────────────────────────────────────────────────────────────
 const [,, caseId, targetDeId] = process.argv

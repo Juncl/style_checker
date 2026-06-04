@@ -21,7 +21,7 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/devlint/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:3012',
         rewrite: (path) => path.replace(/^\/devlint/, ''),
         changeOrigin: true,
       },

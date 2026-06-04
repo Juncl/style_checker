@@ -463,58 +463,40 @@ const designImgSrc = computed(() => blobUrls.value.design)
 const arkuiImgSrc  = computed(() => blobUrls.value.arkui)
 
 onMounted(async () => {
-  const { platform } = await initApp()
-  currentPlatform.value = platform
-
   debugMode.value = route.query['debugger'] === '1'
   debugPipelineOn.value = false
   debugOverlayOn.value = false
 
-  const urlDeliverableId = route.query.deliverableId
-  const urlPageId        = route.query.pageId
-  const urlVersionId     = route.query.versionId
-
-  if (urlDeliverableId && urlPageId && urlVersionId) {
+  // URL 含三参数时提前遮住上传页，避免等待 API 期间闪现
+  if (route.query.deliverableId && route.query.pageId && route.query.versionId) {
     loading.value = true
+  }
+
+  let initResult = null
+  try {
+    initResult = await initApp(route)
+  } catch (e) {
+    loading.value = false
+    console.error('初始化加载失败', e)
+    ElMessage.warning(e?.message ?? '加载失败，请重试')
+    if (e.clearUrl) {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash.split('?')[0]}`)
+    }
+    return
+  }
+
+  currentPlatform.value = initResult.platform
+
+  const { deliverable } = initResult
+  if (deliverable) {
     try {
-      const [deliverableList, pageList] = await Promise.all([
-        getConsistencyCheckDeliverables(),
-        getPagesByDeliverableId(urlDeliverableId),
-      ])
-      deliverables.value = (deliverableList ?? []).sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0))
-
-      if (!Array.isArray(pageList) || pageList.length === 0) {
-        ElMessage.warning('找不到该交付件的页面数据')
-        window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash.split('?')[0]}`)
-        return
-      }
-      pages.value = pageList.slice().sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0))
-
-      const currentPage = pageList.find(p => String(p.id) === String(urlPageId))
-      if (!currentPage) {
-        ElMessage.warning(`找不到页面 ${urlPageId}`)
-        return
-      }
-      const deviceType = currentPage.deviceType ?? 'hmPhone'
-      workingDeliverable.value = (deliverableList ?? []).find(d => String(d.id) === String(urlDeliverableId)) ?? null
-      workingPage.value = currentPage
-
-      const versionResult = await getResultsByPageId(urlPageId, 1, 999)
-      const versionList   = versionResult?.list
-      pageVersionList.value  = Array.isArray(versionList) ? versionList : []
-      workingVersionId.value = urlVersionId ?? null
-      if (!Array.isArray(versionList) || versionList.length === 0) {
-        ElMessage.warning('该页面暂无版本记录')
-        return
-      }
-
-      const currentVersion = versionList.find(v => String(v.id) === String(urlVersionId))
-      if (!currentVersion) {
-        ElMessage.warning(`找不到版本 ${urlVersionId}`)
-        return
-      }
-
-      await loadHistoryVersion(currentVersion, deviceType)
+      deliverables.value     = deliverable.deliverableList
+      pages.value            = deliverable.pageList
+      workingDeliverable.value = deliverable.deliverableItem
+      workingPage.value      = deliverable.currentPage
+      pageVersionList.value  = deliverable.versionList
+      workingVersionId.value = deliverable.urlVersionId
+      await loadHistoryVersion(deliverable.currentVersion, deliverable.deviceType)
     } catch (e) {
       console.error('历史结果加载失败', e)
       ElMessage.warning('历史结果加载失败，请重试')
@@ -527,7 +509,6 @@ onMounted(async () => {
   getConsistencyCheckDeliverables().then(list => {
     deliverables.value = (list ?? []).sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0))
   })
-
 })
 
 function onPlatformSwitch(platform) {

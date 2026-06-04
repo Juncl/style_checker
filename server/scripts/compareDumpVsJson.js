@@ -6,7 +6,7 @@
  *
  * 默认 caseId=case12。
  *
- * 依赖：server 已在 localhost:3000 启动。
+ * 依赖：server 已在 localhost:3012 启动。
  * 调用接口：
  *   GET /api/debug/parse/<caseId>?platform=hmPhone        (JSON 路径)
  *   GET /api/debug/parse/<caseId>?platform=hmPhone-dump   (Dump 路径)
@@ -17,7 +17,7 @@
  *   - 文本节点内容集合差异
  */
 
-const SERVER = 'http://localhost:3000'
+const SERVER = 'http://localhost:3012'
 
 const caseId = process.argv[2] || 'case12'
 
