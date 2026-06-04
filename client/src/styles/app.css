@@ -1400,13 +1400,17 @@ body {
   inset: 0;
   z-index: 10;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 16px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.65);
   backdrop-filter: blur(4px);
-  font-size: 36px;
-  color: var(--octo-primary);
+}
+.url-loading-text {
+  font-size: 14px;
+  color: var(--octo-text-primary);
 }
 
 .up-url-card {

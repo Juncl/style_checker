@@ -129,7 +129,7 @@
             <div class="phone-bg"></div>
             <div class="phone-content phone-content--center">
               <div class="preview-loading">
-                <el-icon class="spin" size="32"><Loading /></el-icon>
+                <OctoLoading :size="48" />
                 <span class="preview-loading-text">正在解析节点…</span>
               </div>
             </div>
@@ -192,7 +192,7 @@
             <div class="phone-bg"></div>
             <div class="phone-content phone-content--center">
               <div class="preview-loading">
-                <el-icon class="spin" size="32"><Loading /></el-icon>
+                <OctoLoading :size="48" />
                 <span class="preview-loading-text">正在解析节点…</span>
               </div>
             </div>
@@ -246,7 +246,8 @@
 
 <script setup>
 import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { Crop, Loading } from '@element-plus/icons-vue'
+import { Crop } from '@element-plus/icons-vue'
+import OctoLoading from './common/OctoLoading.vue'
 import ImagePanel from './ImagePanel.vue'
 import DevUploadCard from './DevUploadCard.vue'
 import DesignUploadCard from './DesignUploadCard.vue'

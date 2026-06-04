@@ -4,23 +4,27 @@
     <input ref="pickerImage" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.svg" style="display:none" @change="onImagePicked" />
     <div class="phone-bg"></div>
     <div class="phone-content">
-      <!-- 传送码模式（默认） -->
-      <div v-if="!fileMode" class="up-url-group">
-        <div v-if="urlLoading" class="url-loading-overlay">
-          <el-icon class="spin"><Loading /></el-icon>
-        </div>
-        <div class="up-step-title up-step-title--center up-step-title--row">
-          <span>输入传送码 / URL</span>
-          <button v-if="debugMode" class="debug-inline-toggle" @click="fileMode = true">⇄ 文件上传</button>
-        </div>
-        <div class="up-url-card">
-          <el-input
-            v-model="annotationUrl"
-            type="textarea"
-            :rows="7"
-            placeholder="请输入标注视图URL/传送码"
-            class="up-url-textarea"
-          />
+      <!-- debugger 模式 -->
+      <template v-if="debugMode">
+        <!-- 传送码模式 -->
+        <div v-if="debugStep3Mode" class="up-url-group">
+          <div v-if="urlLoading" class="url-loading-overlay">
+            <OctoLoading :size="48" />
+            <span class="url-loading-text">加载中</span>
+          </div>
+          <div class="up-step-title up-step-title--center up-step-title--row">
+            <span>Step3:输入传送码</span>
+            <button class="debug-inline-toggle" @click="debugStep3Mode = false" title="切换到文件上传">⇄ 切换</button>
+          </div>
+          <div class="up-url-card">
+            <img :src="iconStep3" class="up-url-icon" alt="" />
+            <el-input
+              v-model="annotationUrl"
+              placeholder="请输入标注视图URL/传送码"
+              class="up-url-input"
+              @keyup.enter="validateAnnotationUrl"
+            />
+          </div>
           <el-button
             type="primary"
             class="up-url-btn"
@@ -28,55 +32,82 @@
             @click="validateAnnotationUrl"
           >确认</el-button>
         </div>
-      </div>
-      <!-- 文件上传模式 -->
-      <div v-else class="up-upload-card">
-        <div class="up-step-title up-step-title--center up-step-title--row">
-          <span>设计侧文件上传</span>
-          <button class="debug-inline-toggle" @click="fileMode = false">⇄ 传送码</button>
-        </div>
-        <div class="up-step">
-          <div class="up-step-title up-step-title--center"><span>Step3：上传 JSON</span></div>
-          <div
-            :class="['up-drop', { 'has-file': designJson }]"
-            @click="pickerJson?.click()"
-          >
-            <img v-if="!designJson" :src="iconJson" class="up-drop-icon" alt="" />
-            <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
-            <div v-if="!designJson" class="up-drop-text">
-              <span class="up-link" @click.stop="pickerJson?.click()">单击上传</span>
-              <span class="up-drop-sub">(.json)</span>
+        <!-- 文件上传模式 -->
+        <div v-else class="up-upload-card">
+          <div class="up-step-title up-step-title--center up-step-title--row">
+            <span>调试对比</span>
+            <button class="debug-inline-toggle" @click="debugStep3Mode = true" title="返回传送码模式">⇄ 返回</button>
+          </div>
+          <div class="up-step">
+            <div class="up-step-title up-step-title--center"><span>Step3：上传 JSON</span></div>
+            <div
+              :class="['up-drop', { 'has-file': designJson }]"
+              @click="pickerJson?.click()"
+            >
+              <img v-if="!designJson" :src="iconJson" class="up-drop-icon" alt="" />
+              <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
+              <div v-if="!designJson" class="up-drop-text">
+                <span class="up-link" @click.stop="pickerJson?.click()">单击上传</span>
+                <span class="up-drop-sub">(.json)</span>
+              </div>
+              <span v-else class="up-drop-done">{{ designJson.name }}</span>
             </div>
-            <span v-else class="up-drop-done">{{ designJson.name }}</span>
+          </div>
+          <div class="up-step">
+            <div class="up-step-title up-step-title--center"><span>Step4：上传图片</span></div>
+            <div
+              :class="['up-drop', { 'has-file': designImage, 'is-disabled': !designJson }]"
+              @click="triggerImage"
+            >
+              <img v-if="!designImage" :src="iconImage" class="up-drop-icon" alt="" />
+              <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
+              <div v-if="!designImage" class="up-drop-text">
+                <span class="up-link" @click.stop="triggerImage">单击上传</span>
+                <span class="up-drop-sub">(.png, .jpg ...)</span>
+              </div>
+              <span v-else class="up-drop-done">{{ designImage.name }}</span>
+            </div>
           </div>
         </div>
-        <div class="up-step">
-          <div class="up-step-title up-step-title--center"><span>Step4：上传图片</span></div>
-          <div
-            :class="['up-drop', { 'has-file': designImage, 'is-disabled': !designJson }]"
-            @click="triggerImage"
-          >
-            <img v-if="!designImage" :src="iconImage" class="up-drop-icon" alt="" />
-            <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
-            <div v-if="!designImage" class="up-drop-text">
-              <span class="up-link" @click.stop="triggerImage">单击上传</span>
-              <span class="up-drop-sub">(.png, .jpg ...)</span>
-            </div>
-            <span v-else class="up-drop-done">{{ designImage.name }}</span>
-          </div>
+      </template>
+
+      <!-- 非 debugger 模式：URL / 传送码输入 -->
+      <div v-else class="up-url-group">
+        <div v-if="urlLoading" class="url-loading-overlay">
+          <OctoLoading :size="48" />
         </div>
+        <div class="up-step-title up-step-title--center">
+          <span>Step3:输入标注视图URL/传送码</span>
+        </div>
+        <div class="up-url-card">
+          <img :src="iconStep3" class="up-url-icon" alt="" />
+          <el-input
+            v-model="annotationUrl"
+            placeholder="请输入标注视图URL/传送码"
+            class="up-url-input"
+            @keyup.enter="validateAnnotationUrl"
+          />
+        </div>
+        <el-button
+          type="primary"
+          class="up-url-btn"
+          :disabled="!annotationUrl.trim()"
+          @click="validateAnnotationUrl"
+        >确认</el-button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CircleCheck, Loading } from '@element-plus/icons-vue'
+import { CircleCheck } from '@element-plus/icons-vue'
+import OctoLoading from './common/OctoLoading.vue'
 import { getJsonImage } from '../../utils-inner/getJsonImage'
 import iconJson from '@/assets/upload-json.png'
 import iconImage from '@/assets/upload-image.png'
+import iconStep3 from '@/assets/svg/Step3-up.svg'
 
 const props = defineProps({
   designJson:  { type: Object,  default: null },
@@ -86,11 +117,18 @@ const props = defineProps({
 
 const emit = defineEmits(['step-picked'])
 
-const annotationUrl = ref('')
-const urlLoading    = ref(false)
-const fileMode      = ref(false)
-const pickerJson    = ref(null)
-const pickerImage   = ref(null)
+const annotationUrl  = ref('')
+const urlLoading     = ref(false)
+const debugStep3Mode = ref(true)
+const pickerJson     = ref(null)
+const pickerImage    = ref(null)
+
+watch(() => props.designJson, newVal => {
+  if (!newVal) {
+    annotationUrl.value = ''
+    urlLoading.value    = false
+  }
+})
 
 function triggerImage() {
   if (!props.designJson) {
@@ -122,6 +160,8 @@ async function validateAnnotationUrl() {
       emit('step-picked', { type: 'designImage', file: new File([imageBlob], `design.${ext}`, { type: mimeType }) })
     }
     ElMessage.success('设计稿获取成功')
+  } catch (e) {
+    ElMessage.error('设计稿获取失败，请检查标注视图URL或传送码后重试')
   } finally {
     urlLoading.value = false
   }

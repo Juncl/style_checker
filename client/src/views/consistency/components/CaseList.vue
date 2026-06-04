@@ -30,7 +30,7 @@
         <div class="case-thumb">
           <img :src="caseImageUrl(c.id)" class="case-thumb-img" :alt="c.id" />
           <div v-if="loading && selectedCase === c.id" class="case-thumb-loading">
-            <el-icon class="spin"><LoadingIcon /></el-icon>
+            <OctoLoading :size="48" />
           </div>
         </div>
         <div class="case-meta">
@@ -44,7 +44,8 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { ArrowDown, Loading as LoadingIcon } from '@element-plus/icons-vue'
+import { ArrowDown } from '@element-plus/icons-vue'
+import OctoLoading from './common/OctoLoading.vue'
 import { fetchCases, imageUrl } from '../../../api/index.ts'
 
 const props = defineProps({

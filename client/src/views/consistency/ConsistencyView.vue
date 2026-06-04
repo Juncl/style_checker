@@ -3,8 +3,8 @@
     <!-- loading 遮罩，覆盖整个 app-body -->
     <div v-if="loading" class="center-placeholder-wrapper">
       <div class="center-placeholder">
-        <el-icon class="spin" size="48"><Loading /></el-icon>
-        <p>正在分析…</p>
+        <OctoLoading :size="48" />
+        <p>加载中</p>
       </div>
     </div>
 
@@ -153,7 +153,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Loading } from '@element-plus/icons-vue'
+import OctoLoading from './components/common/OctoLoading.vue'
 import { checkCase, checkUpload, imageUrl, parseDevUpload, parseDesignUpload, convertDumpToJson } from '../../api/index.ts'
 import { getTeamList, getSonListByTeamId, addConsistencyCheckDeliverable, addConsistencyCheckPage, getResultsByPageId, getPagesByDeliverableId, getConsistencyCheckDeliverables, fetchVersionJson } from '../../api/api.ts'
 import {

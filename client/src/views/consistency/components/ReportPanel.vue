@@ -66,7 +66,7 @@
 
   <transition name="fade">
     <div v-if="rerunLoading" class="rerun-loading-mask">
-      <el-icon class="rerun-spin" size="28"><Loading /></el-icon>
+      <OctoLoading :size="48" class="rerun-spin" />
       <span>正在重新对比…</span>
     </div>
   </transition>
@@ -88,7 +88,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Loading } from '@element-plus/icons-vue'
+import OctoLoading from './common/OctoLoading.vue'
 import DiffReport from './DiffReport.vue'
 import NodeTree from './NodeTree.vue'
 import ShareDialog from './ShareDialog.vue'
