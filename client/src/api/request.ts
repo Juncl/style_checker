@@ -9,8 +9,7 @@ class Request {
   }
 
   async post(url: string, params?: unknown, timeout?: number, headers?: Record<string, string>) {
-    const ret = await this.http.post(url, params, { timeout, headers })
-    return ret.data
+    return this.http.post(url, params, { timeout, headers })
   }
 }
 

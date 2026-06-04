@@ -652,6 +652,9 @@ async function submitRerunVersion() {
     ])
     await addConsistencyCheckPage({
       id:                    String(pageId),
+      deliverableId:         String(workingDeliverable.value?.id ?? ''),
+      name:                  workingPage.value?.name ?? '',
+      deviceType:            currentPlatform.value,
       versionName:           now,
       devImageBase64Data:    devBase64,
       devJson:               devJsonStr,

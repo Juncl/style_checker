@@ -77,7 +77,7 @@ export const addConsistencyCheckPage = async (params: Record<string, unknown>) =
   try {
     const url = `${ADMIN_BASE_URL}/main/rest.root/reviewTool/consistencyCheck/addConsistencyCheckPage`
     const ret = await Api.post(url, params, 60000)
-    return ret.content
+    return ret.data.content
   } catch (error) {
     console.log("error: ", error)
     return null
@@ -106,7 +106,7 @@ export const addConsistencyCheckDeliverable = async (teamId: string, name: strin
   try {
     const url = `${ADMIN_BASE_URL}/main/rest.root/reviewTool/consistencyCheck/addConsistencyCheckDeliverable`
     const ret = await Api.post(url, new URLSearchParams({ teamId, name }))
-    return ret.content
+    return ret.data.content
   } catch (error) {
     console.log("error: ", error)
     return null

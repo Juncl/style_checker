@@ -19,8 +19,8 @@ export const DEBUG_COLORS: string[] = [
 ]
 
 export const GUIDE_LINKS = {
-  terminal: 'https://www.baidu.com',
-  web:      'https://www.google.com',
+  terminal: 'https://octo.hdesign.huawei.com/helpCenter/projectType/121/495/1231',
+  web:      'https://octo.hdesign.huawei.com/helpCenter/projectType/121/495/1242',
 }
 
 export const FILE_SLOTS = [
