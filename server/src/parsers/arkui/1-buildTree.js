@@ -120,6 +120,10 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compT
     rect: vpRect
       ? { x: vpRect.x, y: vpRect.y, w: vpRect.w, h: vpRect.h }
       : { x: 0, y: 0, w: 0, h: 0 },
+    // arkui 无"缩放前"概念，size 与 rect 同值，仅为与 design 字段对齐
+    size: vpRect
+      ? { x: vpRect.x, y: vpRect.y, w: vpRect.w, h: vpRect.h }
+      : { x: 0, y: 0, w: 0, h: 0 },
     normRect: vpRect
       ? {
         x: vpRect.x / canvasW,
@@ -350,6 +354,7 @@ function maybeBuildSplitTextChild(parentUnified, type, attrs, vpRect, resolution
     name: 'Text',
     path: childPath,
     rect: { x: textRect.x, y: textRect.y, w: textRect.w, h: textRect.h },
+    size: { x: textRect.x, y: textRect.y, w: textRect.w, h: textRect.h },
     normRect: {
       x: textRect.x / canvasW,
       y: textRect.y / canvasH,

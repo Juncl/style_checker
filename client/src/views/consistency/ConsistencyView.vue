@@ -814,6 +814,7 @@ async function loadHistoryVersion(version, deviceType) {
 
   const pairMap = new Map()
   for (const diff of diffs) {
+    if (!diff.arkuiNodeId || !diff.designNodeId) continue
     const key = `${diff.arkuiNodeId}::${diff.designNodeId}`
     if (!pairMap.has(key)) pairMap.set(key, { arkuiNodeId: diff.arkuiNodeId, designNodeId: diff.designNodeId })
   }
@@ -993,13 +994,14 @@ async function runUpload(platform) {
 
 function onDiffSelect(diff) {
   activeDiff.value = diff
-  if (diff) {
+  if (!diff) {
+    selectedPair.value = null
+  } else if (!diff.property?.startsWith('spacing.')) {
     const pair = result.value?.pairs?.find(p =>
       p.design.id === diff.designNodeId && p.arkui.id === diff.arkuiNodeId
     )
     selectedPair.value = pair || null
-  } else {
-    selectedPair.value = null
   }
+  // spacing diff 不触发节点高亮
 }
 </script>

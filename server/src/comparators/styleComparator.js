@@ -140,11 +140,10 @@ function diffColor(diffs, ctx, prop, dv, av, label) {
   }
   const delta = colorDelta(dv, av)
   if (delta > TOLERANCE.colorDelta) {
-    const severity = delta > 40 ? 'error' : 'warning'
     diffs.push(makeDiff(ctx, prop,
       `${dv} (${toDisplayColor(dv)})`,
       `${av} (${toDisplayColor(av)})`,
-      severity,
+      null,
       `${label}不匹配 ΔE≈${delta.toFixed(0)}`
     ))
   }
@@ -397,11 +396,10 @@ function diffBackgroundColor(diffs, ctx, designNode, arkuiNode, dv, av) {
   if (!d || !a) return
   const delta = colorDelta(d, a)
   if (delta > TOLERANCE.colorDelta) {
-    const severity = delta > 40 ? 'error' : 'warning'
     diffs.push(makeDiff(ctx, 'backgroundColor',
       `${d} (${toDisplayColor(d)})`,
       `${a} (${toDisplayColor(a)})`,
-      severity,
+      null,
       `填充不匹配 ΔE≈${delta.toFixed(0)}`
     ))
   }
@@ -438,7 +436,12 @@ function diffFontScale(diffs, ctx, fontSize, actualFontSize) {
 // 工厂函数
 // ──────────────────────────────────────────────────────────────────────────────
 
-function makeDiff(ctx, property, designValue, arkuiValue, severity, description) {
+function makeDiff(ctx, property, designValue, arkuiValue, _severity, description) {
+  // severity 不再按差异大小分级，统一按匹配置信度决定：
+  //   低置信匹配  → warning（前端"模糊比对"tab）
+  //   中/高置信  → error  （前端"精准检查"tab）
+  // 调用方传入的 severity 参数被忽略，仅保留签名向后兼容。
+  const severity = ctx.confidence === 'low' ? 'warning' : 'error'
   return {
     property,
     designValue,

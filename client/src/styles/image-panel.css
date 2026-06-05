@@ -141,27 +141,27 @@
   word-break: break-all;
 }
 
-/* 差异值：只改右侧 val，整行不加背景 */
-.prop-row.diff-error .prop-val,
-.prop-row.diff-warning .prop-val {
-  color: var(--report-dev-color);
+/* 差异值：开发侧按 pair 置信度着色，仅高亮右侧 val
+   中/高置信 → 强（红）；低置信 → 弱（橙） */
+.prop-row.diff-strong .prop-val {
+  color: #E02128;
   font-weight: 400;
-  background: var(--report-dev-bg);
+  background: rgba(224, 33, 40, 0.15);
   border-radius: 2px;
   padding: 0 4px;
 }
 
-.prop-row.diff-info .prop-val {
-  color: var(--octo-text-secondary);
-  background: var(--octo-surface-disabled);
+.prop-row.diff-weak .prop-val {
+  color: #FAAD14;
+  font-weight: 400;
+  background: rgba(250, 173, 20, 0.15);
   border-radius: 2px;
   padding: 0 4px;
 }
 
-/* 设计侧差异值：绿色系 */
-.inspector--design .prop-row.diff-error .prop-val,
-.inspector--design .prop-row.diff-warning .prop-val,
-.inspector--design .prop-row.diff-info .prop-val {
+/* 设计侧差异值：绿色系（不论置信度） */
+.inspector--design .prop-row.diff-strong .prop-val,
+.inspector--design .prop-row.diff-weak .prop-val {
   color: var(--report-design-color);
   background: var(--report-design-bg);
   font-weight: 500;

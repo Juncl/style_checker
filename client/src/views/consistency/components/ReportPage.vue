@@ -159,7 +159,7 @@
           ref="devPanelRef"
           :src="arkuiImgSrc"
           :highlight="null"
-          :highlight-pair="null"
+          :highlight-pair="arkuiSpacingMark"
           :canvas-w="result.canvas.arkui.w"
           :canvas-h="result.canvas.arkui.h"
           :nodes="arkuiNodes"
@@ -221,7 +221,7 @@
           side="design"
           :src="designImgSrc"
           :highlight="null"
-          :highlight-pair="null"
+          :highlight-pair="designSpacingMark"
           :canvas-w="result.canvas.design.w"
           :canvas-h="result.canvas.design.h"
           :nodes="designNodes"
@@ -245,7 +245,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Crop } from '@element-plus/icons-vue'
 import OctoLoading from './common/OctoLoading.vue'
 import ImagePanel from './ImagePanel.vue'
@@ -334,6 +334,51 @@ function onArkuiHover(id) {
 }
 function onDesignHover(id) {
   emit('design-hover', id)
+}
+
+// 间距 diff 选中时给两侧画布画 H 形间距标注
+// activeDiff.property 形如 'spacing.top' / 'spacing.left'
+// activeDiff.spaceRect = { design: rect, arkui: rect }
+// activeDiff.relationRects = { design: [anchor, self], arkui: [anchor, self], axis }
+const designSpacingMark = computed(() => buildSpacingMark(props.activeDiff, 'design', props.designNodes))
+const arkuiSpacingMark  = computed(() => buildSpacingMark(props.activeDiff, 'arkui',  props.arkuiNodes))
+
+function buildSpacingMark(diff, side, nodes) {
+  if (!diff?.property?.startsWith('spacing.')) return null
+
+  const selfId   = side === 'design' ? diff.designNodeId        : diff.arkuiNodeId
+  const anchorId = side === 'design' ? diff.relatedDesignNodeId : diff.relatedArkuiNodeId
+  if (!selfId || !anchorId) return null
+
+  const nodesMap  = Object.fromEntries(nodes.map(n => [n.id, n]))
+  const node      = nodesMap[selfId]
+  const neighbor  = nodesMap[anchorId]
+  if (!node?.rect || !neighbor?.rect) return null
+
+  const axis      = diff.relationAxis || (diff.property === 'spacing.top' ? 'vertical' : 'horizontal')
+  const isParent = diff.relationKind === 'parent-child'
+  const nr = node.rect
+  const nbr = neighbor.rect
+
+  let spaceRect
+  if (axis === 'vertical') {
+    const top = isParent ? nbr.y : nbr.y + nbr.h
+    spaceRect = { x: nr.x, y: top, w: nr.w, h: nr.y - top }
+  } else {
+    const left = isParent ? nbr.x : nbr.x + nbr.w
+    spaceRect = { x: left, y: nr.y, w: nr.x - left, h: nr.h }
+  }
+
+  const value = side === 'design' ? diff.designValue : diff.arkuiValue
+  const label = diff.property === 'spacing.top' ? '竖向间距' : '横向间距'
+  return {
+    type: 'spacing',
+    axis,
+    spaceRect,
+    rects: [nbr, nr],
+    value: value != null ? String(value) : null,
+    label,
+  }
 }
 
 // 拖拽位置

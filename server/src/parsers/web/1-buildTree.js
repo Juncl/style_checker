@@ -50,6 +50,8 @@ function walk(node, canvasW, canvasH, path) {
     name: node.className || node.name || rawType || '',
     path,
     rect: { x: rx, y: ry, w: rw, h: rh },
+    // web 无"缩放前"概念，size 与 rect 同值，仅为与 design 字段对齐
+    size: { x: rx, y: ry, w: rw, h: rh },
     normRect: {
       x: canvasW ? rx / canvasW : 0,
       y: canvasH ? ry / canvasH : 0,

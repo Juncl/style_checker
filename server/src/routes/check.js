@@ -265,7 +265,11 @@ async function runCheck(designJson, devJson, caseId, assets = {}) {
   const rectByPairKey = new Map(
     pairs.map(p => [`${p.design.id}::${p.arkui.id}`, { designRect: p.design.rect, arkuiRect: p.arkui.rect }])
   )
-  const spatialDiffs = compareSpatialRelations(pairs)
+  const hmNodesMap = Object.fromEntries(devVisibleNodes.map(n => [n.id, n]))
+  const deNodesMap = Object.fromEntries(designVisibleNodes.map(n => [n.id, n]))
+  const rootHmRect = { x: 0, y: 0, w: devResult.canvasWidthVp, h: devResult.canvasHeightVp }
+  const rootDeRect = { x: 0, y: 0, w: designResult.canvasWidth, h: designResult.canvasHeight }
+  const spatialDiffs = compareSpatialRelations(pairs, { hmNodesMap, deNodesMap, rootHmRect, rootDeRect })
   const diffs = [...compareAll(pairs, { platform: platform.key }), ...spatialDiffs].map(d => ({
     ...d,
     ...( rectByPairKey.get(`${d.designNodeId}::${d.arkuiNodeId}`) || {} ),

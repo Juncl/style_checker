@@ -65,14 +65,14 @@
 
       <div
         v-for="(d, idx) in filteredDiffs"
-        :key="`${d.designNodeId}-${d.arkuiNodeId}-${d.property}-${idx}`"
+        :key="d.spaceId ? `space-${d.spaceId}-${idx}` : `${d.designNodeId}-${d.arkuiNodeId}-${d.property}-${idx}`"
         :class="['diff-card', {
           selected: selectedIdx === idx,
           'active-from-node': activeDiffKeys.has(foldKey(d)) && selectedIdx !== idx,
           'hover-from-node':  hoverDiffKeys.has(foldKey(d)) && selectedIdx !== idx && !activeDiffKeys.has(foldKey(d))
         }]"
         @click="selectItem(d, idx)"
-        @mouseenter="emit('diff-hover', { arkuiNodeId: d.arkuiNodeId, designNodeId: d.designNodeId })"
+        @mouseenter="!d.property?.startsWith('spacing.') && emit('diff-hover', { arkuiNodeId: d.arkuiNodeId, designNodeId: d.designNodeId })"
         @mouseleave="emit('diff-hover', null)"
       >
         <!-- 卡片头 -->
@@ -221,14 +221,14 @@ const filteredDiffs = computed(() => {
     )
   }
   const confOrder  = { high: 0, medium: 1, low: 2 }
-  const sevOrder   = { error: 0, warning: 1, info: 2 }
   const issueOrder = Object.fromEntries(ISSUE_GROUPS.map((g, idx) => [g.key, idx]))
   return list.slice().sort((a, b) => {
     const confDelta = (confOrder[a.confidence] ?? 1) - (confOrder[b.confidence] ?? 1)
     if (confDelta !== 0) return confDelta
-    const issueDelta = (issueOrder[issueKey(a.property)] ?? 99) - (issueOrder[issueKey(b.property)] ?? 99)
-    if (activeIssue.value === 'all' && issueDelta !== 0) return issueDelta
-    return (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9)
+    if (activeIssue.value === 'all') {
+      return (issueOrder[issueKey(a.property)] ?? 99) - (issueOrder[issueKey(b.property)] ?? 99)
+    }
+    return 0
   })
 })
 
@@ -236,6 +236,7 @@ const filteredDiffs = computed(() => {
 
 function isDiffMatchPair(diff, pair) {
   if (!pair) return false
+  if (diff.property?.startsWith('spacing.')) return false
   if (pair.arkuiNodeId  && diff.arkuiNodeId  === pair.arkuiNodeId)  return true
   if (pair.designNodeId && diff.designNodeId === pair.designNodeId) return true
   return false
@@ -314,6 +315,7 @@ function markNotIssue(key) {
 
 // ── 折叠状态（按节点+属性的稳定 key）──
 function foldKey(d) {
+  if (d.spaceId) return `space|${d.spaceId}`
   return `${d.designNodeId || ''}|${d.arkuiNodeId || ''}|${d.property}`
 }
 function isFolded(key) {
@@ -366,6 +368,8 @@ function issueKey(property = '') {
   return 'other'
 }
 function issueLabel(property) {
+  if (property === 'spacing.top')  return '竖向间距'
+  if (property === 'spacing.left') return '横向间距'
   const key = issueKey(property)
   if (key === '__ignored__') return '对齐'
   return ISSUE_GROUPS.find(g => g.key === key)?.label || '其它'

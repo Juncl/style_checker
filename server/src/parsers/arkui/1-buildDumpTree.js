@@ -154,6 +154,10 @@ function convertNode(rawNode, resolution, canvasW, canvasH, path, accumTranslate
     rect: vpRect
       ? { x: vpRect.x, y: vpRect.y, w: vpRect.w, h: vpRect.h }
       : { x: 0, y: 0, w: 0, h: 0 },
+    // arkui 无"缩放前"概念，size 与 rect 同值，仅为与 design 字段对齐
+    size: vpRect
+      ? { x: vpRect.x, y: vpRect.y, w: vpRect.w, h: vpRect.h }
+      : { x: 0, y: 0, w: 0, h: 0 },
     normRect: vpRect
       ? { x: vpRect.x / canvasW, y: vpRect.y / canvasH, w: vpRect.w / canvasW, h: vpRect.h / canvasH }
       : { x: 0, y: 0, w: 0, h: 0 },
@@ -434,6 +438,7 @@ function maybeSplitTextChild(parentUnified, type, props, vpRect, resolution, can
     name:     'Text',
     path:     childPath,
     rect:     { x: tx, y: ty, w: tw, h: th },
+    size:     { x: tx, y: ty, w: tw, h: th },
     normRect: { x: tx / canvasW, y: ty / canvasH, w: tw / canvasW, h: th / canvasH },
     visible:  true,
     style:    { width: tw, height: th, fontSize },

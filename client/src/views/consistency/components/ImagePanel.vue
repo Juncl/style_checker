@@ -18,6 +18,27 @@
 
     <Transition name="inspector-fade">
       <div
+        v-if="highlightPair?.type === 'spacing' && highlightPair?.value != null"
+        ref="spacingInspectorRef"
+        class="node-inspector"
+        :class="{ 'inspector--design': side === 'design' }"
+        :style="spacingInspectorPos"
+        @click.stop
+      >
+        <div class="inspector-header">
+          <span class="inspector-name">{{ highlightPair.label || '间距' }}</span>
+        </div>
+        <div class="inspector-body">
+          <div class="prop-row diff-weak">
+            <span class="prop-key">距离</span>
+            <span class="prop-val">{{ highlightPair.value }}</span>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="inspector-fade">
+      <div
         v-if="inspectorNode && (displayStyle.length || debugMode)"
         ref="inspectorRef"
         class="node-inspector"
@@ -42,7 +63,7 @@
           <div
             v-for="item in displayStyle"
             :key="item.key"
-            :class="['prop-row', item.diff ? `diff-${item.diff.severity}` : '']"
+            :class="['prop-row', item.diff ? (item.diff.confidence === 'low' ? 'diff-weak' : 'diff-strong') : '']"
             :title="item.diff?.description || ''"
           >
             <span class="prop-key">{{ item.label }}</span>
@@ -91,8 +112,10 @@ const zoomLayerRef = ref(null)
 const imgRef       = ref(null)
 const canvasRef    = ref(null)
 const inspectorRef = ref(null)
+const spacingInspectorRef = ref(null)
 const hoveredId    = ref(null)
 const inspectorPos = ref({})
+const spacingInspectorPos = ref({})
 const isDraggingInspector = ref(false)
 const inspectorDragPos = ref(null)
 const dragStart = ref(null)
@@ -114,7 +137,7 @@ watch(() => props.selectedId, id => { localSelectedId.value = id })
 
 let ro = null
 onMounted(() => {
-  ro = new ResizeObserver(() => { updateClipSize(); draw(); updateInspectorPos() })
+  ro = new ResizeObserver(() => { updateClipSize(); draw(); updateInspectorPos(); updateSpacingInspectorPos() })
   if (wrapperRef.value) ro.observe(wrapperRef.value)
   window.addEventListener('pointermove', onInspectorDrag)
   window.addEventListener('pointerup', endInspectorDrag)
@@ -153,7 +176,7 @@ function updateClipSize() {
 }
 
 watch(() => props.highlight,     () => nextTick(draw))
-watch(() => props.highlightPair, () => nextTick(draw))
+watch(() => props.highlightPair, () => nextTick(() => { draw(); updateSpacingInspectorPos() }))
 watch(() => props.selectedId,    () => nextTick(draw))
 watch(() => [props.canvasW, props.canvasH], () => nextTick(draw))
 watch(() => props.debugPipelineVisible,  () => nextTick(draw))
@@ -364,7 +387,11 @@ function draw() {
   const hr = props.highlight
   const hp = props.highlightPair
   if (hp && props.canvasW && props.canvasH) {
-    drawRelationHighlight(ctx, hp, sx, sy)
+    if (hp.type === 'spacing') {
+      drawSpacingMark(ctx, hp, sx, sy)
+    } else {
+      drawRelationHighlight(ctx, hp, sx, sy)
+    }
   } else if (hr && props.canvasW && props.canvasH) {
     drawNodeRect(ctx, hr, sx, sy, 'rgba(255,80,0,0.15)', '#ff5000', 2, [])
     const hx = hr.x * sx, hy = hr.y * sy
@@ -410,6 +437,85 @@ function drawRelationHighlight(ctx, relation, sx, sy) {
   ctx.setLineDash([5, 4])
   ctx.fillRect(band.x * sx, band.y * sy, band.w * sx, band.h * sy)
   ctx.strokeRect(band.x * sx, band.y * sy, band.w * sx, band.h * sy)
+  ctx.setLineDash([])
+}
+
+// 箭头辅助：在 (tx, ty) 处沿角度 angle 画实心箭头头部
+function drawArrowHead(ctx, tx, ty, angle, size) {
+  ctx.save()
+  ctx.translate(tx, ty)
+  ctx.rotate(angle)
+  ctx.beginPath()
+  ctx.moveTo(0, 0)
+  ctx.lineTo(-size, -size * 0.45)
+  ctx.lineTo(-size, size * 0.45)
+  ctx.closePath()
+  ctx.fillStyle = ctx.strokeStyle
+  ctx.fill()
+  ctx.restore()
+}
+
+// 间距标注（参考设计稿"组合 31777"）：中间带双箭头实线 + 两端虚线端帽，颜色 #E02128
+function drawSpacingMark(ctx, mark, sx, sy) {
+  const sr = mark?.spaceRect
+  if (!sr) return
+  const COLOR     = '#E02128'
+  const DASH      = [3, 3]
+  const ARROW_SZ  = 5
+
+  ctx.strokeStyle = COLOR
+  ctx.lineWidth   = 1
+
+  if (mark.axis === 'horizontal') {
+    const xL    = sr.x * sx
+    const xR    = (sr.x + sr.w) * sx
+    const yMid  = (sr.y + sr.h / 2) * sy
+    const capTop    = sr.y * sy
+    const capBottom = (sr.y + sr.h) * sy
+
+    // 主线（实线）
+    ctx.setLineDash([])
+    ctx.beginPath()
+    ctx.moveTo(xL, yMid)
+    ctx.lineTo(xR, yMid)
+    ctx.stroke()
+
+    // 箭头：左端朝左，右端朝右
+    drawArrowHead(ctx, xL, yMid, Math.PI, ARROW_SZ)
+    drawArrowHead(ctx, xR, yMid, 0, ARROW_SZ)
+
+    // 两端端帽（虚线）
+    ctx.setLineDash(DASH)
+    ctx.beginPath()
+    ctx.moveTo(xL, capTop); ctx.lineTo(xL, capBottom)
+    ctx.moveTo(xR, capTop); ctx.lineTo(xR, capBottom)
+    ctx.stroke()
+    ctx.setLineDash([])
+    return
+  }
+
+  // 纵向：主线竖直，端帽水平
+  const yT    = sr.y * sy
+  const yB    = (sr.y + sr.h) * sy
+  const xMid  = (sr.x + sr.w / 2) * sx
+  const capLeft  = sr.x * sx
+  const capRight = (sr.x + sr.w) * sx
+
+  ctx.setLineDash([])
+  ctx.beginPath()
+  ctx.moveTo(xMid, yT)
+  ctx.lineTo(xMid, yB)
+  ctx.stroke()
+
+  // 箭头：上端朝上，下端朝下
+  drawArrowHead(ctx, xMid, yT, -Math.PI / 2, ARROW_SZ)
+  drawArrowHead(ctx, xMid, yB, Math.PI / 2, ARROW_SZ)
+
+  ctx.setLineDash(DASH)
+  ctx.beginPath()
+  ctx.moveTo(capLeft, yT); ctx.lineTo(capRight, yT)
+  ctx.moveTo(capLeft, yB); ctx.lineTo(capRight, yB)
+  ctx.stroke()
   ctx.setLineDash([])
 }
 
@@ -599,6 +705,48 @@ function toInspectorStyle(left, top) {
   return style
 }
 
+function updateSpacingInspectorPos() {
+  const hp = props.highlightPair
+  if (!hp || hp.type !== 'spacing' || hp.value == null) {
+    spacingInspectorPos.value = {}
+    return
+  }
+  const sr = hp.spaceRect
+  if (!sr || !imgRef.value || !wrapperRef.value) {
+    spacingInspectorPos.value = {}
+    return
+  }
+
+  const clip = zoomClipRef.value
+  if (!clip) return
+  const clipW = clip.clientWidth
+  const clipH = clip.clientHeight
+  const clipRect  = clip.getBoundingClientRect()
+  const panelRect = panelRef.value.getBoundingClientRect()
+  const clipOffsetX = clipRect.left - panelRect.left
+  const clipOffsetY = clipRect.top  - panelRect.top
+
+  const nx = clipOffsetX + sr.x / props.canvasW * clipW
+  const ny = clipOffsetY + sr.y / props.canvasH * clipH
+  const nw = sr.w / props.canvasW * clipW
+  const nh = sr.h / props.canvasH * clipH
+
+  const inspW = spacingInspectorRef.value?.offsetWidth || 120
+  const inspH = spacingInspectorRef.value?.offsetHeight || 50
+  const nodeBox = { left: nx, top: ny, right: nx + nw, bottom: ny + nh }
+  const gap = 8
+
+  const candidates = [
+    { left: nodeBox.right + gap, top: nodeBox.top },
+    { left: nodeBox.left - inspW - gap, top: nodeBox.top },
+    { left: nodeBox.left + (nw - inspW) / 2, top: nodeBox.bottom + gap },
+    { left: nodeBox.left + (nw - inspW) / 2, top: nodeBox.top - inspH - gap },
+  ].map(pos => clampInspectorPosition(pos.left, pos.top))
+
+  const p = chooseInspectorPosition(candidates, nodeBox, inspW, inspH)
+  spacingInspectorPos.value = toInspectorStyle(p.left, p.top)
+}
+
 // ── 样式格式化 ──────────────────────────────────────────────────────────────
 
 const displayStyle = computed(() => {
@@ -649,6 +797,7 @@ function diffForStyleKey(key) {
   const aliases = STYLE_DIFF_ALIASES[key] || [key]
   return props.styleDiffs.find(d => aliases.includes(d.property)) || null
 }
+
 
 const STYLE_DIFF_ALIASES = {
   backgroundColor: ['backgroundColor'],
