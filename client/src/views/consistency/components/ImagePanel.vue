@@ -100,6 +100,7 @@ const props = defineProps({
   debugPipelineVisible: { type: Boolean, default: false },
   debugVisible: { type: Boolean, default: false },
   debugPairMap:  { type: Object,  default: () => ({}) },
+  hoverHighlightPairs: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['node-click', 'bg-click', 'node-hover', 'zoom'])
@@ -177,6 +178,7 @@ function updateClipSize() {
 
 watch(() => props.highlight,     () => nextTick(draw))
 watch(() => props.highlightPair, () => nextTick(() => { draw(); updateSpacingInspectorPos() }))
+watch(() => props.hoverHighlightPairs, () => nextTick(draw), { deep: true })
 watch(() => props.selectedId,    () => nextTick(draw))
 watch(() => [props.canvasW, props.canvasH], () => nextTick(draw))
 watch(() => props.debugPipelineVisible,  () => nextTick(draw))
@@ -401,6 +403,13 @@ function draw() {
     ctx.font = 'bold 11px sans-serif'
     ctx.fillText('◉', hx + 4, hy - 5)
   }
+
+  // hover 实时间距标注（蓝色）
+  if (props.hoverHighlightPairs.length && props.canvasW && props.canvasH) {
+    for (const mark of props.hoverHighlightPairs) {
+      drawHoverSpacingMark(ctx, mark, sx, sy)
+    }
+  }
 }
 
 function drawNodeRect(ctx, rect, sx, sy, fill, stroke, lineWidth, dash) {
@@ -517,6 +526,79 @@ function drawSpacingMark(ctx, mark, sx, sy) {
   ctx.moveTo(capLeft, yB); ctx.lineTo(capRight, yB)
   ctx.stroke()
   ctx.setLineDash([])
+}
+
+function drawSpacingLabel(ctx, text, x, y) {
+  const FONT_SIZE = 10
+  ctx.font = `bold ${FONT_SIZE}px sans-serif`
+  const tw = ctx.measureText(text).width
+  const padX = 4, padY = 2
+  const bw = tw + padX * 2, bh = FONT_SIZE + padY * 2
+  ctx.fillStyle = '#0067D1'
+  ctx.fillRect(x - bw / 2, y - bh / 2, bw, bh)
+  ctx.fillStyle = '#fff'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(text, x, y)
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+}
+
+function drawHoverSpacingMark(ctx, mark, sx, sy) {
+  const sr = mark?.spaceRect
+  if (!sr) return
+  const COLOR    = '#0067D1'
+  const DASH     = [3, 3]
+  const ARROW_SZ = 4
+
+  ctx.save()
+  ctx.strokeStyle = COLOR
+  ctx.fillStyle   = COLOR
+  ctx.lineWidth   = 1
+
+  if (mark.axis === 'horizontal') {
+    if (sr.w < 0.5) { ctx.restore(); return }
+    const xL   = sr.x * sx
+    const xR   = (sr.x + sr.w) * sx
+    const yMid = (sr.y + sr.h / 2) * sy
+    const c1T  = (mark.capFirst  ? mark.capFirst.start  : sr.y) * sy
+    const c1B  = (mark.capFirst  ? mark.capFirst.end    : sr.y + sr.h) * sy
+    const c2T  = (mark.capSecond ? mark.capSecond.start : sr.y) * sy
+    const c2B  = (mark.capSecond ? mark.capSecond.end   : sr.y + sr.h) * sy
+    ctx.setLineDash([])
+    ctx.beginPath(); ctx.moveTo(xL, yMid); ctx.lineTo(xR, yMid); ctx.stroke()
+    drawArrowHead(ctx, xL, yMid, Math.PI, ARROW_SZ)
+    drawArrowHead(ctx, xR, yMid, 0, ARROW_SZ)
+    ctx.setLineDash(DASH)
+    ctx.beginPath()
+    ctx.moveTo(xL, c1T); ctx.lineTo(xL, c1B)
+    ctx.moveTo(xR, c2T); ctx.lineTo(xR, c2B)
+    ctx.stroke()
+    ctx.setLineDash([])
+    if (mark.value != null) drawSpacingLabel(ctx, mark.value, (xL + xR) / 2, yMid)
+  } else {
+    if (sr.h < 0.5) { ctx.restore(); return }
+    const yT   = sr.y * sy
+    const yB   = (sr.y + sr.h) * sy
+    const xMid = (sr.x + sr.w / 2) * sx
+    const c1L  = (mark.capFirst  ? mark.capFirst.start  : sr.x) * sx
+    const c1R  = (mark.capFirst  ? mark.capFirst.end    : sr.x + sr.w) * sx
+    const c2L  = (mark.capSecond ? mark.capSecond.start : sr.x) * sx
+    const c2R  = (mark.capSecond ? mark.capSecond.end   : sr.x + sr.w) * sx
+    ctx.setLineDash([])
+    ctx.beginPath(); ctx.moveTo(xMid, yT); ctx.lineTo(xMid, yB); ctx.stroke()
+    drawArrowHead(ctx, xMid, yT, -Math.PI / 2, ARROW_SZ)
+    drawArrowHead(ctx, xMid, yB, Math.PI / 2, ARROW_SZ)
+    ctx.setLineDash(DASH)
+    ctx.beginPath()
+    ctx.moveTo(c1L, yT); ctx.lineTo(c1R, yT)
+    ctx.moveTo(c2L, yB); ctx.lineTo(c2R, yB)
+    ctx.stroke()
+    ctx.setLineDash([])
+    if (mark.value != null) drawSpacingLabel(ctx, mark.value, xMid, (yT + yB) / 2)
+  }
+
+  ctx.restore()
 }
 
 function horizontalGapBand(a, b) {

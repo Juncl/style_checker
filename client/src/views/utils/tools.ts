@@ -47,13 +47,29 @@ export function jsonToFile(json: unknown, filename: string): File {
 
 // 从算法结果的 diffs 中提取 problems 列表
 export function buildProblems(res: any): object[] {
-  return (res?.diffs ?? []).map((d: any) => ({
+  const problems = (res?.diffs ?? []).map((d: any) => ({
     id:   `${d.arkuiNodeId}-${d.property}`,
     key:  d.nodeType || 'container',
     type: d.property || '',
     desc: d.description || '',
     data: JSON.stringify(d),
   }))
+
+  // 追加全部匹配对 ID，便于历史版本读取时重建完整 pairs
+  const pairIds = (res?.pairs ?? [])
+    .map((p: any) => [p.arkui?.id, p.design?.id])
+    .filter(([a, d]: [string, string]) => a && d)
+  if (pairIds.length > 0) {
+    problems.push({
+      id:   'matchedPairIds',
+      key:  'pairIds',
+      type: 'obj',
+      desc: '',
+      data: JSON.stringify(pairIds),
+    })
+  }
+
+  return problems
 }
 
 // ── 节点过滤工具 ──────────────────────────────────────────────────────────────

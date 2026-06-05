@@ -334,6 +334,7 @@ async function runCheck(designJson, devJson, caseId, assets = {}) {
         textContent: n.textContent || null,
         path: n.path,
         rect: n.rect,
+        size: n.size || null,
         style: n.style,
         visible: n.visible !== false,
         visualOccluded: !!n.visualOccluded,

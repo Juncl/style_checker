@@ -160,6 +160,7 @@
           :src="arkuiImgSrc"
           :highlight="null"
           :highlight-pair="arkuiSpacingMark"
+          :hover-highlight-pairs="hoverArkuiSpacingMarks"
           :canvas-w="result.canvas.arkui.w"
           :canvas-h="result.canvas.arkui.h"
           :nodes="arkuiNodes"
@@ -222,6 +223,7 @@
           :src="designImgSrc"
           :highlight="null"
           :highlight-pair="designSpacingMark"
+          :hover-highlight-pairs="hoverDesignSpacingMarks"
           :canvas-w="result.canvas.design.w"
           :canvas-h="result.canvas.design.h"
           :nodes="designNodes"
@@ -285,6 +287,8 @@ const props = defineProps({
   uploadFiles:          { type: Object,  default: () => ({}) },
   hoveredArkuiCrossId:  { type: String,  default: null },
   hoveredDesignCrossId: { type: String,  default: null },
+  hoverArkuiSpacingMarks:  { type: Array, default: () => [] },
+  hoverDesignSpacingMarks: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits([

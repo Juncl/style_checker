@@ -81,6 +81,8 @@
         :upload-files="uploadFiles"
         :hovered-arkui-cross-id="hoveredArkuiCrossId"
         :hovered-design-cross-id="hoveredDesignCrossId"
+        :hover-arkui-spacing-marks="hoverArkuiSpacingMarks"
+        :hover-design-spacing-marks="hoverDesignSpacingMarks"
         @select-case="selectCase"
         @arkui-node-click="onArkuiNodeClick"
         @design-node-click="onDesignNodeClick"
@@ -196,6 +198,21 @@ const workingPage         = ref(null)
 const pageVersionList     = ref([])
 const workingVersionId    = ref(null)
 
+// 单版本预处理：从 problems 中裁出 matchedPairIds 特殊项，
+// 存到 _matchedPairIds，保持 problems 干净供渲染使用
+function preprocessVersion(v) {
+  if (!v || v._matchedPairIds !== undefined) return v
+  const problems = [...(v.problems ?? [])]
+  const idx = problems.findIndex(p => p.id === 'matchedPairIds')
+  const matchedPairIds = idx >= 0 ? problems[idx].data : null
+  if (idx >= 0) problems.splice(idx, 1)
+  return { ...v, problems, _matchedPairIds: matchedPairIds }
+}
+
+function preprocessVersionList(list) {
+  return (list ?? []).map(preprocessVersion)
+}
+
 // 上传页预览状态
 const devPreview           = ref(null)
 const designPreview        = ref(null)
@@ -254,6 +271,92 @@ const canRerun = computed(() => {
 
 const designNodes = computed(() => result.value?.allDesignNodes ?? [])
 const allArkuiNodes = computed(() => result.value?.allArkuiNodes ?? [])
+
+// ── hover 实时间距计算 ────────────────────────────────────────────────────────
+
+// rectA/rectB：画布渲染坐标（缩放后），用于计算 spaceRect 位置
+// sizeA/sizeB：展示数值坐标（原始 dp 或 vp），用于计算标注上显示的数字
+function computeSpacingMarks(rectA, rectB, sizeA, sizeB) {
+  if (!rectA || !rectB) return []
+  const a = rectA, b = rectB
+  const sa = sizeA || rectA, sb = sizeB || rectB
+
+  const aContainsB = a.x <= b.x && a.y <= b.y && (a.x + a.w) >= (b.x + b.w) && (a.y + a.h) >= (b.y + b.h)
+  const bContainsA = b.x <= a.x && b.y <= a.y && (b.x + b.w) >= (a.x + a.w) && (b.y + b.h) >= (a.y + a.h)
+  const overlapsH  = a.x < b.x + b.w && b.x < a.x + a.w
+  const overlapsV  = a.y < b.y + b.h && b.y < a.y + a.h
+
+  if (overlapsH && overlapsV && !aContainsB && !bContainsA) return []
+
+  const marks = []
+
+  if (aContainsB || bContainsA) {
+    const p  = aContainsB ? a : b,  sp = aContainsB ? sa : sb
+    const c  = aContainsB ? b : a,  sc = aContainsB ? sb : sa
+    const top    = c.y - p.y,         sTop    = sc.y - sp.y
+    const bottom = (p.y + p.h) - (c.y + c.h), sBottom = (sp.y + sp.h) - (sc.y + sc.h)
+    const left   = c.x - p.x,         sLeft   = sc.x - sp.x
+    const right  = (p.x + p.w) - (c.x + c.w), sRight  = (sp.x + sp.w) - (sc.x + sc.w)
+    if (top    > 0) marks.push({ type: 'spacing', axis: 'vertical',   spaceRect: { x: c.x, y: p.y,        w: c.w, h: top    }, value: String(Math.round(sTop))    })
+    if (bottom > 0) marks.push({ type: 'spacing', axis: 'vertical',   spaceRect: { x: c.x, y: c.y + c.h, w: c.w, h: bottom }, value: String(Math.round(sBottom)) })
+    if (left   > 0) marks.push({ type: 'spacing', axis: 'horizontal', spaceRect: { x: p.x, y: c.y,        w: left,  h: c.h  }, value: String(Math.round(sLeft))   })
+    if (right  > 0) marks.push({ type: 'spacing', axis: 'horizontal', spaceRect: { x: c.x + c.w, y: c.y, w: right, h: c.h  }, value: String(Math.round(sRight))  })
+  } else {
+    if (!overlapsH) {
+      const lR = a.x + a.w <= b.x ? a : b, slR = lR === a ? sa : sb
+      const rR = lR === a ? b : a,           srR = lR === a ? sb : sa
+      const yTop = Math.max(lR.y, rR.y), yBot = Math.min(lR.y + lR.h, rR.y + rR.h)
+      const y = yTop < yBot ? yTop : Math.min(lR.y, rR.y)
+      const h = yTop < yBot ? (yBot - yTop) : Math.max(lR.h, rR.h)
+      const yMid = y + h / 2
+      const sGap = srR.x - (slR.x + slR.w)
+      marks.push({
+        type: 'spacing', axis: 'horizontal',
+        spaceRect: { x: lR.x + lR.w, y, w: rR.x - (lR.x + lR.w), h },
+        capFirst:  { start: Math.min(lR.y, yMid), end: Math.max(lR.y + lR.h, yMid) },
+        capSecond: { start: Math.min(rR.y, yMid), end: Math.max(rR.y + rR.h, yMid) },
+        value: String(Math.round(sGap)),
+      })
+    }
+    if (!overlapsV) {
+      const tR = a.y + a.h <= b.y ? a : b, stR = tR === a ? sa : sb
+      const bR = tR === a ? b : a,           sbR = tR === a ? sb : sa
+      const xLeft = Math.max(tR.x, bR.x), xRight = Math.min(tR.x + tR.w, bR.x + bR.w)
+      const x = xLeft < xRight ? xLeft : Math.min(tR.x, bR.x)
+      const w = xLeft < xRight ? (xRight - xLeft) : Math.max(tR.w, bR.w)
+      const xMid = x + w / 2
+      const sGap = sbR.y - (stR.y + stR.h)
+      marks.push({
+        type: 'spacing', axis: 'vertical',
+        spaceRect: { x, y: tR.y + tR.h, w, h: bR.y - (tR.y + tR.h) },
+        capFirst:  { start: Math.min(tR.x, xMid), end: Math.max(tR.x + tR.w, xMid) },
+        capSecond: { start: Math.min(bR.x, xMid), end: Math.max(bR.x + bR.w, xMid) },
+        value: String(Math.round(sGap)),
+      })
+    }
+  }
+  return marks
+}
+
+const hoverArkuiSpacingMarks = computed(() => {
+  const selNode = selectedPair.value?.arkui
+  if (!selNode?.rect) return []
+  const hoverId = hoveredArkuiNodeId.value || hoveredArkuiCrossId.value
+  if (!hoverId || hoverId === selNode.id) return []
+  const hoverNode = allArkuiNodes.value.find(n => n.id === hoverId)
+  // ArkUI 侧 rect 即 vp，直接用于展示值（size 传 null，内部 fallback 到 rect）
+  return hoverNode?.rect ? computeSpacingMarks(selNode.rect, hoverNode.rect, null, null) : []
+})
+
+const hoverDesignSpacingMarks = computed(() => {
+  const selNode = selectedPair.value?.design
+  if (!selNode?.rect) return []
+  const hoverId = hoveredDesignNodeId.value || hoveredDesignCrossId.value
+  if (!hoverId || hoverId === selNode.id) return []
+  const hoverNode = designNodes.value.find(n => n.id === hoverId)
+  // 设计侧用 size（原始 dp）计算展示数值，rect 用于画布渲染位置
+  return hoverNode?.rect ? computeSpacingMarks(selNode.rect, hoverNode.rect, selNode.size, hoverNode.size) : []
+})
 const arkuiNodes  = computed(() =>
   (allArkuiNodes.value.length ? allArkuiNodes.value : result.value?.pairs?.map(p => p.arkui) ?? [])
     .filter(node => !isBlankLikeNode(node) && isInteractiveImageNode(node))
@@ -494,7 +597,7 @@ onMounted(async () => {
       pages.value            = deliverable.pageList
       workingDeliverable.value = deliverable.deliverableItem
       workingPage.value      = deliverable.currentPage
-      pageVersionList.value  = deliverable.versionList
+      pageVersionList.value  = preprocessVersionList(deliverable.versionList)
       workingVersionId.value = deliverable.urlVersionId
       await loadHistoryVersion(deliverable.currentVersion, deliverable.deviceType)
     } catch (e) {
@@ -664,7 +767,7 @@ async function submitRerunVersion() {
     })
 
     const pageResult = await getResultsByPageId(pageId, 1, 999)
-    pageVersionList.value  = pageResult?.list ?? []
+    pageVersionList.value  = preprocessVersionList(pageResult?.list)
     const versionId = Array.isArray(pageResult?.list) ? pageResult.list[0]?.id : null
     workingVersionId.value = versionId ?? null
 
@@ -792,7 +895,8 @@ async function selectCase(id) {
   finally    { loading.value = false }
 }
 
-async function loadHistoryVersion(version, deviceType) {
+async function loadHistoryVersion(rawVersion, deviceType) {
+  const version = preprocessVersion(rawVersion)
   const [devJsonData, designJsonData] = await Promise.all([
     fetchVersionJson(version.devJsonUrl),
     fetchVersionJson(version.designJsonUrl),
@@ -812,17 +916,27 @@ async function loadHistoryVersion(version, deviceType) {
     try { return JSON.parse(p.data) } catch { return null }
   }).filter(Boolean)
 
-  const pairMap = new Map()
-  for (const diff of diffs) {
-    if (!diff.arkuiNodeId || !diff.designNodeId) continue
-    const key = `${diff.arkuiNodeId}::${diff.designNodeId}`
-    if (!pairMap.has(key)) pairMap.set(key, { arkuiNodeId: diff.arkuiNodeId, designNodeId: diff.designNodeId })
-  }
   const arkuiNodeMap  = new Map((devParsed.nodes  ?? []).map(n => [n.id, n]))
   const designNodeMap = new Map((designParsed.nodes ?? []).map(n => [n.id, n]))
-  const pairs = [...pairMap.values()]
-    .map(p => ({ arkui: arkuiNodeMap.get(p.arkuiNodeId), design: designNodeMap.get(p.designNodeId) }))
-    .filter(p => p.arkui && p.design)
+
+  let pairs
+  if (version._matchedPairIds) {
+    const pairIds = JSON.parse(version._matchedPairIds)
+    pairs = pairIds
+      .map(([aId, dId]) => ({ arkui: arkuiNodeMap.get(aId), design: designNodeMap.get(dId) }))
+      .filter(p => p.arkui && p.design)
+  } else {
+    // 旧版本数据兼容：从 diffs 反推有差异的节点对
+    const pairMap = new Map()
+    for (const diff of diffs) {
+      if (!diff.arkuiNodeId || !diff.designNodeId) continue
+      const key = `${diff.arkuiNodeId}::${diff.designNodeId}`
+      if (!pairMap.has(key)) pairMap.set(key, { arkuiNodeId: diff.arkuiNodeId, designNodeId: diff.designNodeId })
+    }
+    pairs = [...pairMap.values()]
+      .map(p => ({ arkui: arkuiNodeMap.get(p.arkuiNodeId), design: designNodeMap.get(p.designNodeId) }))
+      .filter(p => p.arkui && p.design)
+  }
 
   const errorCount   = diffs.filter(d => d.severity === 'error').length
   const warningCount = diffs.filter(d => d.severity === 'warning').length
@@ -860,7 +974,7 @@ async function onSelectDeliverable(d) {
 async function onSelectPage(page) {
   workingPage.value = page
   const versionResult = await getResultsByPageId(page.id, 1, 999)
-  pageVersionList.value  = versionResult?.list ?? []
+  pageVersionList.value  = preprocessVersionList(versionResult?.list)
   const version = versionResult?.list?.[0]
   workingVersionId.value = version?.id ?? null
   if (!version) return
@@ -941,7 +1055,7 @@ async function submitResult() {
 
     // 步骤 5：取 versionId，同时更新页面版本列表
     const pageResult = await getResultsByPageId(pageId, 1, 999)
-    pageVersionList.value  = pageResult?.list ?? []
+    pageVersionList.value  = preprocessVersionList(pageResult?.list)
     const versionId  = Array.isArray(pageResult?.list) ? pageResult.list[0]?.id : null
     workingVersionId.value = versionId ?? null
 

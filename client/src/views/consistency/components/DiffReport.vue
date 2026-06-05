@@ -78,7 +78,7 @@
         <!-- 卡片头 -->
         <div class="diff-card-head">
           <div class="diff-card-title">
-            <span v-if="d.confidence === 'low'" class="diff-low-badge">低置信</span>
+            <span v-if="d.confidence === 'low'" class="diff-low-badge">仅参考</span>
             <span class="diff-card-name" :title="cardName(d)">{{ cardName(d) }}</span>
           </div>
           <span class="diff-card-ops">
