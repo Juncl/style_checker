@@ -114,6 +114,8 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   gap: 2px;
   min-width: 160px;
   max-width: 280px;
+  max-height: 330px;
+  overflow-y: auto;
 }
 
 .deliverable-item {
