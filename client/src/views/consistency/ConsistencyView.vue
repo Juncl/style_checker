@@ -29,6 +29,7 @@
         @clear-design-preview="clearDesignPreview"
         @recheck-dev="recheckDev"
         @recheck-design="recheckDesign"
+        @replace-design="onReplaceDesign"
       />
 
       <UploadPage
@@ -159,7 +160,7 @@ import OctoLoading from './components/common/OctoLoading.vue'
 import { checkCase, checkUpload, imageUrl, parseDevUpload, parseDesignUpload, convertDumpToJson } from '../../api/index.ts'
 import { getTeamList, getSonListByTeamId, addConsistencyCheckDeliverable, addConsistencyCheckPage, getResultsByPageId, getPagesByDeliverableId, getConsistencyCheckDeliverables, fetchVersionJson } from '../../api/api.ts'
 import {
-  formatDateTime, fileToBase64, fileToText, buildProblems, base64ToFile, jsonToFile,
+  formatDateTime, fileToBase64, fileToText, buildProblems, adaptLegacyProblem, base64ToFile, jsonToFile,
   isBlankLikeNode, isInteractiveImageNode, isSelectableNode, resolveSelectableNode,
 } from '../utils/tools.ts'
 import { initApp } from './init/index'
@@ -495,7 +496,16 @@ async function onStepPicked({ type, file }) {
 
   if (type === 'arkuiJson') {
     const detected = await detectPlatformFromJson(file)
-    if (detected && detected !== currentPlatform.value) {
+    const isExistingPage = workingPage.value && workingPage.value.id !== '__new__'
+    if (isExistingPage && detected) {
+      const expectedType = workingPage.value.deviceType ?? 'hmPhone'
+      if (detected !== expectedType) {
+        const PLATFORM_NAMES = { hmPhone: '鸿蒙-手机', hmWatch: '鸿蒙-手表', web: 'Web' }
+        ElMessage.error(`请上传 ${PLATFORM_NAMES[expectedType] ?? expectedType} 平台的数据`)
+        uploadFiles.value = { ...uploadFiles.value, arkuiJson: null }
+        return
+      }
+    } else if (detected && detected !== currentPlatform.value) {
       currentPlatform.value = detected
       savePlatform(detected)
     }
@@ -742,6 +752,16 @@ function clearDesignPreview() {
   }
 }
 
+async function onReplaceDesign({ designJson, designImage }) {
+  if (!designJson || !designImage) return
+  if (blobUrls.value.design) URL.revokeObjectURL(blobUrls.value.design)
+  const next = { ...uploadFiles.value, designJson, designImage }
+  uploadFiles.value = next
+  blobUrls.value = { ...blobUrls.value, design: URL.createObjectURL(designImage) }
+  selectedCase.value = ''
+  await triggerDesignPreview(next)
+}
+
 async function submitRerunVersion() {
   const pageId = workingPage.value?.id
   if (!pageId || pageId === '__new__') return
@@ -913,7 +933,7 @@ async function loadHistoryVersion(rawVersion, deviceType) {
   ])
 
   const diffs = (version.problems ?? []).map(p => {
-    try { return JSON.parse(p.data) } catch { return null }
+    try { return JSON.parse(adaptLegacyProblem(p).data) } catch { return null }
   }).filter(Boolean)
 
   const arkuiNodeMap  = new Map((devParsed.nodes  ?? []).map(n => [n.id, n]))
@@ -973,6 +993,11 @@ async function onSelectDeliverable(d) {
 // 统一的页面切换逻辑
 async function onSelectPage(page) {
   workingPage.value = page
+  const deviceType = page.deviceType ?? 'hmPhone'
+  if (deviceType !== currentPlatform.value) {
+    currentPlatform.value = deviceType
+    savePlatform(deviceType)
+  }
   const versionResult = await getResultsByPageId(page.id, 1, 999)
   pageVersionList.value  = preprocessVersionList(versionResult?.list)
   const version = versionResult?.list?.[0]
@@ -980,7 +1005,7 @@ async function onSelectPage(page) {
   if (!version) return
   loading.value = true
   try {
-    await loadHistoryVersion(version, page.deviceType ?? 'hmPhone')
+    await loadHistoryVersion(version, deviceType)
     const dId = workingDeliverable.value?.id
     if (dId && page.id && version.id) {
       const hashPath = window.location.hash.split('?')[0]

@@ -18,28 +18,7 @@
 
     <Transition name="inspector-fade">
       <div
-        v-if="highlightPair?.type === 'spacing' && highlightPair?.value != null"
-        ref="spacingInspectorRef"
-        class="node-inspector"
-        :class="{ 'inspector--design': side === 'design' }"
-        :style="spacingInspectorPos"
-        @click.stop
-      >
-        <div class="inspector-header">
-          <span class="inspector-name">{{ highlightPair.label || '间距' }}</span>
-        </div>
-        <div class="inspector-body">
-          <div class="prop-row diff-weak">
-            <span class="prop-key">距离</span>
-            <span class="prop-val">{{ highlightPair.value }}</span>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <Transition name="inspector-fade">
-      <div
-        v-if="inspectorNode && (displayStyle.length || debugMode)"
+        v-if="isSpacingInspector || (inspectorNode && (displayStyle.length || debugMode))"
         ref="inspectorRef"
         class="node-inspector"
         :class="{ dragging: isDraggingInspector, 'inspector--design': side === 'design' }"
@@ -52,26 +31,38 @@
           @pointerdown="startInspectorDrag"
           @dblclick.stop="resetInspectorPosition"
         >
-          <span class="inspector-name">{{ inspectorNode.textContent || inspectorNode.name }}</span>
-          <span v-if="debugMode" class="inspector-badge">{{ inspectorNode.rawType || inspectorNode.type }}</span>
+          <span class="inspector-name">
+            {{ isSpacingInspector ? (highlightPair.label || '间距') : (inspectorNode?.textContent || inspectorNode?.name) }}
+          </span>
+          <span v-if="debugMode && !isSpacingInspector" class="inspector-badge">{{ inspectorNode?.rawType || inspectorNode?.type }}</span>
         </div>
         <div class="inspector-body">
-          <div v-if="debugMode" class="prop-row">
-            <span class="prop-key">id</span>
-            <span class="prop-val">{{ inspectorNode.id }}</span>
-          </div>
-          <div
-            v-for="item in displayStyle"
-            :key="item.key"
-            :class="['prop-row', item.diff ? (item.diff.confidence === 'low' ? 'diff-weak' : 'diff-strong') : '']"
-            :title="item.diff?.description || ''"
-          >
-            <span class="prop-key">{{ item.label }}</span>
-            <span :class="['prop-val', item.truncate && 'prop-val--truncate']" :title="item.truncate ? item.val : undefined">
-              <span v-if="item.color" class="color-dot" :style="{ background: item.color }"></span>
-              {{ item.val }}
-            </span>
-          </div>
+          <!-- 间距模式 -->
+          <template v-if="isSpacingInspector">
+            <div class="prop-row diff-weak">
+              <span class="prop-key">距离</span>
+              <span class="prop-val">{{ highlightPair.value }}</span>
+            </div>
+          </template>
+          <!-- 节点模式 -->
+          <template v-else>
+            <div v-if="debugMode" class="prop-row">
+              <span class="prop-key">id</span>
+              <span class="prop-val">{{ inspectorNode?.id }}</span>
+            </div>
+            <div
+              v-for="item in displayStyle"
+              :key="item.key"
+              :class="['prop-row', item.diff ? (item.diff.confidence === 'low' ? 'diff-weak' : 'diff-strong') : '']"
+              :title="item.diff?.description || ''"
+            >
+              <span class="prop-key">{{ item.label }}</span>
+              <span :class="['prop-val', item.truncate && 'prop-val--truncate']" :title="item.truncate ? item.val : undefined">
+                <span v-if="item.color" class="color-dot" :style="{ background: item.color }"></span>
+                {{ item.val }}
+              </span>
+            </div>
+          </template>
         </div>
       </div>
     </Transition>
@@ -113,10 +104,8 @@ const zoomLayerRef = ref(null)
 const imgRef       = ref(null)
 const canvasRef    = ref(null)
 const inspectorRef = ref(null)
-const spacingInspectorRef = ref(null)
 const hoveredId    = ref(null)
 const inspectorPos = ref({})
-const spacingInspectorPos = ref({})
 const isDraggingInspector = ref(false)
 const inspectorDragPos = ref(null)
 const dragStart = ref(null)
@@ -133,12 +122,25 @@ const zoomStyle = computed(() => ({
 // 不能直接用 props.selectedId：dblclick 触发时 Vue 响应式更新尚未完成
 const localSelectedId = ref(null)
 
-// 当父组件通过树/diff等外部方式改变 selectedId 时，同步本地状态
-watch(() => props.selectedId, id => { localSelectedId.value = id })
+const isSpacingInspector = computed(() =>
+  props.highlightPair?.type === 'spacing' && props.highlightPair?.value != null
+)
+
+// 当父组件通过树/diff等外部方式改变 selectedId 时，同步本地状态并聚焦
+watch(() => props.selectedId, (id) => {
+  localSelectedId.value = id
+  nextTick(() => {
+    draw()
+    if (id && zoomScale.value > 1) {
+      const node = props.nodes.find(n => n.id === id)
+      if (node?.rect) focusToRect(node.rect)
+    }
+  })
+})
 
 let ro = null
 onMounted(() => {
-  ro = new ResizeObserver(() => { updateClipSize(); draw(); updateInspectorPos(); updateSpacingInspectorPos() })
+  ro = new ResizeObserver(() => { updateClipSize(); draw(); updateInspectorPos() })
   if (wrapperRef.value) ro.observe(wrapperRef.value)
   window.addEventListener('pointermove', onInspectorDrag)
   window.addEventListener('pointerup', endInspectorDrag)
@@ -177,9 +179,16 @@ function updateClipSize() {
 }
 
 watch(() => props.highlight,     () => nextTick(draw))
-watch(() => props.highlightPair, () => nextTick(() => { draw(); updateSpacingInspectorPos() }))
+watch(() => props.highlightPair, (hp) => nextTick(() => {
+  draw()
+  if (hp?.type === 'spacing' && hp?.value != null) inspectorDragPos.value = null
+  updateInspectorPos()
+  if (hp?.type === 'spacing' && zoomScale.value > 1) {
+    const rects = [...(hp.rects || []), hp.spaceRect].filter(Boolean)
+    if (rects.length) focusToRect(unionRects(rects))
+  }
+}))
 watch(() => props.hoverHighlightPairs, () => nextTick(draw), { deep: true })
-watch(() => props.selectedId,    () => nextTick(draw))
 watch(() => [props.canvasW, props.canvasH], () => nextTick(draw))
 watch(() => props.debugPipelineVisible,  () => nextTick(draw))
 watch(() => props.debugVisible,          () => nextTick(draw))
@@ -302,6 +311,41 @@ function onCanvasWheel(e) {
   emit('zoom', { factor, normX, normY })
 }
 
+// ── 聚焦 ────────────────────────────────────────────────────────────────────
+
+function unionRects(rects) {
+  const xs = rects.flatMap(r => [r.x, r.x + r.w])
+  const ys = rects.flatMap(r => [r.y, r.y + r.h])
+  const x = Math.min(...xs), y = Math.min(...ys)
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y }
+}
+
+// 将 rect（画布坐标系）平移到 zoom-clip 视口中央，边缘处取最近可行位置
+function focusToRect(rect) {
+  if (!rect || zoomScale.value <= 1) return
+  const clip = zoomClipRef.value
+  if (!clip) return
+  const clipW = clip.clientWidth
+  const clipH = clip.clientHeight
+  if (!clipW || !clipH) return
+
+  const N  = zoomScale.value
+  // 节点中心在 zoom-clip CSS 像素坐标系（未缩放）中的位置
+  const cx = (rect.x + rect.w / 2) / props.canvasW * clipW
+  const cy = (rect.y + rect.h / 2) / props.canvasH * clipH
+
+  // 让节点中心出现在视口正中央所需的 transformOrigin
+  // 推导：视觉X = cx*N + ox*(1-N) = clipW/2  =>  ox = (cx*N - clipW/2) / (N-1)
+  const ox = (cx * N - clipW / 2) / (N - 1)
+  const oy = (cy * N - clipH / 2) / (N - 1)
+
+  // 边界约束：origin 超出 [0, clipW/H] 会出现空白边，直接 clamp
+  zoomOriginX.value = Math.max(0, Math.min(clipW, ox))
+  zoomOriginY.value = Math.max(0, Math.min(clipH, oy))
+
+  nextTick(draw)
+}
+
 // ── 绘制 ────────────────────────────────────────────────────────────────────
 
 function draw() {
@@ -313,13 +357,23 @@ function draw() {
   const H = img.clientHeight
   if (!W || !H) return
 
-  canvas.width  = W
-  canvas.height = H
+  const dpr  = window.devicePixelRatio || 1
+  const s    = Math.min(zoomScale.value, 4)
+  const bufW = Math.round(W * dpr * s)
+  const bufH = Math.round(H * dpr * s)
+
+  // 只有缓冲区尺寸真正变化时才重建 GPU 纹理，mousemove 时通常不触发
+  if (canvas.width !== bufW || canvas.height !== bufH) {
+    canvas.width  = bufW
+    canvas.height = bufH
+  }
 
   canvas.style.left = '0'
   canvas.style.top  = '0'
 
   const ctx = canvas.getContext('2d')
+  ctx.save()
+  ctx.scale(dpr * s, dpr * s)
   ctx.clearRect(0, 0, W, H)
 
   const sx = W / props.canvasW
@@ -410,6 +464,8 @@ function draw() {
       drawHoverSpacingMark(ctx, mark, sx, sy)
     }
   }
+
+  ctx.restore()
 }
 
 function drawNodeRect(ctx, rect, sx, sy, fill, stroke, lineWidth, dash) {
@@ -628,7 +684,8 @@ function verticalGapBand(a, b) {
 // ── Inspector 定位 ──────────────────────────────────────────────────────────
 
 function updateInspectorPos() {
-  if (!props.inspectorNode || !imgRef.value || !wrapperRef.value) {
+  const isSpacing = props.highlightPair?.type === 'spacing' && props.highlightPair?.value != null
+  if (!isSpacing && (!props.inspectorNode || !imgRef.value || !wrapperRef.value)) {
     inspectorPos.value = {}
     inspectorDragPos.value = null
     return
@@ -641,9 +698,9 @@ function updateInspectorPos() {
     return
   }
 
-  const { rect } = props.inspectorNode
+  const rect = isSpacing ? props.highlightPair.spaceRect : props.inspectorNode?.rect
   const clip = zoomClipRef.value
-  if (!clip) return
+  if (!rect || !clip) return
 
   // zoom-clip 无 transform，位置稳定，用它计算节点在 panel 内的坐标
   const clipW = clip.clientWidth
@@ -653,62 +710,49 @@ function updateInspectorPos() {
   const clipOffsetX = clipRect.left - panelRect.left
   const clipOffsetY = clipRect.top  - panelRect.top
 
+  // 节点在 zoom-clip 布局坐标系中的位置（未缩放）
   const nx = rect.x / props.canvasW * clipW
   const ny = rect.y / props.canvasH * clipH
   const nw = rect.w / props.canvasW * clipW
   const nh = rect.h / props.canvasH * clipH
 
-  const inspectorW = inspectorRef.value?.offsetWidth || 190
-  const inspectorH = inspectorRef.value?.offsetHeight || 220
+  // 布局坐标 → 视觉坐标（scale=1 时两者相等）
+  const N  = zoomScale.value
+  const ox = zoomOriginX.value
+  const oy = zoomOriginY.value
+  const visLeft   = ox + (nx      - ox) * N
+  const visTop    = oy + (ny      - oy) * N
+  const visRight  = ox + (nx + nw - ox) * N
+  const visBottom = oy + (ny + nh - oy) * N
+
   const nodeBox = {
-    left: clipOffsetX + nx,
-    top: clipOffsetY + ny,
-    right: clipOffsetX + nx + nw,
-    bottom: clipOffsetY + ny + nh,
+    left:   clipOffsetX + visLeft,
+    top:    clipOffsetY + visTop,
+    right:  clipOffsetX + visRight,
+    bottom: clipOffsetY + visBottom,
   }
 
+  const inspectorW = inspectorRef.value?.offsetWidth || 190
   const gap = 8
-  const candidates = [
-    { left: nodeBox.right + gap, top: nodeBox.top },
-    { left: nodeBox.left - inspectorW - gap, top: nodeBox.top },
-    { left: nodeBox.left + (nw - inspectorW) / 2, top: nodeBox.bottom + gap },
-    { left: nodeBox.left + (nw - inspectorW) / 2, top: nodeBox.top - inspectorH - gap },
-  ].map(pos => clampInspectorPosition(pos.left, pos.top))
 
-  const p = chooseInspectorPosition(candidates, nodeBox, inspectorW, inspectorH)
+  // 以 up-stage--report 右边界为越界判断基准（相对于 img-panel）
+  const stageEl = panelRef.value?.closest('.up-stage--report')
+  let boundRight = panelRef.value?.clientWidth || 0
+  if (stageEl) {
+    const stageRect = stageEl.getBoundingClientRect()
+    boundRight = stageRect.right - panelRect.left
+  }
+
+  // 横向：优先红框右侧 8px，放不下则改为左侧 8px
+  let left = nodeBox.right + gap
+  if (left + inspectorW > boundRight - gap) {
+    left = nodeBox.left - inspectorW - gap
+  }
+
+  const p = clampInspectorPosition(left, nodeBox.top)
   inspectorPos.value = toInspectorStyle(p.left, p.top)
 }
 
-function chooseInspectorPosition(candidates, nodeBox, inspectorW, inspectorH) {
-  let best = candidates[0]
-  let bestOverlap = Infinity
-  for (let i = 0; i < candidates.length; i++) {
-    const pos = candidates[i]
-    const box = {
-      left: pos.left,
-      top: pos.top,
-      right: pos.left + inspectorW,
-      bottom: pos.top + inspectorH,
-    }
-    const overlap = intersectionArea(box, nodeBox)
-    // 优先不重叠的位置，且偏好第一个候选（右侧）
-    if (overlap === 0) return pos
-    // 如果有多个同样重叠量的位置，优先右侧
-    if (overlap < bestOverlap || (overlap === bestOverlap && i === 0)) {
-      best = pos
-      bestOverlap = overlap
-    }
-  }
-  return best
-}
-
-function intersectionArea(a, b) {
-  const x1 = Math.max(a.left, b.left)
-  const y1 = Math.max(a.top, b.top)
-  const x2 = Math.min(a.right, b.right)
-  const y2 = Math.min(a.bottom, b.bottom)
-  return x2 > x1 && y2 > y1 ? (x2 - x1) * (y2 - y1) : 0
-}
 
 function startInspectorDrag(e) {
   if (!inspectorRef.value) return
@@ -754,14 +798,24 @@ function clampInspectorPosition(left, top) {
   const inspector = inspectorRef.value
   if (!panel) return { left: Math.round(left), top: Math.round(top) }
 
-  const panelW = panel.clientWidth || 0
   const panelH = panel.clientHeight || 0
   const inspectorW = inspector?.offsetWidth || 190
   const inspectorH = inspector?.offsetHeight || 220
 
+  // 横向：以 up-stage--report 边界为准，允许 inspector 跨越 img-panel 边缘
+  const stageEl = panel.closest('.up-stage--report')
+  let minLeft = 4
+  let maxLeft = (panel.clientWidth || 0) - inspectorW - 4
+  if (stageEl) {
+    const stageRect = stageEl.getBoundingClientRect()
+    const pRect     = panel.getBoundingClientRect()
+    minLeft = Math.round(stageRect.left  - pRect.left) + 8
+    maxLeft = Math.round(stageRect.right - pRect.left) - inspectorW - 8
+  }
+
   return {
-    left: Math.round(Math.max(4, Math.min(left, panelW - inspectorW - 4))),
-    top: Math.round(Math.max(4, Math.min(top, panelH - inspectorH - 4))),
+    left: Math.round(Math.max(minLeft, Math.min(left, maxLeft))),
+    top:  Math.round(Math.max(4, Math.min(top, panelH - inspectorH - 4))),
   }
 }
 
@@ -785,48 +839,6 @@ function toInspectorStyle(left, top) {
     style.maxHeight = `${Math.max(40, bottomSpace - 8)}px`
   }
   return style
-}
-
-function updateSpacingInspectorPos() {
-  const hp = props.highlightPair
-  if (!hp || hp.type !== 'spacing' || hp.value == null) {
-    spacingInspectorPos.value = {}
-    return
-  }
-  const sr = hp.spaceRect
-  if (!sr || !imgRef.value || !wrapperRef.value) {
-    spacingInspectorPos.value = {}
-    return
-  }
-
-  const clip = zoomClipRef.value
-  if (!clip) return
-  const clipW = clip.clientWidth
-  const clipH = clip.clientHeight
-  const clipRect  = clip.getBoundingClientRect()
-  const panelRect = panelRef.value.getBoundingClientRect()
-  const clipOffsetX = clipRect.left - panelRect.left
-  const clipOffsetY = clipRect.top  - panelRect.top
-
-  const nx = clipOffsetX + sr.x / props.canvasW * clipW
-  const ny = clipOffsetY + sr.y / props.canvasH * clipH
-  const nw = sr.w / props.canvasW * clipW
-  const nh = sr.h / props.canvasH * clipH
-
-  const inspW = spacingInspectorRef.value?.offsetWidth || 120
-  const inspH = spacingInspectorRef.value?.offsetHeight || 50
-  const nodeBox = { left: nx, top: ny, right: nx + nw, bottom: ny + nh }
-  const gap = 8
-
-  const candidates = [
-    { left: nodeBox.right + gap, top: nodeBox.top },
-    { left: nodeBox.left - inspW - gap, top: nodeBox.top },
-    { left: nodeBox.left + (nw - inspW) / 2, top: nodeBox.bottom + gap },
-    { left: nodeBox.left + (nw - inspW) / 2, top: nodeBox.top - inspH - gap },
-  ].map(pos => clampInspectorPosition(pos.left, pos.top))
-
-  const p = chooseInspectorPosition(candidates, nodeBox, inspW, inspH)
-  spacingInspectorPos.value = toInspectorStyle(p.left, p.top)
 }
 
 // ── 样式格式化 ──────────────────────────────────────────────────────────────

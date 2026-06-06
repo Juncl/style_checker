@@ -72,6 +72,70 @@ export function buildProblems(res: any): object[] {
   return problems
 }
 
+// 旧格式 problems（内网后台存量数据）兼容转换
+// 识别依据：JSON.parse(p.data) 含 hmNodeStyle 字段
+export function adaptLegacyProblem(p: any): any {
+  let raw: any
+  try { raw = JSON.parse(p.data) } catch { return p }
+  if (!raw?.hmNodeStyle) return p
+
+  const hm = raw.hmNodeStyle
+  const de = raw.deNodeStyle
+  const isNotProblem = p.isNotProblem === 1
+  const outerType: string = p.type
+
+  let newDiff: any
+
+  if (outerType === 'space') {
+    const hmSpace = hm.space
+    const deSpace = de.space
+    const isX = (p.id as string).endsWith('-x')
+    newDiff = {
+      property:            isX ? 'spacing.left' : 'spacing.top',
+      severity:            'warning',
+      confidence:          'low',
+      description:         '',
+      designValue:         String(deSpace.distance),
+      arkuiValue:          String(hmSpace.distance),
+      spaceId:             hmSpace.spaceId,
+      designSpaceId:       deSpace.spaceId,
+      designNodeId:        String(hmSpace.mapNodeId),
+      arkuiNodeId:         String(hmSpace.nodeId),
+      relatedArkuiNodeId:  String(hmSpace.nodeLeftId  ?? hmSpace.nodeTopId  ?? ''),
+      relatedDesignNodeId: String(hmSpace.mapLeftNodeId ?? hmSpace.mapTopNodeId ?? ''),
+      relationKind:        hmSpace.rel === 'c' ? 'parent-child' : 'sibling',
+      relationAxis:        isX ? 'horizontal' : 'vertical',
+    }
+  } else {
+    const finalScore = hm.finalScore ?? 0
+    const confidence = finalScore >= 0.8 ? 'high' : finalScore >= 0.6 ? 'medium' : 'low'
+    newDiff = {
+      property:      outerType,
+      designValue:   de[outerType] ?? null,
+      arkuiValue:    hm[outerType] ?? null,
+      severity:      confidence === 'low' ? 'warning' : 'error',
+      description:   '',
+      nodeType:      p.key === 'text' ? 'text' : 'container',
+      textContent:   hm.content ?? null,
+      designName:    null,
+      arkuiName:     null,
+      matchType:     hm.matchSource ?? null,
+      confidence,
+      iou:           null,
+      topologyScore: null,
+      regionScore:   null,
+      designNodeId:  String(de.id),
+      arkuiNodeId:   String(hm.id),
+      designRect:    null,
+      arkuiRect:     null,
+    }
+  }
+
+  if (isNotProblem) newDiff._isNotProblem = true
+
+  return { ...p, data: JSON.stringify(newDiff) }
+}
+
 // ── 节点过滤工具 ──────────────────────────────────────────────────────────────
 
 // ArkUI Blank 组件在解析后 type/name 均为 "blank"，视为不可见占位节点，不参与画布交互

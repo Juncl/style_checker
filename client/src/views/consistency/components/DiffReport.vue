@@ -9,25 +9,32 @@
     <template v-else>
     <!-- 模式 tab：精准检查 / 模糊比对 -->
     <div class="match-mode-tabs">
-      <div class="match-mode-slider" :class="{ 'match-mode-slider--right': matchMode === 'fuzzy' }"></div>
+      <div class="match-mode-slider" :style="sliderStyle"></div>
       <button
+        ref="preciseTabRef"
         :class="['match-mode-tab', { active: matchMode === 'precise' }]"
         @click="matchMode = 'precise'"
       >精准检查</button>
-      <div class="fuzzy-tab-wrap"
-        @mouseenter="fuzzyHovered = matchMode === 'precise'"
-        @mouseleave="fuzzyHovered = false"
-      >
+      <div class="fuzzy-tab-wrap" ref="fuzzyTabWrapRef">
         <button
           :class="['match-mode-tab', { active: matchMode === 'fuzzy' }]"
           @click="matchMode = 'fuzzy'"
         >模糊比对</button>
-        <transition name="tooltip-fade">
-          <div v-if="matchMode === 'precise' && fuzzyHovered" class="fuzzy-tooltip">
-            <span class="fuzzy-tooltip-arrow"></span>
-            匹配非精准结果，仅供参考
-          </div>
-        </transition>
+        <div class="fuzzy-hint-wrap"
+          @mouseenter="questionHovered = true"
+          @mouseleave="questionHovered = false"
+        >
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8.00001 15.3267C9.32445 15.3267 10.5489 15 11.6733 14.3467C12.7978 13.6889 13.6889 12.7978 14.3467 11.6733C15 10.5489 15.3267 9.32445 15.3267 8.00001C15.3267 6.67556 15 5.45112 14.3467 4.32667C13.6889 3.20223 12.7978 2.31112 11.6733 1.65334C10.5489 1.00001 9.32445 0.67334 8.00001 0.67334C6.67556 0.67334 5.45112 1.00001 4.32667 1.65334C3.20223 2.31112 2.31112 3.20223 1.65334 4.32667C1.00001 5.45112 0.67334 6.67556 0.67334 8.00001C0.67334 9.32445 1.00001 10.5467 1.65334 11.6667C2.31112 12.7867 3.20223 13.6756 4.32667 14.3333C5.45112 14.9956 6.67556 15.3267 8.00001 15.3267ZM8.00001 1.66667C9.14223 1.66667 10.1978 1.95112 11.1667 2.52001C12.14 3.0889 12.9111 3.86001 13.48 4.83334C14.0489 5.80223 14.3333 6.85778 14.3333 8.00001C14.3333 9.14223 14.0489 10.1978 13.48 11.1667C12.9111 12.14 12.14 12.9111 11.1667 13.48C10.1978 14.0489 9.14223 14.3333 8.00001 14.3333C6.85778 14.3333 5.80223 14.0489 4.83334 13.48C3.86001 12.9111 3.0889 12.14 2.52001 11.1667C1.95112 10.1978 1.66667 9.14223 1.66667 8.00001C1.66667 6.85778 1.95112 5.80223 2.52001 4.83334C3.0889 3.86001 3.86001 3.0889 4.83334 2.52001C5.80223 1.95112 6.85778 1.66667 8.00001 1.66667Z" fill="currentColor" fill-rule="nonzero" />
+            <path d="M7.99982 9.96678C8.1376 9.96678 8.2576 9.92011 8.35982 9.82678C8.46204 9.729 8.51315 9.61122 8.51315 9.47344L8.51315 9.07344C8.51315 8.93567 8.55315 8.809 8.63315 8.69345C8.71315 8.58233 8.82648 8.49567 8.97315 8.43344C9.46648 8.20678 9.83537 7.85789 10.0798 7.38678C10.3243 6.91122 10.3998 6.40678 10.3065 5.87345C10.2309 5.40233 10.0132 4.99122 9.65315 4.64011C9.2976 4.289 8.88426 4.07122 8.41315 3.98678C8.06204 3.93344 7.71982 3.949 7.38648 4.03344C7.04871 4.11789 6.74648 4.27122 6.47982 4.49344C6.21315 4.72011 6.00871 4.99122 5.86648 5.30678C5.71982 5.61789 5.64648 5.94456 5.64648 6.28678C5.64648 6.42456 5.6976 6.54456 5.79982 6.64678C5.90204 6.749 6.02204 6.80011 6.15982 6.80011C6.2976 6.80011 6.41537 6.749 6.51315 6.64678C6.60648 6.54456 6.65315 6.42456 6.65315 6.28678C6.65315 6.09567 6.6976 5.909 6.78648 5.72678C6.87093 5.54456 6.98648 5.39122 7.13315 5.26678C7.28426 5.13789 7.45537 5.049 7.64648 5.00011C7.83759 4.95122 8.03537 4.94233 8.23982 4.97344C8.51537 5.02678 8.75315 5.15344 8.95315 5.35345C9.14871 5.549 9.26871 5.78011 9.31315 6.04678C9.36648 6.35789 9.32426 6.64678 9.18648 6.91344C9.04426 7.18011 8.83537 7.38233 8.55982 7.52011C8.23093 7.65789 7.97315 7.86678 7.78648 8.14678C7.59982 8.42233 7.50648 8.73122 7.50648 9.07344L7.50648 9.47344C7.50648 9.61122 7.55315 9.729 7.64648 9.82678C7.74426 9.92011 7.86204 9.96678 7.99982 9.96678ZM7.32648 11.3134C7.32648 11.5046 7.39315 11.6646 7.52648 11.7934C7.65982 11.9223 7.8176 11.9868 7.99982 11.9868C8.18204 11.9868 8.33982 11.9223 8.47315 11.7934C8.60648 11.6646 8.67315 11.5046 8.67315 11.3134C8.67315 11.1312 8.60648 10.9757 8.47315 10.8468C8.33982 10.7179 8.18204 10.6534 7.99982 10.6534C7.8176 10.6534 7.65982 10.7179 7.52648 10.8468C7.39315 10.9757 7.32648 11.1312 7.32648 11.3134Z" fill="currentColor" fill-rule="nonzero" />
+          </svg>
+          <transition name="tooltip-fade">
+            <div v-if="questionHovered" class="fuzzy-tooltip">
+              <span class="fuzzy-tooltip-arrow"></span>
+              匹配非精准结果，仅供参考
+            </div>
+          </transition>
+        </div>
       </div>
     </div>
 
@@ -136,7 +143,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, defineComponent, h } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, defineComponent, h } from 'vue'
 import { Search, CircleCheck, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import noproblemSvg from '../../../assets/svg/noproblem.svg'
 
@@ -183,13 +190,33 @@ const hasNoDiffs = computed(() => props.diffs.length === 0)
 
 const activeIssue      = ref('all')
 const matchMode        = ref('precise')  // 'precise'=高中置信 | 'fuzzy'=高中低
-const fuzzyHovered     = ref(false)
+const questionHovered  = ref(false)
+const preciseTabRef    = ref(null)
+const fuzzyTabWrapRef  = ref(null)
+const sliderStyle      = ref({ left: '2px', width: '0px' })
+
+function updateSlider() {
+  const el = matchMode.value === 'precise' ? preciseTabRef.value : fuzzyTabWrapRef.value
+  if (!el) return
+  sliderStyle.value = { left: `${el.offsetLeft}px`, width: `${el.offsetWidth}px` }
+}
+
+onMounted(() => nextTick(updateSlider))
 const search           = ref('')
 const selectedIdx      = ref(-1)
 const listRef          = ref(null)
 const folded           = ref(new Set())
 const activeMoreCardKey = ref(null)
 const notIssueKeys     = ref(new Set())
+
+// 兼容旧数据：_isNotProblem=true 的条目初始化为"非问题"状态
+watch(() => props.diffs, (diffs) => {
+  const next = new Set(notIssueKeys.value)
+  for (const d of (diffs ?? [])) {
+    if (d._isNotProblem) next.add(foldKey(d))
+  }
+  notIssueKeys.value = next
+}, { immediate: true })
 
 const visibleDiffs = computed(() =>
   matchMode.value === 'fuzzy' ? props.diffs : props.diffs.filter(d => d.confidence !== 'low')
@@ -284,6 +311,15 @@ watch(() => props.activePair, (val) => {
       listEl.scrollTo({ top: listEl.scrollTop + (cardTop - listTop), behavior: 'smooth' })
     }
   })
+})
+
+watch(matchMode, () => {
+  selectedIdx.value = -1
+  emit('select', null)
+  if (activeIssue.value !== 'all' && filteredDiffs.value.length === 0) {
+    activeIssue.value = 'all'
+  }
+  nextTick(updateSlider)
 })
 
 function selectIssue(key) {
@@ -477,19 +513,13 @@ function issueLabel(property) {
 .match-mode-slider {
   position: absolute;
   top: 2px;
-  left: 2px;
-  width: calc((100% - 6px) / 2);
   height: calc(100% - 4px);
   background: #fff;
   border-radius: 4px;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
-  transition: transform 200ms ease;
+  transition: left 200ms ease, width 200ms ease;
   pointer-events: none;
   z-index: 0;
-}
-
-.match-mode-slider--right {
-  transform: translateX(calc(100% + 2px));
 }
 
 .match-mode-tab {
@@ -799,7 +829,26 @@ function issueLabel(property) {
 
 /* ── 模糊比对 tooltip ── */
 .fuzzy-tab-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.fuzzy-tab-wrap .match-mode-tab {
+  padding-right: 0;
+}
+
+.fuzzy-hint-wrap {
   position: relative;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: #777777;
+  transition: color 150ms ease;
+  margin-left: 4px;
+  padding-right: 16px;
+}
+.fuzzy-hint-wrap:hover {
+  color: #2E86DE;
 }
 
 .fuzzy-tooltip {
