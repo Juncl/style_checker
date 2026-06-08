@@ -42,6 +42,7 @@
     :active-pair="activePairForDiff"
     :hover-pair="hoverPairForDiff"
     :debug-mode="debugMode"
+    :version-id="workingVersionId"
     @select="$emit('diff-select', $event)"
     @diff-hover="$emit('diff-hover', $event)"
   />

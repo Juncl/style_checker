@@ -98,7 +98,9 @@
               </svg>
               <transition name="more-pop">
                 <div v-if="activeMoreCardKey === foldKey(d)" class="more-menu" @click.stop>
-                  <button class="more-menu-item" @click.stop="markNotIssue(foldKey(d))">非问题</button>
+                  <button class="more-menu-item" @click.stop="toggleNotIssue(foldKey(d))">
+                    {{ notIssueKeys.has(foldKey(d)) ? '取消非问题' : '非问题' }}
+                  </button>
                 </div>
               </transition>
             </span>
@@ -145,6 +147,8 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, defineComponent, h } from 'vue'
 import { Search, CircleCheck, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { updateConsistencyCheckProblem } from '../../../api/api.ts'
 import noproblemSvg from '../../../assets/svg/noproblem.svg'
 
 const ColorDot = defineComponent({
@@ -173,6 +177,7 @@ const props = defineProps({
   activePair: { type: Object,  default: null },
   hoverPair:  { type: Object,  default: null },
   debugMode:  { type: Boolean, default: false },
+  versionId:  { type: [Number, String], default: null },
 })
 const emit = defineEmits(['select', 'diff-hover'])
 
@@ -209,9 +214,9 @@ const folded           = ref(new Set())
 const activeMoreCardKey = ref(null)
 const notIssueKeys     = ref(new Set())
 
-// 兼容旧数据：_isNotProblem=true 的条目初始化为"非问题"状态
+// 当 diffs 变化时，根据数据中的 _isNotProblem 重建非问题标记（不保留旧值）
 watch(() => props.diffs, (diffs) => {
-  const next = new Set(notIssueKeys.value)
+  const next = new Set()
   for (const d of (diffs ?? [])) {
     if (d._isNotProblem) next.add(foldKey(d))
   }
@@ -338,15 +343,42 @@ function selectItem(d, idx) {
   }
 }
 
-// ── 非问题标记 ──
+// ── 非问题标记（标记/取消）──
 function toggleMoreMenu(key) {
   activeMoreCardKey.value = activeMoreCardKey.value === key ? null : key
 }
-function markNotIssue(key) {
-  const next = new Set(notIssueKeys.value)
-  next.add(key)
-  notIssueKeys.value = next
-  activeMoreCardKey.value = null
+async function toggleNotIssue(key) {
+  if (!props.versionId) {
+    ElMessage.warning('请先保存版本后再标记')
+    return
+  }
+  const diff = filteredDiffs.value.find(d => foldKey(d) === key)
+  if (!diff) return
+  const isMarked = notIssueKeys.value.has(key)
+  const isNotProblem = isMarked ? 0 : 1
+  try {
+    const problemId = diff._problemId || `${diff.arkuiNodeId}-${diff.property}`
+    await updateConsistencyCheckProblem({
+      id:           problemId,
+      versionId:    props.versionId,
+      key:          diff.nodeType || 'container',
+      desc:         diff.description || '',
+      type:         diff.property,
+      data:         diff._problemData || JSON.stringify(diff),
+      isNotProblem,
+    })
+    const next = new Set(notIssueKeys.value)
+    if (isMarked) {
+      next.delete(key)
+    } else {
+      next.add(key)
+    }
+    notIssueKeys.value = next
+    activeMoreCardKey.value = null
+    ElMessage.success(isMarked ? '已取消非问题' : '已标记为非问题')
+  } catch (e) {
+    ElMessage.error('操作失败')
+  }
 }
 
 // ── 折叠状态（按节点+属性的稳定 key）──

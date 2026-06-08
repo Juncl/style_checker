@@ -45,8 +45,8 @@ export function jsonToFile(json: unknown, filename: string): File {
   return new File([text], filename, { type: 'application/json' })
 }
 
-// 从算法结果的 diffs 中提取 problems 列表
-export function buildProblems(res: any): object[] {
+// 从算法结果的 diffs 中提取 problems 列表，同时返回 nodeMatchs
+export function buildProblems(res: any): { problems: object[]; nodeMatchs: string } {
   const problems = (res?.diffs ?? []).map((d: any) => ({
     id:   `${d.arkuiNodeId}-${d.property}`,
     key:  d.nodeType || 'container',
@@ -55,21 +55,13 @@ export function buildProblems(res: any): object[] {
     data: JSON.stringify(d),
   }))
 
-  // 追加全部匹配对 ID，便于历史版本读取时重建完整 pairs
+  // 节点匹配结果独立字段
   const pairIds = (res?.pairs ?? [])
     .map((p: any) => [p.arkui?.id, p.design?.id])
     .filter(([a, d]: [string, string]) => a && d)
-  if (pairIds.length > 0) {
-    problems.push({
-      id:   'matchedPairIds',
-      key:  'pairIds',
-      type: 'obj',
-      desc: '',
-      data: JSON.stringify(pairIds),
-    })
-  }
+  const nodeMatchs = JSON.stringify({ matchedPairIds: pairIds })
 
-  return problems
+  return { problems, nodeMatchs }
 }
 
 // 旧格式 problems（内网后台存量数据）兼容转换

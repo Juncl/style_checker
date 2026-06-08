@@ -76,12 +76,22 @@ export const getPagesByDeliverableId = async (deliverableId: string) => {
 export const addConsistencyCheckPage = async (params: Record<string, unknown>) => {
   try {
     const url = `${ADMIN_BASE_URL}/main/rest.root/reviewTool/consistencyCheck/addConsistencyCheckPage`
-    const ret = await Api.post(url, params, 60000)
+    const ret = await Api.post(url, params, 60000, { uiplusToken })
     return ret.data.content
   } catch (error) {
     console.log("error: ", error)
     return null
   }
+}
+
+// 更新问题项状态（标记/取消"非问题"）
+// POST /main/rest.root/reviewTool/consistencyCheck/updateConsistencyCheckProblem
+// 返回：成功 true，失败抛出异常
+export const updateConsistencyCheckProblem = async (params: Record<string, unknown>) => {
+  const url = `${ADMIN_BASE_URL}/main/rest.root/reviewTool/consistencyCheck/updateConsistencyCheckProblem`
+  const ret = await Api.post(url, params, 60000, { uiplusToken })
+  if (!ret.data?.success) throw new Error(ret.data?.message || '更新失败')
+  return true
 }
 
 // 根据页面 ID 查询版本列表（分页）
@@ -105,7 +115,7 @@ export const getResultsByPageId = async (pageId: number | string, pageNum: numbe
 export const addConsistencyCheckDeliverable = async (teamId: string, name: string) => {
   try {
     const url = `${ADMIN_BASE_URL}/main/rest.root/reviewTool/consistencyCheck/addConsistencyCheckDeliverable`
-    const ret = await Api.post(url, new URLSearchParams({ teamId, name }))
+    const ret = await Api.post(url, new URLSearchParams({ teamId, name }), 60000, { uiplusToken })
     return ret.data.content
   } catch (error) {
     console.log("error: ", error)

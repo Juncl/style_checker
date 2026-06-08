@@ -109,8 +109,7 @@ mock 服务（端口 3001）使用**本地 JSON 文件**作为数据库，存放
 | `mock/db/team.json` | 团队数据（静态） |
 | `mock/db/son_team.json` | 子项目数据（静态） |
 | `mock/db/deliverables.json` | 旧字段兼容数据（静态） |
-| `mock/db/design.json` / `mock/db/design.png` | 示例设计稿（静态） |
-| `mock/db/results/case12.json` | 内置 case 数据（静态） |
+| `mock/db/getImageJson/` | 传送码对应设计稿数据（静态），含 `design.json` / `design.png`（code 111，hmPhone）和 `design_web_case1.json` / `design_web_case1.png`（code 113，web） |
 
 ---
 
@@ -128,14 +127,15 @@ echo '[]' > mock/db/consistency_check_pages.json
 echo '[]' > mock/db/consistency_check_versions.json
 ```
 
-**② 删除 results 下所有数字命名的子目录（保留 case12.json）：**
+**② 删除 results 下所有数字命名的子目录：**
 
 ```bash
-# 只删除数字命名的目录（即 deliverableId 目录），不删除 case12.json
+# 只删除数字命名的目录（即 deliverableId 目录）
 find mock/db/results -mindepth 1 -maxdepth 1 -type d | xargs rm -rf
 ```
 
 > ⚠️ AI 执行这两步之前必须先询问用户确认，因为这是不可逆操作。
+> ⚠️ 上述 `find` 命令不会影响 `mock/db/getImageJson/`，该目录与 `results/` 平级、不在其下。
 
 ---
 

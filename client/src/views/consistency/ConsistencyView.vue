@@ -199,10 +199,24 @@ const workingPage         = ref(null)
 const pageVersionList     = ref([])
 const workingVersionId    = ref(null)
 
-// 单版本预处理：从 problems 中裁出 matchedPairIds 特殊项，
-// 存到 _matchedPairIds，保持 problems 干净供渲染使用
+// 单版本预处理：优先使用 nodeMatchs，回退到兼容旧格式 problems 末尾的 matchedPairIds 特殊项
 function preprocessVersion(v) {
   if (!v || v._matchedPairIds !== undefined) return v
+
+  // 新格式：nodeMatchs 独立字段（优先级最高）
+  if (v.nodeMatchs) {
+    try {
+      const parsed = JSON.parse(v.nodeMatchs)
+      const matchedPairIds = JSON.stringify(parsed.matchedPairIds ?? [])
+      const problems = [...(v.problems ?? [])]
+      // 库存数据可能仍有旧格式特殊项，清理掉
+      const idx = problems.findIndex(p => p.id === 'matchedPairIds')
+      if (idx >= 0) problems.splice(idx, 1)
+      return { ...v, problems, _matchedPairIds: matchedPairIds }
+    } catch { /* 解析失败则回退 */ }
+  }
+
+  // 旧格式兼容（存量数据无 nodeMatchs 时）
   const problems = [...(v.problems ?? [])]
   const idx = problems.findIndex(p => p.id === 'matchedPairIds')
   const matchedPairIds = idx >= 0 ? problems[idx].data : null
@@ -775,6 +789,7 @@ async function submitRerunVersion() {
       fileToText(uploadFiles.value.arkuiJson),
       fileToText(uploadFiles.value.designJson),
     ])
+    const { problems: addPageProblems, nodeMatchs: addPageNodeMatchs } = buildProblems(result.value)
     await addConsistencyCheckPage({
       id:                    String(pageId),
       deliverableId:         String(workingDeliverable.value?.id ?? ''),
@@ -785,7 +800,8 @@ async function submitRerunVersion() {
       devJson:               devJsonStr,
       designImageBase64Data: designBase64,
       designJson:            designJsonStr,
-      problems:              buildProblems(result.value),
+      problems:              addPageProblems,
+      nodeMatchs:            addPageNodeMatchs,
     })
 
     const pageResult = await getResultsByPageId(pageId, 1, 999)
@@ -797,6 +813,12 @@ async function submitRerunVersion() {
     if (dId && versionId) {
       const hashPath = window.location.hash.split('?')[0]
       window.history.replaceState(null, '', `${window.location.pathname}${hashPath}?deliverableId=${dId}&pageId=${pageId}&versionId=${versionId}`)
+    }
+    // 保存后给当前 diffs 注入 _problemId，确保非问题标记能取到 id
+    if (result.value?.diffs) {
+      for (const d of result.value.diffs) {
+        if (!d._problemId) d._problemId = `${d.arkuiNodeId}-${d.property}`
+      }
     }
   } catch (e) {
     console.error('重新对比存档失败', e)
@@ -935,7 +957,13 @@ async function loadHistoryVersion(rawVersion, deviceType) {
   ])
 
   const diffs = (version.problems ?? []).map(p => {
-    try { return JSON.parse(adaptLegacyProblem(p).data) } catch { return null }
+    try {
+      const diff = JSON.parse(adaptLegacyProblem(p).data)
+      if (p.isNotProblem === 1) diff._isNotProblem = true
+      diff._problemId = String(p.id)
+      diff._problemData = p.data
+      return diff
+    } catch { return null }
   }).filter(Boolean)
 
   const arkuiNodeMap  = new Map((devParsed.nodes  ?? []).map(n => [n.id, n]))
@@ -1067,6 +1095,7 @@ async function submitResult() {
       fileToText(uploadFiles.value.designJson),
     ])
 
+    const { problems: saveProblems, nodeMatchs: saveNodeMatchs } = buildProblems(result.value)
     const pageId = await addConsistencyCheckPage({
       deliverableId:         String(deliverableId),
       name:                  pageName,
@@ -1076,7 +1105,8 @@ async function submitResult() {
       devJson:               devJsonStr,
       designImageBase64Data: designBase64,
       designJson:            designJsonStr,
-      problems:              buildProblems(result.value),
+      problems:              saveProblems,
+      nodeMatchs:            saveNodeMatchs,
     })
     if (!pageId) return
 
@@ -1085,6 +1115,13 @@ async function submitResult() {
     pageVersionList.value  = preprocessVersionList(pageResult?.list)
     const versionId  = Array.isArray(pageResult?.list) ? pageResult.list[0]?.id : null
     workingVersionId.value = versionId ?? null
+
+    // 保存后给当前 diffs 注入 _problemId，确保非问题标记能取到 id
+    if (result.value?.diffs) {
+      for (const d of result.value.diffs) {
+        if (!d._problemId) d._problemId = `${d.arkuiNodeId}-${d.property}`
+      }
+    }
 
     // 步骤 6：刷新页面列表
     const pageList = await getPagesByDeliverableId(String(deliverableId))
