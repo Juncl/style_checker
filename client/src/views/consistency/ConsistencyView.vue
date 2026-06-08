@@ -344,8 +344,9 @@ const hoverArkuiSpacingMarks = computed(() => {
   if (!selNode?.rect) return []
   const hoverId = hoveredArkuiNodeId.value || hoveredArkuiCrossId.value
   if (!hoverId || hoverId === selNode.id) return []
-  const hoverNode = allArkuiNodes.value.find(n => n.id === hoverId)
-  // ArkUI 侧 rect 即 vp，直接用于展示值（size 传 null，内部 fallback 到 rect）
+  // 优先从 pairs 中取坐标，保证与 selectedPair 同源，避免不同数据流坐标系不一致
+  const hoverNode = result.value?.pairs?.find(p => p.arkui?.id === hoverId)?.arkui
+                 ?? allArkuiNodes.value.find(n => n.id === hoverId)
   return hoverNode?.rect ? computeSpacingMarks(selNode.rect, hoverNode.rect, null, null) : []
 })
 
@@ -354,8 +355,9 @@ const hoverDesignSpacingMarks = computed(() => {
   if (!selNode?.rect) return []
   const hoverId = hoveredDesignNodeId.value || hoveredDesignCrossId.value
   if (!hoverId || hoverId === selNode.id) return []
-  const hoverNode = designNodes.value.find(n => n.id === hoverId)
-  // 设计侧用 size（原始 dp）计算展示数值，rect 用于画布渲染位置
+  // 优先从 pairs 中取坐标，保证与 selectedPair 同源，避免不同数据流坐标系不一致
+  const hoverNode = result.value?.pairs?.find(p => p.design?.id === hoverId)?.design
+                 ?? designNodes.value.find(n => n.id === hoverId)
   return hoverNode?.rect ? computeSpacingMarks(selNode.rect, hoverNode.rect, selNode.size, hoverNode.size) : []
 })
 const arkuiNodes  = computed(() =>

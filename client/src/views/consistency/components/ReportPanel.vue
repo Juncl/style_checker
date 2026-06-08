@@ -153,9 +153,9 @@ const treeSelectedId = computed(() =>
 
 <style scoped>
 .rerun-loading-mask {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 210;
   display: flex;
   flex-direction: column;
   align-items: center;
