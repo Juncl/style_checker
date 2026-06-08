@@ -157,15 +157,16 @@ export async function annotateArkuiTree(root, opts = {}) {
     stats.pixelChecked = pix.checked
     stats.pixelHidden = pix.hidden
 
-    const ocr = await annotateTextOcrVisibility(
-      nodeList, imageBuffer,
-      { w: canvasWidthVp, h: canvasHeightVp },
-      { source: 'arkui', mode: 'all' },
-    )
-    stats.ocrChecked = ocr.checked
-    stats.ocrHidden = ocr.hidden
-    stats.ocrMatched = ocr.matched
-    stats.ocrItems = ocr.ocrItems
+    // OCR 阶段暂隐藏（2026-06 临时屏蔽，待优化性能后恢复）
+    // const ocr = await annotateTextOcrVisibility(
+    //   nodeList, imageBuffer,
+    //   { w: canvasWidthVp, h: canvasHeightVp },
+    //   { source: 'arkui', mode: 'all' },
+    // )
+    // stats.ocrChecked = ocr.checked
+    // stats.ocrHidden = ocr.hidden
+    // stats.ocrMatched = ocr.matched
+    // stats.ocrItems = ocr.ocrItems
   }
 
   // 4. 基于像素/OCR 标注做 unwrap

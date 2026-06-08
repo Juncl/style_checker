@@ -159,8 +159,9 @@ import { ElMessage } from 'element-plus'
 import OctoLoading from './components/common/OctoLoading.vue'
 import { checkCase, checkUpload, imageUrl, parseDevUpload, parseDesignUpload, convertDumpToJson } from '../../api/index.ts'
 import { getTeamList, getSonListByTeamId, addConsistencyCheckDeliverable, addConsistencyCheckPage, getResultsByPageId, getPagesByDeliverableId, getConsistencyCheckDeliverables, fetchVersionJson } from '../../api/api.ts'
+import { ADMIN_BASE_URL } from '../../api/adminEnv.ts'
 import {
-  formatDateTime, fileToBase64, fileToText, buildProblems, adaptLegacyProblem, base64ToFile, jsonToFile,
+  formatDateTime, fileToBase64, fileToText, buildProblems, adaptLegacyProblem, jsonToFile, resolveImageFile,
   isBlankLikeNode, isInteractiveImageNode, isSelectableNode, resolveSelectableNode,
 } from '../utils/tools.ts'
 import { initApp } from './init/index'
@@ -946,8 +947,10 @@ async function loadHistoryVersion(rawVersion, deviceType) {
     fetchVersionJson(version.designJsonUrl),
   ])
 
-  const devImageFile    = base64ToFile(version.devBase64Data,    'arkui.jpg')
-  const designImageFile = base64ToFile(version.designBase64Data, 'design.jpg')
+  const [devImageFile, designImageFile] = await Promise.all([
+    resolveImageFile(version.devBase64Data,    'arkui.jpg',  ADMIN_BASE_URL),
+    resolveImageFile(version.designBase64Data, 'design.jpg', ADMIN_BASE_URL),
+  ])
   const devJsonFile     = jsonToFile(devJsonData,    'arkui.json')
   const designJsonFile  = jsonToFile(designJsonData, 'design.json')
 

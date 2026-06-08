@@ -39,6 +39,24 @@ export function base64ToFile(base64: string, filename: string): File {
   return new File([arr], filename, { type: mime })
 }
 
+// 将图片数据（base64 DataURL 或 URL）转为 File 对象
+// 旧数据兼容：历史版本的图片字段可能是 base64 字符串或图片 URL
+export async function resolveImageFile(
+  imageData: string | null | undefined,
+  filename: string,
+  baseUrl?: string,
+): Promise<File | null> {
+  if (!imageData) return null
+  // base64 DataURL：data:image/png;base64,...
+  if (imageData.startsWith('data:')) return base64ToFile(imageData, filename)
+  // 普通 URL：fetch 后转为 File
+  const url = imageData.startsWith('//') && baseUrl ? `${baseUrl}${imageData}` : imageData
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`resolveImageFile fetch failed: ${res.status} ${url}`)
+  const blob = await res.blob()
+  return new File([blob], filename, { type: blob.type || 'image/png' })
+}
+
 // JSON 对象 → File 对象
 export function jsonToFile(json: unknown, filename: string): File {
   const text = typeof json === 'string' ? json : JSON.stringify(json)

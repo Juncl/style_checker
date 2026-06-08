@@ -530,7 +530,7 @@ case/
 3. **样式比对**：`compareAll()` + `compareSpatialRelations()` 生成 `StyleDiff[]`
 4. **评分**：`score = 100 - penalty*10 - coveragePenalty - lowConfidencePenalty`
 
-> 像素可见性 / OCR / 后项杀前项 标注及不可见节点剔除已全部内化进解析流水线 step 3，`runCheck` 不再单独调用。
+> 像素可见性 / ~~OCR~~ / 后项杀前项 标注及不可见节点剔除已全部内化进解析流水线 step 3，`runCheck` 不再单独调用。**（OCR 阶段 2026-06 临时隐藏）**
 
 ## 解析流水线（5 步，两侧对称）
 
@@ -539,14 +539,14 @@ case/
   - `arkuiInput` 为 JSON 对象时走 `1-buildTree.js`；为字符串时走 `1-buildDumpTree.js`（dump 格式自动识别）
 - Web 开发侧 [`server/src/parsers/web/`](server/src/parsers/web/) — 入口 `index.js` 导出 `parseWeb(webJson, { imageBuffer })`
 - 设计侧 [`server/src/parsers/design/`](server/src/parsers/design/) — 入口 `index.js` 导出 `parseDesign(designJson, { imageBuffer })`
-- 三侧都是 `async`（ArkUI step 3 调用 Tesseract）
+- 三侧中 ArkUI 侧是 `async`（ArkUI step 3 曾调用 Tesseract，OCR 已临时隐藏）
 
 | step | 文件 | 职责 |
 |---|---|---|
 | 1 buildTree | `1-buildTree.js`（JSON）/ `1-buildDumpTree.js`（dump） | 原始结构 → UnifiedNode 树（保留 children）。**只做字段转换，不剔除任何节点**。设计侧由于原始数据是扁平 `data[]`，需按 `path` 重建树（孤儿丢弃）；同时接受 `arkuiCanvasWidthVp` 参数：计算 `scale = arkuiCanvasWidthVp / origCanvasWidth`，将所有节点 rect 等比缩放后写入 `rect`，原始 dp 坐标存入 `size` |
 | 2 pruneTree | `2-pruneTree.js` | **硬剪枝**（整棵子树删：`visibility=Hidden` / `opacity=0` / 越界 / 超宽 / 空文本）+ **软剪枝**（删自身保子：框架节点 / Span / Blank / 透明 layout 容器 / 极小节点 w/h ≤ 4（无条件）/ 全屏包裹层 normRect ≥ 0.999（无条件））。设计侧额外做语义折叠 + 背景节点同化 + BOOLEAN_OPERATION 后代清空；设计侧硬剪枝额外包含：**系统状态栏整组件**（name/componentData 含 StatusBar + 贴顶 + 矮条 + 含时间文本）；设计侧软剪枝额外包含：**GROUP 无视觉装饰时 unwrap** |
 | 2.5 normalizeTree | `utils/normalizeTree.js`（共享） | 父子 `rect.x/y/w/h` **严格相等**且 child 非叶子非文本、`style` 无视觉装饰时，删 child 把孙子接上来 |
-| 3 annotateTree | `3-annotateTree.js` | ArkUI 侧：`pruneOccludedSiblings('reverse')`（后项杀前项）→ 像素标注 → OCR 标注 → unwrap。设计侧：`pruneOccludedSiblings('forward')`（前项杀后项）→ 像素标注 → unwrap。Web 侧：不做遮挡剪枝、不做 OCR |
+| 3 annotateTree | `3-annotateTree.js` | ArkUI 侧：`pruneOccludedSiblings('reverse')`（后项杀前项）→ 像素标注 → ~~OCR 标注~~ → unwrap。**（OCR 已临时隐藏）** 设计侧：`pruneOccludedSiblings('forward')`（前项杀后项）→ 像素标注 → unwrap。Web 侧：不做遮挡剪枝、不做 OCR |
 | 4 flattenTree | `4-flattenTree.js` | 树 → 扁平 `UnifiedNode[]`（DFS 序），去掉所有内部字段（`children` / `_attrs` / `_raw` 等）。不包含 root 节点本身 |
 
 ### 全局决策（解析阶段）
