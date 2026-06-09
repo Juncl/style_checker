@@ -77,7 +77,10 @@ function hardPruneReason(node, canvasW, canvasH) {
   if (node.rect.w > canvasW * 3) return 'too-wide'
 
   // 零尺寸或极小尺寸（w/h 为 0，或 w,h 均 < 2）
-  if (node.rect && (!node.rect.w || !node.rect.h || (node.rect.w < 2 && node.rect.h < 2))) return 'zero-size'
+  // 有子节点时跳过：可能是中间层布局代理（h=0 但子节点有实际内容，如 case16），
+  // 留给 softPrune unwrap；叶子节点的零尺寸才是真不可见
+  if (node.rect && (!node.rect.w || !node.rect.h || (node.rect.w < 2 && node.rect.h < 2))
+      && !(node.children && node.children.length > 0)) return 'zero-size'
 
   // 空文本 Text
   if (TEXT_TYPES.has(type) && String(node.textContent || '').trim().length === 0) {
