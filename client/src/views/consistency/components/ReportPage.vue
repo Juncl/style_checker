@@ -172,6 +172,7 @@
           :debug-pipeline-visible="debugPipelineOn"
           :debug-visible="debugOverlayOn"
           :debug-pair-map="debugPairMap"
+
           @node-click="$emit('arkui-node-click', $event)"
           @node-hover="onArkuiHover"
           @bg-click="$emit('clear-pair')"
@@ -205,6 +206,7 @@
             :canvas-w="designPreview.canvas.w"
             :canvas-h="designPreview.canvas.h"
             :nodes="designPreview.nodes"
+
           />
           <!-- 上传卡片 -->
           <DesignUploadCard
@@ -236,6 +238,7 @@
           :debug-pipeline-visible="debugPipelineOn"
           :debug-visible="debugOverlayOn"
           :debug-pair-map="debugPairMap"
+
           @node-click="$emit('design-node-click', $event)"
           @node-hover="onDesignHover"
           @bg-click="$emit('clear-pair')"

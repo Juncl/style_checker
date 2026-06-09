@@ -68,7 +68,7 @@ export function compareStyles(pair, opts = {}) {
   // ── 文字节点属性 ──────────────────────────────────────────────────────────
   if (dn.type === 'text' && an.type === 'text') {
     if (!isTitlebarType(an)) {
-      diffNumber(diffs, ctx, 'fontSize', ds.fontSize, as_.fontSize, 'dp/vp', TOLERANCE.fontSize, '字号', 2)
+      diffNumber(diffs, ctx, 'fontSize', ds.fontSize, as_.fontSize, TOLERANCE.fontSize, '字号', 2)
     }
     diffFontWeight(diffs, ctx, ds.fontWeight, as_.fontWeight)
     diffColor(diffs, ctx, 'fontColor',       ds.fontColor,   as_.fontColor,   '颜色')
@@ -112,14 +112,14 @@ export function compareAll(pairs, opts = {}) {
 // 各属性比较函数
 // ──────────────────────────────────────────────────────────────────────────────
 
-function diffNumber(diffs, ctx, prop, dv, av, unit, tol, label, errorThreshold) {
+function diffNumber(diffs, ctx, prop, dv, av, tol, label, errorThreshold) {
   if (dv === null || dv === undefined || av === null || av === undefined) return
   const delta = Math.abs(dv - av)
   if (delta > tol) {
     const errThresh = errorThreshold !== undefined ? errorThreshold : tol * 3
-    diffs.push(makeDiff(ctx, prop, `${dv}${unit}`, `${av}${unit}`,
+    diffs.push(makeDiff(ctx, prop, `${dv}`, `${av}`,
       delta > errThresh ? 'error' : 'warning',
-      `${label}偏差 ${dv > av ? '+' : ''}${(dv - av).toFixed(1)}${unit}`))
+      `${label}偏差 ${dv > av ? '+' : ''}${(dv - av).toFixed(1)}`))
   }
 }
 
@@ -231,7 +231,7 @@ function diffBlur(diffs, ctx, dv, av, prop = 'blur', label = '模糊') {
   }
   if (d.value !== a.value) {
     diffs.push(makeDiff(ctx, prop, dv, av, 'warning',
-      `${label}偏差 ${(d.value - a.value).toFixed(1)}px`))
+      `${label}偏差 ${(d.value - a.value).toFixed(1)}`))
   }
 }
 
@@ -261,7 +261,7 @@ function diffShadow(diffs, ctx, dv, av) {
   }
   const issues = []
   if (d.type !== a.type) issues.push('类型不匹配')
-  if (d.radius !== a.radius) issues.push(`radius偏差 ${(d.radius - a.radius).toFixed(1)}px`)
+  if (d.radius !== a.radius) issues.push(`radius偏差 ${(d.radius - a.radius).toFixed(1)}`)
   if (d.offsetX !== a.offsetX || d.offsetY !== a.offsetY) issues.push('偏移偏差')
   if (issues.length > 0) {
     diffs.push(makeDiff(ctx, 'shadow', dv, av, 'warning', `投影不匹配：${issues.join('，')}`))
@@ -278,7 +278,7 @@ function diffBorder(diffs, ctx, dv, av) {
   } else if (dw == null || aw == null) {
     diffs.push(makeDiff(ctx, 'borderWidth', formatBorderWidth(dv), formatBorderWidth(av), 'warning', '描边宽度：一侧缺失'))
   } else if (widthDelta > 0) {
-    diffs.push(makeDiff(ctx, 'borderWidth', `${dw}dp`, `${aw}vp`,
+    diffs.push(makeDiff(ctx, 'borderWidth', `${dw}`, `${aw}`,
       widthDelta > 2 ? 'error' : 'warning',
       `描边宽度偏差 ${(dw - aw).toFixed(1)}`))
   }
@@ -409,13 +409,13 @@ function diffItemSpacing(diffs, ctx, dv, av) {
   if (dv === null || dv === undefined) return
   if (av === null || av === undefined) {
     if (dv > 0) {
-      diffs.push(makeDiff(ctx, 'itemSpacing', `${dv}dp`, '—', 'warning', '元素间距：实现缺失'))
+      diffs.push(makeDiff(ctx, 'itemSpacing', `${dv}`, '—', 'warning', '元素间距：实现缺失'))
     }
     return
   }
   const delta = Math.abs(dv - av)
   if (delta > 1.0) {
-    diffs.push(makeDiff(ctx, 'itemSpacing', `${dv}dp`, `${av}vp`,
+    diffs.push(makeDiff(ctx, 'itemSpacing', `${dv}`, `${av}`,
       delta > 4 ? 'error' : 'warning',
       `元素间距偏差 ${(dv - av).toFixed(1)}`))
   }
@@ -426,7 +426,7 @@ function diffFontScale(diffs, ctx, fontSize, actualFontSize) {
   const ratio = actualFontSize / fontSize
   if (Math.abs(ratio - 1.0) > 0.1) {
     diffs.push(makeDiff(ctx, 'fontSize.scale',
-      `${fontSize}fp`, `${actualFontSize.toFixed(1)}vp`,
+      `${fontSize}`, `${actualFontSize.toFixed(1)}`,
       Math.abs(ratio - 1.0) > 0.25 ? 'error' : 'warning',
       `系统字体缩放比 ${(ratio * 100).toFixed(0)}%，需设置 maxFontScale`))
   }
@@ -530,7 +530,7 @@ function maxRenderableRadius(rect) {
 function formatRadius(r) {
   if (!r) return '0'
   const { topLeft: tl = 0, topRight: tr = 0, bottomRight: br = 0, bottomLeft: bl = 0 } = r
-  return tl === tr && tr === br && br === bl ? `${tl}vp` : `${tl}/${tr}/${br}/${bl}vp`
+  return tl === tr && tr === br && br === bl ? `${tl}` : `${tl}/${tr}/${br}/${bl}`
 }
 
 function formatPadding(p) {
@@ -540,7 +540,7 @@ function formatPadding(p) {
 
 function formatBorderWidth(border) {
   if (!border || border.width == null) return '—'
-  return `${border.width}dp`
+  return `${border.width}`
 }
 
 function normalizeOpacityValue(value) {

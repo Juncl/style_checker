@@ -856,13 +856,13 @@ const displayStyle = computed(() => {
     truncate,
   })
 
-  if (s.fontSize      != null) add('fontSize',      `${s.fontSize}vp`, null, '字号')
+  if (s.fontSize      != null) add('fontSize',      s.fontSize, null, '字号')
   if (s.fontWeight    != null) add('fontWeight',    s.fontWeight, null, '字重')
   if (s.fontColor)             add('fontColor',     s.fontColor, s.fontColor, '颜色')
   if (s.fontFamily)            add('fontFamily',    s.fontFamily, null, '字体', true)
   if (s.textAlign)             add('textAlign',     s.textAlign, null, '对齐')
-  if (s.lineHeight    != null) add('lineHeight',    `${s.lineHeight}vp`, null, '行高')
-  if (s.letterSpacing != null) add('letterSpacing', `${s.letterSpacing}px`, null, '字间距')
+  if (s.lineHeight    != null) add('lineHeight',    s.lineHeight, null, '行高')
+  if (s.letterSpacing != null) add('letterSpacing', s.letterSpacing, null, '字间距')
   if (s.backgroundColor)       add('backgroundColor', s.backgroundColor, s.backgroundColor, '填充')
   // 任一侧 opacity ≠ 1 都在两侧详情框显示（对方 ≠ 1 会产生 opacity diff，本侧据此感知）
   if ((s.opacity != null && s.opacity !== 1) || diffForStyleKey('opacity')) {
@@ -872,16 +872,16 @@ const displayStyle = computed(() => {
     const br = s.borderRadius
     const v  = [br.topLeft, br.topRight, br.bottomRight, br.bottomLeft]
     const uniform = v.every(x => x === v[0])
-    add('borderRadius', uniform ? `${v[0]}vp` : v.join('/') + 'vp', null, '圆角')
+    add('borderRadius', uniform ? v[0] : v.join('/'), null, '圆角')
   }
-  if (s.border?.width != null) add('borderWidth', `${s.border.width}vp`, null, '描边宽度')
+  if (s.border?.width != null) add('borderWidth', s.border.width, null, '描边宽度')
   if (s.border?.color)        add('borderColor', s.border.color, s.border.color, '描边颜色')
   if (s.padding) {
     const p = s.padding
     const uniform = p.top === p.right && p.right === p.bottom && p.bottom === p.left
-    add('padding', uniform ? `${p.top}vp` : `${p.top} ${p.right} ${p.bottom} ${p.left}vp`, null, '内边距')
+    add('padding', uniform ? p.top : `${p.top} ${p.right} ${p.bottom} ${p.left}`, null, '内边距')
   }
-  if (s.itemSpacing   != null) add('itemSpacing',   `${s.itemSpacing}vp`, null, '间距')
+  if (s.itemSpacing   != null) add('itemSpacing',   s.itemSpacing, null, '间距')
   if (s.shadow) add('shadow', s.shadow, null, '阴影')
   if (s.blur)   add('blur',   s.blur,   null, '模糊')
   return rows
