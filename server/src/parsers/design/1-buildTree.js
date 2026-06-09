@@ -31,7 +31,7 @@ const CONTAINER_TYPES = new Set(['FRAME', 'GROUP'])
  * @param {object} designJson 原始 design.json
  * @param {number} [arkuiCanvasWidthVp] arkui 画布宽度（vp），传入时对 design rect 做等比缩放使两侧坐标系对齐
  * @param {number} [designScale=1] design.json 内部数值缩放系数（hmWatch=0.5；把"伪 dp"换算成真 dp）
- * @returns {{ canvasWidth: number, canvasHeight: number, root: object | null }}
+ * @returns {{ canvasWidth: number, canvasHeight: number, origCanvasWidth: number, origCanvasHeight: number, root: object | null }}
  */
 export function buildDesignTree(designJson, arkuiCanvasWidthVp, designScale = 1) {
   const rawNodes = (designJson && Array.isArray(designJson.data)) ? designJson.data : []
@@ -53,7 +53,7 @@ export function buildDesignTree(designJson, arkuiCanvasWidthVp, designScale = 1)
     ? convertToUnified(rawTreeRoot, origCanvasWidth, origCanvasHeight, scale, canvasWidth, canvasHeight, designScale)
     : null
 
-  return { canvasWidth, canvasHeight, root }
+  return { canvasWidth, canvasHeight, origCanvasWidth, origCanvasHeight, root }
 }
 
 // ─── 1a. 按 path 重建树 ────────────────────────────────────────────────────────

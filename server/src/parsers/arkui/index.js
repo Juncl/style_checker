@@ -44,7 +44,7 @@ export async function parseArkui(arkuiInput, opts = {}) {
   })
 
   // step 4: 扁平化
-  const nodes = flattenArkuiTree(root)
+  const nodes = flattenArkuiTree(root, canvasWidthVp, canvasHeightVp)
 
   return {
     canvasWidthVp,

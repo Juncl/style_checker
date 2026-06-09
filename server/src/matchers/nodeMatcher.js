@@ -34,6 +34,7 @@ import {
   formatRegionForOutput,
 } from './regionContext.js'
 import { comparePaths } from '../utils/pathOrder.js'
+import { isCanvasRoot } from '../utils/deduplicateRootNodes.js'
 import { matchAlignedTextRows, matchDynamicTextSlots } from './dynamicTextSlots.js'
 import { matchLongTextFallback } from './longTextFallback.js'
 import { matchByListIndex } from './listIndexMatcher.js'
@@ -63,6 +64,11 @@ export function matchNodes(designNodes, arkuiNodes, options = {}) {
 
 function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   const { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight } = options
+
+  // 去掉两侧的画布根节点，不参与匹配（背景层没有对应还原元素）
+  designNodes = designNodes.filter(n => !isCanvasRoot(n, canvasWidth, canvasHeight))
+  arkuiNodes = arkuiNodes.filter(n => !isCanvasRoot(n, canvasWidthVp, canvasHeightVp))
+
   const usedArkui = new Set()
   const pairs = []
   const matchedDesignIds = new Set()

@@ -24,7 +24,7 @@ import { normalizeTree } from '../../utils/normalizeTree.js'
 export async function parseDesign(designJson, opts = {}) {
   const { imageBuffer, arkuiCanvasWidthVp, designScale = 1 } = opts
 
-  const { canvasWidth, canvasHeight, root } = buildDesignTree(designJson, arkuiCanvasWidthVp, designScale)
+  const { canvasWidth, canvasHeight, origCanvasWidth, origCanvasHeight, root } = buildDesignTree(designJson, arkuiCanvasWidthVp, designScale)
 
   pruneDesignTree(root, canvasWidth, canvasHeight)
   normalizeTree(root)
@@ -35,7 +35,7 @@ export async function parseDesign(designJson, opts = {}) {
     canvasHeight,
   })
 
-  const nodes = flattenDesignTree(root)
+  const nodes = flattenDesignTree(root, canvasWidth, canvasHeight, origCanvasWidth, origCanvasHeight)
 
   return {
     canvasWidth,

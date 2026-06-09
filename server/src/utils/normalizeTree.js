@@ -15,12 +15,21 @@
  *     },
  *   }
  *
- * 折叠规则：child 同时满足以下全部条件时，删除 child 本身，把它的 children
+ * 折叠规则（两种方向）：
+ *
+ * 正向（原）：child 同时满足以下全部条件时，删除 child 本身，把它的 children
  * （即原 node 的孙子）原位接到 node.children：
  *   1. child 非叶子（child.children.length > 0）
  *   2. child.type !== 'text'
  *   3. 父子 x/y/w/h 严格相等
- *   4. 无视觉装饰：背景透明 + 无圆角 + 无阴影 + 无模糊(blur/backdropBlur) + 无边框
+ *   4. child 无视觉装饰（纯包裹层）
+ *
+ * 反向（新增）：child 为纯包裹层，其直系子节点中有同 rect + 有视觉装饰 + 非文本时，
+ * 同样删除 child，把它的 children 提升到 node.children（"删父保子"）：
+ *   1. child 非叶子
+ *   2. child.type !== 'text'
+ *   3. child 无视觉装饰（纯包裹层）
+ *   4. child 的某个非文本子节点与 child 同 rect 且有视觉装饰
  *
  * 注意：opacity=0 / visibility=hidden / 越界等的子树应在建树阶段就剪掉，本函数不再处理。
  *
@@ -37,6 +46,8 @@ export function normalizeTree(root) {
     let i = 0
     while (i < node.children.length) {
       const child = node.children[i]
+
+      // 正向：child 自身同 rect + 纯包裹层 → 删 child 保 node 直连孙子
       const collapsible =
         child &&
         Array.isArray(child.children) && child.children.length > 0 &&
@@ -46,9 +57,22 @@ export function normalizeTree(root) {
 
       if (collapsible) {
         node.children.splice(i, 1, ...child.children)
-        // 不递增 i：新顶上来的孙子要再做一遍同样检查，处理多层嵌套包裹
         continue
       }
+
+      // 反向：child 是纯包裹层，但其下属有同 rect 带视觉的子节点 → 删 child 保孙子（删父保子）
+      const reverseCollapsible =
+        child &&
+        Array.isArray(child.children) && child.children.length > 0 &&
+        child.type !== 'text' &&
+        isPureWrapper(child) &&
+        hasVisualSameRectChild(child)
+
+      if (reverseCollapsible) {
+        node.children.splice(i, 1, ...child.children)
+        continue
+      }
+
       fix(child)
       i++
     }
@@ -56,6 +80,16 @@ export function normalizeTree(root) {
 
   fix(root)
   return root
+}
+
+// 检查 node 是否存在一个非文本子节点，与其同 rect 且有视觉装饰
+function hasVisualSameRectChild(node) {
+  if (!Array.isArray(node.children)) return false
+  for (const c of node.children) {
+    if (c.type === 'text') continue
+    if (sameBox(node, c) && !isPureWrapper(c)) return true
+  }
+  return false
 }
 
 function sameBox(a, b) {

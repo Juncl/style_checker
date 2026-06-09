@@ -24,7 +24,7 @@ export async function parseWeb(webJson, _opts = {}) {
   pruneWebTree(root, canvasWidthVp, canvasHeightVp)
   normalizeTree(root)
 
-  const nodes = flattenWebTree(root)
+  const nodes = flattenWebTree(root, canvasWidthVp, canvasHeightVp)
 
   return {
     canvasWidthVp,
