@@ -1,18 +1,24 @@
 /**
  * ArkUI Step 2: 剪枝
  *
- * 两个子操作（按顺序）：
- *   2a. 硬剪枝 hardPrune    —— 整棵子树删除
+ * 三个子操作（按顺序）：
+ *   2a. 硬剪枝 hardPrune       —— 整棵子树删除
  *       visibility=Hidden / opacity=0 / out-of-bounds / leftarrow / rightarrow /
  *       no-rect / tooWide / 空文本 Text
  *
- *   2b. 软剪枝 softPrune    —— 删除自身、把 children 顶替到原位
+ *   2a.5 filterSCBSystemLayer —— 过滤 SCB 系统覆盖图层
+ *       消除 __Common__ 下的 SCBSystemScene / SCBKeyboardPanel 等全屏系统叠加层
+ *       以及 CardStackViewItem 层级的后项杀前项
+ *
+ *   2b. 软剪枝 softPrune       —— 删除自身、把 children 顶替到原位
  *       FRAMEWORK_TYPES（无背景色时）/ Span / Blank /
  *       透明 layout（jsview / stack / column / row / flex / list / ...）/
  *       极小节点（w/h ≤ 4vp）/ 全屏包裹层（normRect.w/h ≥ 0.999）
  *
  * 注意：root 节点本身永远不会被 unwrap（它作为树根容器存在）。
  */
+
+import { filterSCBSystemLayer } from '../../utils/filterSCBSystemLayer.js'
 
 const SELF_SKIP_LAYOUT_TYPES = new Set([
   'jsview', 'stack', 'column', 'row', 'flex',
@@ -31,6 +37,7 @@ const TEXT_TYPES = new Set(['Text'])
 export function pruneArkuiTree(root, canvasW, canvasH) {
   if (!root) return root
   hardPrune(root, canvasW, canvasH)
+  root = filterSCBSystemLayer(root)
   softPrune(root)
   return root
 }
@@ -68,6 +75,9 @@ function hardPruneReason(node, canvasW, canvasH) {
 
   // 异常超宽（> 3 倍画布）
   if (node.rect.w > canvasW * 3) return 'too-wide'
+
+  // 零尺寸或极小尺寸（w/h 为 0，或 w,h 均 < 2）
+  if (node.rect && (!node.rect.w || !node.rect.h || (node.rect.w < 2 && node.rect.h < 2))) return 'zero-size'
 
   // 空文本 Text
   if (TEXT_TYPES.has(type) && String(node.textContent || '').trim().length === 0) {

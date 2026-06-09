@@ -138,6 +138,7 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compT
     _frameworkType: FRAMEWORK_TYPES.has(type) || type === 'root',
     _spanType: SPAN_TYPES.has(type),
     _blankType: type === 'Blank',
+    _viewTag: node['viewTag'] || null,
     _attrs: attrs,
     _rectRaw: effectiveRectRaw,
   }
