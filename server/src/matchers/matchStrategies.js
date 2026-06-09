@@ -310,8 +310,6 @@ export function localTextGeometryScore(a, b) {
 export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArkui, matchedDesignIds, regionContext, options = {}) {
   const { diagonal = 1, diagDe = diagonal, diagHm = diagonal, canvasHeightVp, canvasHeight } = options
   const result = []
-  const localUsedArkui = new Set()
-  const localMatchedDesign = new Set()
   const candidateDesignNodes = designNodes
     .filter(n => !matchedDesignIds.has(n.id))
     .filter(n => n.type !== 'text' || hasUsableText(n))
@@ -337,13 +335,11 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
     })
 
   for (const { node: dn, anchors: nodeAnchors } of candidateDesignNodes) {
-    if (localMatchedDesign.has(dn.id)) continue
-
     const best = bestTopologyCandidate(
       dn,
       arkuiNodes,
       nodeAnchors,
-      new Set([...usedArkui, ...localUsedArkui]),
+      usedArkui,
       regionContext,
       diagonal,
       diagDe,
@@ -358,8 +354,6 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
         confidence: best.score > 0.72 ? 'medium' : 'low',
         topologyScore: best.score,
       }))
-      localUsedArkui.add(best.node.id)
-      localMatchedDesign.add(dn.id)
     }
   }
 

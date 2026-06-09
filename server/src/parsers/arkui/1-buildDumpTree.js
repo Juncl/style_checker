@@ -15,6 +15,8 @@
 
 import { normalizeArkuiColor, isTransparent } from '../../utils/colorUtils.js'
 
+const r4 = v => Math.round(v * 10000) / 10000
+
 const TEXT_TYPES      = new Set(['Text'])
 const SPAN_TYPES      = new Set(['Span'])
 // 注意：未在此列表的语法节点（如 SyntaxItem、ContentSlot 等）也会被自动当作
@@ -126,8 +128,8 @@ function convertNode(rawNode, resolution, canvasW, canvasH, path, accumTranslate
       : null
 
   const vpRect = absPx
-    ? { x: absPx.x / resolution, y: absPx.y / resolution,
-        w: absPx.w / resolution, h: absPx.h / resolution }
+    ? { x: r4(absPx.x / resolution), y: r4(absPx.y / resolution),
+        w: r4(absPx.w / resolution), h: r4(absPx.h / resolution) }
     : null
 
   const style = extractDumpStyle(type, props, resolution, vpRect)
@@ -443,8 +445,8 @@ function maybeSplitTextChild(parentUnified, type, props, vpRect, resolution, can
     rawType:  'text',
     name:     'Text',
     path:     childPath,
-    rect:     { x: tx, y: ty, w: tw, h: th },
-    size:     { x: tx, y: ty, w: tw, h: th },
+    rect:     { x: r4(tx), y: r4(ty), w: r4(tw), h: r4(th) },
+    size:     { x: r4(tx), y: r4(ty), w: r4(tw), h: r4(th) },
     normRect: { x: tx / canvasW, y: ty / canvasH, w: tw / canvasW, h: th / canvasH },
     visible:  true,
     style:    { width: tw, height: th, fontSize },

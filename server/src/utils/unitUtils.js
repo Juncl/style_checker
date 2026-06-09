@@ -2,6 +2,9 @@
  * 单位换算与枚举归一化工具
  */
 
+// 保留4位小数消除浮点累加精度差异
+function r4(v) { return Math.round(v * 10000) / 10000 }
+
 // ArkUI 字重枚举 → 数值
 const FW_MAP = {
   'FontWeight.Lighter': 300,
@@ -137,14 +140,14 @@ export function parseArkuiRect(rectStr) {
   return { x1: nums[0], y1: nums[1], x2: nums[2], y2: nums[3] }
 }
 
-/** 将 ArkUI 物理像素 rect 转换为 vp 坐标 */
+/** 将 ArkUI 物理像素 rect 转换为 vp 坐标（保留4位小数消除浮点累加差异） */
 export function toVpRect(arkuiRect, resolution) {
   if (!arkuiRect) return null
   const { x1, y1, x2, y2 } = arkuiRect
   return {
-    x: x1 / resolution,
-    y: y1 / resolution,
-    w: (x2 - x1) / resolution,
-    h: (y2 - y1) / resolution,
+    x: r4(x1 / resolution),
+    y: r4(y1 / resolution),
+    w: r4((x2 - x1) / resolution),
+    h: r4((y2 - y1) / resolution),
   }
 }

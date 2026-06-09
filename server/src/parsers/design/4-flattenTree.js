@@ -8,6 +8,8 @@
  * - origCanvasWidth/origCanvasHeight 为原始 dp 画布尺寸（仅 design 侧有）
  */
 
+import { isRenderableNonTextNode } from '../../utils/nodeVisibility.js'
+import { comparePaths } from '../../utils/pathOrder.js'
 import { deduplicateRootNodes } from '../../utils/deduplicateRootNodes.js'
 
 export function flattenDesignTree(root, canvasWidth, canvasHeight, origCanvasWidth, origCanvasHeight) {
@@ -15,11 +17,55 @@ export function flattenDesignTree(root, canvasWidth, canvasHeight, origCanvasWid
   if (!root || !Array.isArray(root.children)) return nodes
   for (const child of root.children) dfs(child, nodes)
 
+  // 同 rect 容器去重：同 x/y/w/h 的 container 节点组，只保留一个
+  deduplicateContainersByRect(nodes)
+
   // 传入了画布尺寸时，对画布大小的根节点做去重，无则补充 design-root
   if (canvasWidth != null) {
     return deduplicateRootNodes(nodes, canvasWidth, canvasHeight, 'design-root', origCanvasWidth, origCanvasHeight)
   }
   return nodes
+}
+
+function deduplicateContainersByRect(nodes) {
+  const groups = new Map()
+  for (const n of nodes) {
+    if (n.type !== 'container') continue
+    const { x = 0, y = 0, w = 0, h = 0 } = n.rect || {}
+    const key = `${x},${y},${w},${h}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(n)
+  }
+
+  const toRemove = new Set()
+  for (const [, group] of groups) {
+    if (group.length < 2) continue
+
+    let best = group[0]
+    for (const n of group) {
+      const nVis = isRenderableNonTextNode(n)
+      const bVis = isRenderableNonTextNode(best)
+      if (nVis && !bVis) { best = n; continue }
+      if (!nVis && bVis) continue
+
+      const nLen = n.path?.length ?? Infinity
+      const bLen = best.path?.length ?? Infinity
+      if (nLen < bLen) { best = n; continue }
+      if (nLen === bLen && comparePaths(n.path, best.path) < 0) { best = n }
+    }
+
+    for (const n of group) {
+      if (n !== best) toRemove.add(n)
+    }
+  }
+
+  let writeIdx = 0
+  for (const n of nodes) {
+    if (!toRemove.has(n)) {
+      nodes[writeIdx++] = n
+    }
+  }
+  nodes.length = writeIdx
 }
 
 function dfs(node, out) {

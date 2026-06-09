@@ -83,6 +83,9 @@ function rebuildAsTree(rawNodes) {
 }
 
 // ─── 1b. 字段统一 ──────────────────────────────────────────────────────────────
+// 保留4位小数消除浮点累加精度差异
+function r4(v) { return Math.round(v * 10000) / 10000 }
+
 // dpScale：把 raw.rect / raw.style 里的"伪 dp"换算成真 dp 的系数（hmWatch=0.5）
 function convertToUnified(wrap, origCanvasW, origCanvasH, scale, canvasW, canvasH, dpScale = 1) {
   const raw = wrap._raw
@@ -106,7 +109,7 @@ function convertToUnified(wrap, origCanvasW, origCanvasH, scale, canvasW, canvas
     name: raw.name || '',
     path: raw.path,
     size: { x: rx, y: ry, w: rw, h: rh },   // 真实 dp rect，供样式比对/间距计算使用
-    rect: { x: rx * scale, y: ry * scale, w: rw * scale, h: rh * scale },
+    rect: { x: r4(rx * scale), y: r4(ry * scale), w: r4(rw * scale), h: r4(rh * scale) },
     normRect: {
       x: rx * scale / canvasW,
       y: ry * scale / canvasH,
@@ -151,7 +154,8 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
     result.opacity = style.opacity
   }
 
-  if (nodeType !== TEXT_TYPE && Array.isArray(style.background)) {
+  const isHiddenMask = style.mask === true && style.showMask === false
+  if (nodeType !== TEXT_TYPE && Array.isArray(style.background) && !isHiddenMask) {
     const solidBg = style.background.find(b => b.type === 'SOLID')
     if (solidBg?.color) {
       result.backgroundColor = normalizeDesignColor(solidBg.color)
@@ -310,7 +314,7 @@ function clipToMask(node, maskRect, canvasW, canvasH) {
   const newY = Math.max(r.y, maskRect.y)
   const newW = Math.max(0, Math.min(r.x + r.w, maskRect.x + maskRect.w) - newX)
   const newH = Math.max(0, Math.min(r.y + r.h, maskRect.y + maskRect.h) - newY)
-  node.rect = { x: newX, y: newY, w: newW, h: newH }
+  node.rect = { x: r4(newX), y: r4(newY), w: r4(newW), h: r4(newH) }
   node.normRect = { x: newX / canvasW, y: newY / canvasH, w: newW / canvasW, h: newH / canvasH }
   for (const child of (node.children || [])) {
     clipToMask(child, maskRect, canvasW, canvasH)
