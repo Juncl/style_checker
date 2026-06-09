@@ -196,10 +196,12 @@ function convertNode(rawNode, resolution, canvasW, canvasH, path, accumTranslate
 function extractDumpStyle(type, props, resolution, vpRect) {
   const s = {}
 
-  // 背景色
-  const bgRaw = getProp(props, /^BackgroundColor:\s*(#[0-9A-Fa-f]{6,8})/)
-  if (bgRaw && !isTransparent(bgRaw)) {
-    s.backgroundColor = normalizeArkuiColor(bgRaw)
+  // 背景色（仅容器节点）
+  if (!TEXT_TYPES.has(type)) {
+    const bgRaw = getProp(props, /^BackgroundColor:\s*(#[0-9A-Fa-f]{6,8})/)
+    if (bgRaw && !isTransparent(bgRaw)) {
+      s.backgroundColor = normalizeArkuiColor(bgRaw)
+    }
   }
 
   // 尺寸
@@ -208,27 +210,31 @@ function extractDumpStyle(type, props, resolution, vpRect) {
   if (w > 0) s.width  = Math.round(w)
   if (h > 0) s.height = Math.round(h)
 
-  // 圆角（dump 直接输出 vp）
-  const br = parseDumpBorderRadius(props)
-  if (br && Object.values(br).some(v => v > 0)) {
-    if (w > 0 && h > 0) {
-      const maxBr = Math.min(w, h) / 2
-      s.borderRadius = {
-        topLeft:     Math.min(br.topLeft,     maxBr),
-        topRight:    Math.min(br.topRight,    maxBr),
-        bottomRight: Math.min(br.bottomRight, maxBr),
-        bottomLeft:  Math.min(br.bottomLeft,  maxBr),
+  // 圆角（dump 直接输出 vp，仅容器节点）
+  if (!TEXT_TYPES.has(type)) {
+    const br = parseDumpBorderRadius(props)
+    if (br && Object.values(br).some(v => v > 0)) {
+      if (w > 0 && h > 0) {
+        const maxBr = Math.min(w, h) / 2
+        s.borderRadius = {
+          topLeft:     Math.min(br.topLeft,     maxBr),
+          topRight:    Math.min(br.topRight,    maxBr),
+          bottomRight: Math.min(br.bottomRight, maxBr),
+          bottomLeft:  Math.min(br.bottomLeft,  maxBr),
+        }
+      } else {
+        s.borderRadius = br
       }
-    } else {
-      s.borderRadius = br
     }
   }
 
-  // 描边（Border: [top,right,bottom,left] vp，取最大值）
-  const bw = parseDumpBorderWidths(props)
-  if (bw) {
-    const maxW = Math.max(bw.top, bw.right, bw.bottom, bw.left)
-    if (maxW > 0) s.border = { width: maxW, color: null, style: 'BorderStyle.Solid' }
+  // 描边（Border: [top,right,bottom,left] vp，取最大值，仅容器节点）
+  if (!TEXT_TYPES.has(type)) {
+    const bw = parseDumpBorderWidths(props)
+    if (bw) {
+      const maxW = Math.max(bw.top, bw.right, bw.bottom, bw.left)
+      if (maxW > 0) s.border = { width: maxW, color: null, style: 'BorderStyle.Solid' }
+    }
   }
 
   // 文字属性（仅 Text）

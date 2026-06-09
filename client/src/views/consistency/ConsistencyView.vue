@@ -165,6 +165,7 @@ import {
   isBlankLikeNode, isInteractiveImageNode, isSelectableNode, resolveSelectableNode,
 } from '../utils/tools.ts'
 import { initApp } from './init/index'
+import { setUrlParams, removeUrlParams } from '../utils/urlParams'
 import { savePlatform } from './init/restorePlatform'
 import AppLayout from './components/AppLayout.vue'
 import ConsistencyTabbar from './components/ConsistencyTabbar.vue'
@@ -610,7 +611,7 @@ onMounted(async () => {
     console.error('初始化加载失败', e)
     ElMessage.warning(e?.message ?? '加载失败，请重试')
     if (e.clearUrl) {
-      window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash.split('?')[0]}`)
+      removeUrlParams(['deliverableId', 'pageId', 'versionId'])
     }
     return
   }
@@ -812,8 +813,7 @@ async function submitRerunVersion() {
 
     const dId = workingDeliverable.value?.id
     if (dId && versionId) {
-      const hashPath = window.location.hash.split('?')[0]
-      window.history.replaceState(null, '', `${window.location.pathname}${hashPath}?deliverableId=${dId}&pageId=${pageId}&versionId=${versionId}`)
+      setUrlParams({ deliverableId: String(dId), pageId: String(pageId), versionId: String(versionId) })
     }
     // 保存后给当前 diffs 注入 _problemId，确保非问题标记能取到 id
     if (result.value?.diffs) {
@@ -1041,9 +1041,7 @@ async function onSelectPage(page) {
     await loadHistoryVersion(version, deviceType)
     const dId = workingDeliverable.value?.id
     if (dId && page.id && version.id) {
-      const hashPath = window.location.hash.split('?')[0]
-      const params = `deliverableId=${dId}&pageId=${page.id}&versionId=${version.id}`
-      window.history.replaceState(null, '', `${window.location.pathname}${hashPath}?${params}`)
+      setUrlParams({ deliverableId: String(dId), pageId: String(page.id), versionId: String(version.id) })
     }
   } catch (e) {
     console.error('加载历史版本失败', e)
@@ -1057,9 +1055,7 @@ function onHistoryView(item) {
   const dId = workingDeliverable.value?.id
   const pId = workingPage.value?.id
   if (!dId || !pId) return
-  const hashPath = window.location.hash.split('?')[0]
-  const params = `deliverableId=${dId}&pageId=${pId}&versionId=${item.id}`
-  window.history.replaceState(null, '', `${window.location.pathname}${hashPath}?${params}`)
+  setUrlParams({ deliverableId: String(dId), pageId: String(pId), versionId: String(item.id) })
   window.location.reload()
 }
 
@@ -1142,9 +1138,7 @@ async function submitResult() {
 
     // 步骤 7：更新 URL
     if (deliverableId && pageId && versionId) {
-      const hashPath = window.location.hash.split('?')[0]
-      const params = `deliverableId=${deliverableId}&pageId=${pageId}&versionId=${versionId}`
-      window.history.replaceState(null, '', `${window.location.pathname}${hashPath}?${params}`)
+      setUrlParams({ deliverableId: String(deliverableId), pageId: String(pageId), versionId: String(versionId) })
     }
   } catch (e) {
     console.error('提交结果失败', e)

@@ -151,7 +151,7 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
     result.opacity = style.opacity
   }
 
-  if (Array.isArray(style.background)) {
+  if (nodeType !== TEXT_TYPE && Array.isArray(style.background)) {
     const solidBg = style.background.find(b => b.type === 'SOLID')
     if (solidBg?.color) {
       result.backgroundColor = normalizeDesignColor(solidBg.color)
@@ -167,7 +167,7 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
     }
   }
 
-  if (Array.isArray(style.borderRadius) && style.borderRadius.some(v => v > 0)) {
+  if (nodeType !== TEXT_TYPE && Array.isArray(style.borderRadius) && style.borderRadius.some(v => v > 0)) {
     const brRaw = parseDesignBorderRadius(style.borderRadius)
     const br = {
       topLeft:     (brRaw.topLeft     ?? 0) * dpScale,
@@ -201,13 +201,15 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
     }
   }
 
-  const borders = Array.isArray(style.border) ? style.border : (style.border ? [style.border] : [])
-  if (borders.length > 0 && borders[0].width > 0) {
-    const b = borders[0]
-    result.border = {
-      color: normalizeDesignColor(b.color),
-      width: (b.width ?? 0) * dpScale,
-      style: b.style || 'solid',
+  if (nodeType !== TEXT_TYPE) {
+    const borders = Array.isArray(style.border) ? style.border : (style.border ? [style.border] : [])
+    if (borders.length > 0 && borders[0].width > 0) {
+      const b = borders[0]
+      result.border = {
+        color: normalizeDesignColor(b.color),
+        width: (b.width ?? 0) * dpScale,
+        style: b.style || 'solid',
+      }
     }
   }
 

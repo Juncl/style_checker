@@ -440,20 +440,22 @@ function extractArkuiStyle(type, attrs, resolution, vpRect) {
     s.opacity = parseFloat(attrs.opacity)
   }
 
-  // 填充（非透明才记录）
-  const shapeFill = type === 'Circle' || type === 'Ellipse' || type === 'Rect'
-    ? attrs.fill || attrs.foregroundColor
-    : type === 'SymbolGlyph'
-      ? attrs.fontColor
-      : null
-  const bgColor = shapeFill || attrs.backgroundColor
-  if (bgColor && !isTransparent(bgColor)) {
-    s.backgroundColor = normalizeArkuiColor(bgColor)
-  }
-  // 渐变填充：无有效纯色背景时，提取 linearGradient 为 linear-gradient 字符串
-  if (!s.backgroundColor) {
-    const grad = buildLinearGradient(attrs.linearGradient)
-    if (grad) s.backgroundColor = grad
+  // 填充（非透明才记录，仅容器节点）
+  if (!TEXT_TYPES.has(type)) {
+    const shapeFill = type === 'Circle' || type === 'Ellipse' || type === 'Rect'
+      ? attrs.fill || attrs.foregroundColor
+      : type === 'SymbolGlyph'
+        ? attrs.fontColor
+        : null
+    const bgColor = shapeFill || attrs.backgroundColor
+    if (bgColor && !isTransparent(bgColor)) {
+      s.backgroundColor = normalizeArkuiColor(bgColor)
+    }
+    // 渐变填充：无有效纯色背景时，提取 linearGradient 为 linear-gradient 字符串
+    if (!s.backgroundColor) {
+      const grad = buildLinearGradient(attrs.linearGradient)
+      if (grad) s.backgroundColor = grad
+    }
   }
 
   // 尺寸信息
@@ -472,37 +474,41 @@ function extractArkuiStyle(type, attrs, resolution, vpRect) {
   if (sizeWidth !== null && sizeWidth > 0) s.width = sizeWidth
   if (sizeHeight !== null && sizeHeight > 0) s.height = sizeHeight
 
-  // 圆角
-  let brRaw = null
-  if (attrs.borderRadius && typeof attrs.borderRadius === 'object') {
-    brRaw = parseBorderRadius(attrs.borderRadius, sizeWidth, sizeHeight)
-  } else if (typeof attrs.borderRadius === 'string') {
-    const val = parseVp(attrs.borderRadius)
-    if (val !== null && val > 0) {
-      brRaw = { topLeft: val, topRight: val, bottomRight: val, bottomLeft: val }
-    }
-  }
-  if (brRaw && Object.values(brRaw).some(v => v > 0)) {
-    if (sizeWidth !== null && sizeHeight !== null && sizeWidth > 0 && sizeHeight > 0) {
-      const maxBr = Math.min(sizeWidth, sizeHeight) / 2
-      s.borderRadius = {
-        topLeft:     Math.min(brRaw.topLeft,     maxBr),
-        topRight:    Math.min(brRaw.topRight,    maxBr),
-        bottomRight: Math.min(brRaw.bottomRight, maxBr),
-        bottomLeft:  Math.min(brRaw.bottomLeft,  maxBr),
+  // 圆角（仅容器节点）
+  if (!TEXT_TYPES.has(type)) {
+    let brRaw = null
+    if (attrs.borderRadius && typeof attrs.borderRadius === 'object') {
+      brRaw = parseBorderRadius(attrs.borderRadius, sizeWidth, sizeHeight)
+    } else if (typeof attrs.borderRadius === 'string') {
+      const val = parseVp(attrs.borderRadius)
+      if (val !== null && val > 0) {
+        brRaw = { topLeft: val, topRight: val, bottomRight: val, bottomLeft: val }
       }
-    } else {
-      s.borderRadius = brRaw
+    }
+    if (brRaw && Object.values(brRaw).some(v => v > 0)) {
+      if (sizeWidth !== null && sizeHeight !== null && sizeWidth > 0 && sizeHeight > 0) {
+        const maxBr = Math.min(sizeWidth, sizeHeight) / 2
+        s.borderRadius = {
+          topLeft:     Math.min(brRaw.topLeft,     maxBr),
+          topRight:    Math.min(brRaw.topRight,    maxBr),
+          bottomRight: Math.min(brRaw.bottomRight, maxBr),
+          bottomLeft:  Math.min(brRaw.bottomLeft,  maxBr),
+        }
+      } else {
+        s.borderRadius = brRaw
+      }
     }
   }
 
-  // 描边
-  const borderWidth = parseVp(attrs.borderWidth)
-  if (borderWidth && borderWidth > 0) {
-    s.border = {
-      width: borderWidth,
-      color: normalizeArkuiColor(attrs.borderColor),
-      style: attrs.borderStyle || 'BorderStyle.Solid',
+  // 描边（仅容器节点）
+  if (!TEXT_TYPES.has(type)) {
+    const borderWidth = parseVp(attrs.borderWidth)
+    if (borderWidth && borderWidth > 0) {
+      s.border = {
+        width: borderWidth,
+        color: normalizeArkuiColor(attrs.borderColor),
+        style: attrs.borderStyle || 'BorderStyle.Solid',
+      }
     }
   }
 
@@ -530,9 +536,11 @@ function extractArkuiStyle(type, attrs, resolution, vpRect) {
     }
   }
 
-  // 内/外边距
-  const padding = parsePadding(attrs.padding)
-  if (padding && Object.values(padding).some(v => v > 0)) s.padding = padding
+  // 内/外边距（仅容器节点）
+  if (!TEXT_TYPES.has(type)) {
+    const padding = parsePadding(attrs.padding)
+    if (padding && Object.values(padding).some(v => v > 0)) s.padding = padding
+  }
   const margin = parsePadding(attrs.margin)
   if (margin && Object.values(margin).some(v => v !== 0)) s.margin = margin
 

@@ -573,6 +573,16 @@ case/
 - 框架节点（`Navigation`、`NavBar`、`Stack`、`Column`、`Row` 等无背景色时）在 step 2 软剪枝阶段被 unwrap（删自身保子）
 - dump 格式额外框架节点（无 FrameRect）：`IfElse`、`ForEach`、`LazyForEach`、`TitleBar`、`ToolBar` 等，标记 `_frameworkType: true`，豁免 `no-rect` 硬剪枝
 - **Image 节点的 `backgroundColor` 在 step 1 直接清空**：ArkUI Image 的 backgroundColor 是图片加载失败时的占位色，正常渲染时不显示，写入 style 会与设计侧产生误比对，因此在 `extractArkuiStyle` 末尾直接 `delete s.backgroundColor`。
+- **style 属性按节点类型限定**：
+
+  | 属性 | 适用类型 | 备注 |
+  |---|---|---|
+  | `fontSize` / `fontWeight` / `fontColor` / `fontFamily` / `lineHeight` / `letterSpacing` / `textAlign` | 仅 Text | 文字限定 |
+  | `backgroundColor` / `borderRadius` / `border` / `padding` | 仅 Container | 容器限定 |
+  | `itemSpacing` | 仅 Row/Column/Flex | 容器限定 |
+  | `blur` / `shadow` / `opacity` / `width` / `height` | 公用 | — |
+  | `margin` / `blendMode` | — | 非对比项，仅提取不参与比对 |
+
 - **clip borderRadius 向下传播**：ArkUI 惯用 `clip=true + borderRadius` 的容器裁剪子节点实现圆角，Image 本身不设 borderRadius。`walk` DFS 时携带 `clipRadius` 上下文：节点满足 `clip=true` 且 borderRadius 非零时产生新上下文；递归时只传给与当前节点**同 rect**的子节点，不同 rect 忽略；`Image` 节点自身无圆角时从 `clipRadius` 继承。
 - **Button / TextInput 文本拆分**：在 step 1 阶段为这两类节点凭空造一个虚拟 `Text` 子节点（id = 原id + `:t`），消除"开发侧文本+非文本混合 vs 设计侧分离节点"的不对称。
   - `Button`：`$attrs.label` 非空时拆分，文本居中
