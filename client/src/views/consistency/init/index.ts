@@ -3,7 +3,7 @@ import { checkAuth } from './inner/checkAuth'
 import { mountPixso } from './inner/mountPixso'
 import { detectIframe } from './inner/detectIframe'
 import { trackEntry } from './inner/trackEntry'
-import { handleTransferCode } from './inner/handleTransferCode'
+import { handleTransferCode } from './handleTransferCode'
 import { loadDeliverable, LoadedDeliverable } from './loadDeliverable'
 import { restorePlatform } from './restorePlatform'
 
