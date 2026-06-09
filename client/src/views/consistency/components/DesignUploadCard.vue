@@ -105,6 +105,7 @@ import { ElMessage } from 'element-plus'
 import { CircleCheck } from '@element-plus/icons-vue'
 import OctoLoading from './common/OctoLoading.vue'
 import { getJsonImage } from '../../utils-inner/getJsonImage'
+import { transferCode } from '../init/inner/handleTransferCode'
 import iconJson from '@/assets/upload-json.png'
 import iconImage from '@/assets/upload-image.png'
 import iconStep3 from '@/assets/svg/Step3-up.svg'
@@ -127,6 +128,13 @@ watch(() => props.designJson, newVal => {
   if (!newVal) {
     annotationUrl.value = ''
     urlLoading.value    = false
+  }
+})
+
+// 外部跳转携带传送码时，回填到输入框
+watch(transferCode, code => {
+  if (code) {
+    annotationUrl.value = code
   }
 })
 
