@@ -179,7 +179,26 @@ function countTextDescendants(node) {
   return n
 }
 
+function isSingleVectorChildWithBg(node) {
+  if (String(node._raw?.type || '').toUpperCase() !== 'FRAME') return false
+  if (node.style?.backgroundColor) return false
+  if (!Array.isArray(node.children) || node.children.length !== 1) return false
+  const child = node.children[0]
+  const ctype = String(child._raw?.type || '').toUpperCase()
+  if (ctype !== 'VECTOR' && ctype !== 'BOOLEAN_OPERATION') return false
+  return !!child.style?.backgroundColor
+}
+
 function collapseToSemanticAsset(node) {
+  // 吸收：当 FRAME 只有一个 VECTOR/BOOLEAN_OPERATION 子节点且有背景色时，
+  // 在清空 children 之前将颜色复制到 FRAME 自身，避免颜色因折叠而丢失。
+  // 这是语义折叠的组成部分——把子节点的视觉属性上提给父节点。
+  if (isSingleVectorChildWithBg(node)) {
+    const child = node.children[0]
+    node.style = { ...node.style, backgroundColor: child.style.backgroundColor }
+    node.children = child.children || []
+  }
+
   const repr = selectSemanticRepresentative(node)
   if (repr && repr !== node) {
     // 用 representative 的字段覆盖当前节点（保留原 id / path / name 以维持稳定性）
