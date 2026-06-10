@@ -175,7 +175,7 @@ function diffOpacity(diffs, ctx, dv, av) {
 
 function diffBorderRadius(diffs, ctx, designNode, arkuiNode, dv, av) {
   if (!dv && !av) return
-  if (isCircleOrEllipseLikeNode(designNode) && isCircleOrEllipseLikeNode(arkuiNode)) return
+  if (normalizedNodeType(arkuiNode) === 'circle' || normalizedNodeType(designNode) === 'ellipse') return
   if (normalizedNodeType(arkuiNode) === 'symbolglyph') return
   // 软豁免：开发侧 image 类型且开发侧无圆角值 → 跳过（Image 圆角由 clip 父节点裁剪实现，自身不设）
   if (normalizedNodeType(arkuiNode) === 'image' && !av) return
@@ -282,7 +282,7 @@ function diffBorder(diffs, ctx, dv, av) {
       widthDelta > 2 ? 'error' : 'warning',
       `描边宽度偏差 ${(dw - aw).toFixed(1)}`))
   }
-  diffColor(diffs, ctx, 'borderColor', dv?.color, av?.color, '描边颜色')
+  if (dv?.color != null) diffColor(diffs, ctx, 'borderColor', dv?.color, av?.color, '描边颜色')
 }
 
 function parseGradient(str) {
@@ -379,6 +379,9 @@ function diffBackgroundColor(diffs, ctx, designNode, arkuiNode, dv, av) {
   if (normalizedNodeType(arkuiNode) === 'symbolglyph') {
     if (!dHasValue || !aHasValue) return
   }
+
+  // 规则 4：任一侧无填充值（缺失/透明），直接忽略，不产生差异报告
+  if (!dHasValue || !aHasValue) return
 
   // 检查是否为渐变色
   const dGrad = parseGradient(dv)
@@ -488,11 +491,6 @@ function parseColor(color) {
     g: parseInt(h.slice(2, 4), 16),
     b: parseInt(h.slice(4, 6), 16),
   }
-}
-
-function isCircleOrEllipseLikeNode(node) {
-  const rawType = normalizedNodeType(node)
-  return /^(circle|ellipse)$/i.test(rawType)
 }
 
 function isTitlebarType(node) {

@@ -911,7 +911,17 @@ const STYLE_DIFF_ALIASES = {
 
 function toCssColor(color) {
   if (!color || typeof color !== 'string') return null
-  const h = color.trim().replace('#', '')
+  const val = color.trim()
+  if (/^(linear|radial|conic)-gradient\(/i.test(val)) {
+    return val.replace(/#([0-9A-Fa-f]{8})\b/g, (_, hex) => {
+      const a = parseInt(hex.slice(0, 2), 16) / 255
+      const r = parseInt(hex.slice(2, 4), 16)
+      const g = parseInt(hex.slice(4, 6), 16)
+      const b = parseInt(hex.slice(6, 8), 16)
+      return `rgba(${r}, ${g}, ${b}, ${Number(a.toFixed(3))})`
+    })
+  }
+  const h = val.replace('#', '')
   if (/^[0-9a-fA-F]{8}$/.test(h)) {
     const a = parseInt(h.slice(0, 2), 16) / 255
     const r = parseInt(h.slice(2, 4), 16)
@@ -919,7 +929,7 @@ function toCssColor(color) {
     const b = parseInt(h.slice(6, 8), 16)
     return `rgba(${r}, ${g}, ${b}, ${Number(a.toFixed(3))})`
   }
-  return color
+  return val
 }
 
 // ── Zoom（Ctrl+滚轮缩放，由父组件触发）────────────────────────────────────────

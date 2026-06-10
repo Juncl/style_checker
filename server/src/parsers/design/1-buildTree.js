@@ -207,12 +207,27 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
 
   if (nodeType !== TEXT_TYPE) {
     const borders = Array.isArray(style.border) ? style.border : (style.border ? [style.border] : [])
-    if (borders.length > 0 && borders[0].width > 0) {
+    if (borders.length > 0) {
       const b = borders[0]
-      result.border = {
-        color: normalizeDesignColor(b.color),
-        width: (b.width ?? 0) * dpScale,
-        style: b.style || 'solid',
+      const bw = b?.weight
+      const borderWidth = bw != null ? parseFloat(bw) : 0
+      if (borderWidth > 0) {
+        const fillData = b.data?.[0]
+        let borderColor = null
+        if (fillData?.type === 'SOLID' && fillData.color) {
+          borderColor = normalizeDesignColor(fillData.color)
+        } else if (fillData?.type === 'GRADIENT_LINEAR' && Array.isArray(fillData.data) && fillData.data.length > 0) {
+          const angle = fillData.angle ?? 0
+          const stops = fillData.data
+            .map(stop => `${normalizeDesignColor(stop.color)} ${stop.position ?? '0%'}`)
+            .join(', ')
+          borderColor = `linear-gradient(${angle}deg, ${stops})`
+        }
+        result.border = {
+          color: borderColor,
+          width: borderWidth * dpScale,
+          style: b.style || 'solid',
+        }
       }
     }
   }

@@ -98,5 +98,6 @@ function createSyntheticRoot(id, canvasW, canvasH, origW, origH) {
 export function isCanvasRoot(n, canvasW, canvasH) {
   if (!n || !n.rect) return false
   const r = n.rect
-  return r.x === 0 && r.y === 0 && r.w === canvasW && r.h === canvasH
+  return r.x >= -2 && r.x <= 2 && r.y >= -2 && r.y <= 2
+    && r.w >= canvasW - 2 && r.h >= canvasH - 2
 }

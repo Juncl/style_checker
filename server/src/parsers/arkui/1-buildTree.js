@@ -257,9 +257,9 @@ function inferChildLayoutRect(parentType, parentRect, parentAttrs, childAttrs) {
   }
 }
 
-// 把点 (px,py) 绕 (cx,cy) 旋转 angleDeg（ArkUI rotate 正角度方向，取负号对齐）
+// 把点 (px,py) 绕 (cx,cy) 旋转 angleDeg
 function rotatePoint(px, py, cx, cy, angleDeg) {
-  const rad = -angleDeg * Math.PI / 180
+  const rad = angleDeg * Math.PI / 180
   const cos = Math.cos(rad)
   const sin = Math.sin(rad)
   const dx = px - cx

@@ -547,7 +547,7 @@ case/
 | 2 pruneTree | `2-pruneTree.js` | **硬剪枝**（整棵子树删：`visibility=Hidden` / `opacity=0` / 越界 / 超宽 / 零尺寸(`!w\|\|!h\|\|(w<2&&h<2)`，仅叶子节点) / 空文本）+ **SCB 系统层过滤**（`utils/filterSCBSystemLayer.js`：消除 `__Common__` 下 SCBSystemScene/SCBKeyboardPanel 等全屏系统叠加层，仅 ArkUI 侧执行）+ **软剪枝**（删自身保子：框架节点 / Span / Blank / 透明 layout 容器 / 极小节点 w/h ≤ 4（无条件）/ 全屏包裹层 normRect ≥ 0.999（无条件））。设计侧额外做语义折叠 + 背景节点同化 + BOOLEAN_OPERATION 后代清空；设计侧硬剪枝额外包含：**系统状态栏整组件**（name/componentData 含 StatusBar + 贴顶 + 矮条 + 含时间文本）；设计侧软剪枝额外包含：**GROUP 无视觉装饰时 unwrap** |
 | 2.5 normalizeTree | `utils/normalizeTree.js`（共享） | 父子 `rect.x/y/w/h` **严格相等**且 child 非叶子非文本、`style` 无视觉装饰时，删 child 把孙子接上来 |
 | 3 annotateTree | `3-annotateTree.js` | ArkUI 侧：`pruneOccludedSiblings('reverse')`（后项杀前项）→ 像素标注 → ~~OCR 标注~~ → unwrap。**（OCR 已临时隐藏）** 设计侧：`pruneOccludedSiblings('forward')`（前项杀后项）→ 像素标注 → unwrap。Web 侧：不做遮挡剪枝、不做 OCR |
-| 4 flattenTree | `4-flattenTree.js` | 树 → 扁平 `UnifiedNode[]`（DFS 序），去掉所有内部字段（`children` / `_attrs` / `_raw` 等）。不包含 root 节点本身 |
+| 4 flattenTree | `4-flattenTree.js` | 树 → 扁平 `UnifiedNode[]`（DFS 序），去掉所有内部字段（`children` / `_attrs` / `_raw` 等）。设计侧额外对扁平列表按 `rect` 做同 x/y/w/h 容器去重（仅保留视觉性最强或 path 最短的）。不包含 root 节点本身 |
 
 ### 全局决策（解析阶段）
 
@@ -651,7 +651,9 @@ TOLERANCE = {
 - **硬豁免**：任一侧 `rawType ∈ { image, img, canvas }` → 无条件跳过，不参与填充对比（image/img：填充语义不同；canvas：背景色无展示意义）
 - **软豁免（按侧）**：`rawType ∈ { button, path, divider, progress, swiperindicator, icon, video }` 且该侧无填充值 → 该侧不驱动填充对比
 - **symbolglyph 规则**：开发侧 `rawType === 'symbolglyph'` 时，必须两侧均有非透明填充色才对比，否则忽略（HM Symbol 图标色由字体渲染决定，缺一侧属正常）
-- **单侧缺失忽略**：纯色对比阶段，任一侧无填充值或为透明色 → 直接忽略，不产生差异报告（不再报"填充：一侧缺失"）
+- **单侧缺失忽略**：不论纯色还是渐变色，任一侧无填充值或为透明色 → 直接忽略，不产生差异报告（不再报"填充：一侧缺失"或"一侧渐变一侧纯色"）
+- **borderRadius 豁免**：开发侧 `rawType === 'circle'` 或设计侧 `rawType === 'ellipse'` 时跳过圆角对比；开发侧 `image` 且无圆角值时跳过（圆角由 clip 父节点裁剪实现）
+- **borderColor 豁免**：设计侧 `border.color` 无值时跳过，不对比描边颜色
 - **borderWidth** 容差：零容差（`> 0` 即报），`> 2` 升级为 error
 
 ## 语义折叠（`parsers/design/2-pruneTree.js` → `semanticCollapse`）

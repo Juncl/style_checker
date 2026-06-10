@@ -123,7 +123,7 @@
               <span class="diff-cmp-key">开发</span>
               <span v-if="isEmptyVal(d.arkuiValue)" class="diff-cmp-none">无</span>
               <span v-else class="diff-cmp-val diff-cmp-val--dev">
-                <ColorDot v-if="isColorProp(d.property)" :hex="extractHex(d.arkuiValue)" />
+                <ColorDot v-if="isColorProp(d.property)" :hex="d.arkuiValue" />
                 <span class="diff-val-text" :title="String(d.arkuiValue)">{{ displayValue(d.property, d.arkuiValue) }}</span>
               </span>
             </div>
@@ -131,7 +131,7 @@
               <span class="diff-cmp-key">设计</span>
               <span v-if="isEmptyVal(d.designValue)" class="diff-cmp-none">无</span>
               <span v-else class="diff-cmp-val diff-cmp-val--design">
-                <ColorDot v-if="isColorProp(d.property)" :hex="extractHex(d.designValue)" />
+                <ColorDot v-if="isColorProp(d.property)" :hex="d.designValue" />
                 <span class="diff-val-text" :title="String(d.designValue)">{{ displayValue(d.property, d.designValue) }}</span>
               </span>
             </div>
@@ -155,7 +155,18 @@ const ColorDot = defineComponent({
   props: { hex: String },
   setup(props) {
     const bg = computed(() => {
-      const h = (props.hex || '').replace('#', '')
+      const val = (props.hex || '').trim()
+      if (!val) return 'transparent'
+      if (/^(linear|radial|conic)-gradient\(/i.test(val)) {
+        return val.replace(/#([0-9A-Fa-f]{8})\b/g, (_, hex) => {
+          const a = parseInt(hex.slice(0, 2), 16) / 255
+          const r = parseInt(hex.slice(2, 4), 16)
+          const g = parseInt(hex.slice(4, 6), 16)
+          const b = parseInt(hex.slice(6, 8), 16)
+          return `rgba(${r},${g},${b},${a.toFixed(2)})`
+        })
+      }
+      const h = val.replace('#', '')
       if (h.length === 8) {
         const a = parseInt(h.slice(0, 2), 16) / 255
         const r = parseInt(h.slice(2, 4), 16)
