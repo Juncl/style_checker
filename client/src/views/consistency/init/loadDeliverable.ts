@@ -1,5 +1,7 @@
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import { getConsistencyCheckDeliverables, getPagesByDeliverableId, getResultsByPageId } from '../../../api/api.ts'
+import { reportInteraction } from '../../utils-inner/report'
+import { inIframe } from '../../utils/tools'
 
 export type LoadedDeliverable = {
   deliverableList: any[]
@@ -46,6 +48,19 @@ export async function loadDeliverable(route: RouteLocationNormalizedLoaded): Pro
   if (!currentVersion) {
     throw new Error(`找不到版本 ${urlVersionId}`)
   }
+
+  // 页面访问打点（通过链接进入）
+  reportInteraction({
+    name: 'pageView',
+    event: 'pageViewFromLink',
+    extend: {
+      deliverableId: urlDeliverableId,
+      pageId: urlPageId,
+      versionId: urlVersionId,
+      platform: currentPage.deviceType ?? 'hmPhone',
+      isFrom: inIframe() ? 'hiscenario' : 'octo',
+    },
+  })
 
   return {
     deliverableList: sortedDeliverableList,

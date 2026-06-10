@@ -162,7 +162,7 @@ import { getTeamList, getSonListByTeamId, addConsistencyCheckDeliverable, addCon
 import { ADMIN_BASE_URL } from '../../api/adminEnv.ts'
 import {
   formatDateTime, fileToBase64, fileToText, buildProblems, adaptLegacyProblem, jsonToFile, resolveImageFile,
-  isBlankLikeNode, isInteractiveImageNode, isSelectableNode, resolveSelectableNode,
+  isBlankLikeNode, isInteractiveImageNode, isSelectableNode, resolveSelectableNode, getUserAccount, inIframe,
 } from '../utils/tools.ts'
 import { initApp } from './init/index'
 import { setUrlParams, removeUrlParams } from '../utils/urlParams'
@@ -175,6 +175,7 @@ import UploadPanel from './components/UploadPanel.vue'
 import ReportPanel from './components/ReportPanel.vue'
 import '../../styles/app.css'
 import { CASE_NAMES_BY_PLATFORM, DEBUG_COLORS, FILE_SLOTS } from '../utils/constants'
+import { reportInteraction } from '../utils-inner/report'
 
 const route           = useRoute()
 const currentPlatform = ref('hmPhone')
@@ -526,6 +527,7 @@ async function onStepPicked({ type, file }) {
     } else if (detected && detected !== currentPlatform.value) {
       currentPlatform.value = detected
       savePlatform(detected)
+      reportPlatformChange(detected)
     }
   }
 
@@ -647,6 +649,7 @@ function onPlatformSwitch(platform) {
   currentPlatform.value = platform
   savePlatform(platform)
   selectedCase.value = ''
+  reportPlatformChange(platform)
 }
 
 async function detectPlatformFromJson(file) {
@@ -821,6 +824,7 @@ async function submitRerunVersion() {
         if (!d._problemId) d._problemId = `${d.arkuiNodeId}-${d.property}`
       }
     }
+    reportCompareResult()
   } catch (e) {
     console.error('重新对比存档失败', e)
   }
@@ -902,6 +906,12 @@ async function selectCase(id) {
   revokeBlobUrls()
   try {
     const data = await checkCase(id, currentPlatform.value)
+    // 案例选择打点
+    reportInteraction({
+      name: 'selectCase',
+      event: 'selectCase',
+      extend: { user: getUserAccount(), curTime: new Date().toISOString(), caseName: id, platform: currentPlatform.value, isFrom: inIframe() ? 'hiscenario' : 'octo' },
+    })
 
     const rawDesignJson = data._rawDesignJson
     const rawDevContent = data._rawDevContent
@@ -1030,6 +1040,7 @@ async function onSelectPage(page) {
   if (deviceType !== currentPlatform.value) {
     currentPlatform.value = deviceType
     savePlatform(deviceType)
+    reportPlatformChange(deviceType)
   }
   const versionResult = await getResultsByPageId(page.id, 1, 999)
   pageVersionList.value  = preprocessVersionList(versionResult?.list)
@@ -1140,6 +1151,7 @@ async function submitResult() {
     if (deliverableId && pageId && versionId) {
       setUrlParams({ deliverableId: String(deliverableId), pageId: String(pageId), versionId: String(versionId) })
     }
+    reportCompareResult()
   } catch (e) {
     console.error('提交结果失败', e)
   }
@@ -1152,7 +1164,10 @@ async function runUpload(platform) {
   lockedNodeIds.value = new Set()
   loading.value       = true
   result.value        = null
-  if (platform && platform !== currentPlatform.value) currentPlatform.value = platform
+  if (platform && platform !== currentPlatform.value) {
+    currentPlatform.value = platform
+    reportPlatformChange(platform)
+  }
   try {
     result.value = await checkUpload(
       uploadFiles.value.designJson,
@@ -1165,6 +1180,28 @@ async function runUpload(platform) {
     submitResult()
   } catch (e) { ElMessage.error(`分析失败：${e.response?.data?.error || e.message}`) }
   finally     { loading.value = false }
+}
+
+function reportCompareResult() {
+  const diffs = result.value?.diffs ?? []
+  const errorlist = { all: diffs.length }
+  for (const d of diffs) {
+    const key = d.property
+    errorlist[key] = (errorlist[key] || 0) + 1
+  }
+  reportInteraction({
+    name: 'clickCompare',
+    event: 'clickCompare',
+    extend: { errorlist, platform: currentPlatform.value, isFrom: inIframe() ? 'hiscenario' : 'octo' },
+  })
+}
+
+function reportPlatformChange(platform) {
+  reportInteraction({
+    name: 'platformChange',
+    event: 'platformChange',
+    extend: { platform, isFrom: inIframe() ? 'hiscenario' : 'octo' },
+  })
 }
 
 function onDiffSelect(diff) {

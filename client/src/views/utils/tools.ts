@@ -235,6 +235,20 @@ export function resolveSelectableNode(nodes: any[], nodeId: string): any {
   })[0]
 }
 
+// 从 localStorage 的 userInfo JSON 中解析 account 字段，解析失败返回 ''
+export function getUserAccount(): string {
+  try {
+    const raw = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    if (raw && typeof raw === 'object' && raw.account) return raw.account
+  } catch {}
+  return ''
+}
+
+// 判断页面是否在 iframe 中运行
+export function inIframe(): boolean {
+  return window.self !== window.top
+}
+
 // ── 报告/调试工具 ─────────────────────────────────────────────────────────────
 
 // Debugger 映射列表中，不同验证状态对应的行背景色
