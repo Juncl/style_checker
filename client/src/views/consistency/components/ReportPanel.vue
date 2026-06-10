@@ -11,7 +11,7 @@
         class="report-link"
         :class="{ 'report-link--disabled': !canRerun }"
         :disabled="!canRerun"
-        @click="$emit('rerun')"
+        @click="handleRerun"
       >重新对比</button>
     </div>
   </div>
@@ -87,7 +87,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import OctoLoading from './common/OctoLoading.vue'
 import DiffReport from './DiffReport.vue'
@@ -108,6 +108,7 @@ const props = defineProps({
   canRerun:         { type: Boolean, default: false },
   versionList:       { type: Array,              default: () => [] },
   workingVersionId:  { type: [Number, String],   default: null },
+  closeHistoryKey:   { type: Number,             default: 0 },
 })
 
 const emit = defineEmits([
@@ -127,9 +128,19 @@ const emptyLockedIds = new Set()
 const showShareDialog  = ref(false)
 const showHistoryPanel = ref(false)
 
+// 父组件切换交付件/页面时通过 closeHistoryKey 发信号关闭面板
+watch(() => props.closeHistoryKey, () => {
+  showHistoryPanel.value = false
+})
+
 function onHistoryView(item) {
   showHistoryPanel.value = false
   emit('history-view', item)
+}
+
+function handleRerun() {
+  showHistoryPanel.value = false
+  emit('rerun')
 }
 
 function handleShare() {

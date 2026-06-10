@@ -19,7 +19,10 @@
           class="deliverable-item"
           :class="{ 'is-selected': selected?.id === item.id }"
           @click="onSelect(item)"
-        >{{ item.name }}</div>
+        >
+          <img v-if="item.devBase64Data" :src="item.devBase64Data" class="deliverable-thumb" />
+          <span class="deliverable-item-name">{{ item.name }}</span>
+        </div>
       </div>
     </Teleport>
   </div>
@@ -146,11 +149,24 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   cursor: pointer;
   display: flex;
   align-items: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  gap: 8px;
   transition: background 150ms ease;
   flex-shrink: 0;
+}
+
+.deliverable-thumb {
+  width: 20px;
+  height: 28px;
+  border-radius: 3px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #f0f0f0;
+}
+
+.deliverable-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .deliverable-item:hover {
   background: rgba(25, 25, 25, 0.05);

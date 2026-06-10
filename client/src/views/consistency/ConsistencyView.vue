@@ -124,6 +124,7 @@
         :can-rerun="canRerun"
         :version-list="pageVersionList"
         :working-version-id="workingVersionId"
+        :close-history-key="closeHistoryKey"
         @diff-select="onDiffSelect"
         @diff-hover="hoveredDiffPair = $event"
         @design-node-click="onDesignNodeClick"
@@ -201,6 +202,7 @@ const workingDeliverable  = ref(null)
 const workingPage         = ref(null)
 const pageVersionList     = ref([])
 const workingVersionId    = ref(null)
+const closeHistoryKey     = ref(0)
 
 // 单版本预处理：优先使用 nodeMatchs，回退到兼容旧格式 problems 末尾的 matchedPairIds 特殊项
 function preprocessVersion(v) {
@@ -1025,6 +1027,7 @@ async function loadHistoryVersion(rawVersion, deviceType) {
 // 统一的交付件切换逻辑（上传页 + 报告页共用）
 async function onSelectDeliverable(d) {
   workingDeliverable.value = d
+  closeHistoryKey.value++
   const pageList = await getPagesByDeliverableId(String(d.id))
   pages.value = Array.isArray(pageList)
     ? pageList.slice().sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0))
@@ -1036,6 +1039,7 @@ async function onSelectDeliverable(d) {
 // 统一的页面切换逻辑
 async function onSelectPage(page) {
   workingPage.value = page
+  closeHistoryKey.value++
   const deviceType = page.deviceType ?? 'hmPhone'
   if (deviceType !== currentPlatform.value) {
     currentPlatform.value = deviceType

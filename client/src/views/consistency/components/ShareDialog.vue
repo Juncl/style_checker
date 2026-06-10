@@ -1,26 +1,34 @@
 <template>
-  <div class="share-dialog">
-    <div class="share-dialog-header">
-      <span class="share-dialog-title">分享对比页面</span>
-      <button class="share-dialog-close" @click="$emit('close')">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-      </button>
+  <Teleport to="body">
+    <div class="share-overlay" @click="handleClose">
+      <div class="share-dialog" @click.stop>
+        <div class="share-dialog-header">
+          <span class="share-dialog-title">分享对比页面</span>
+          <button class="share-dialog-close" @click="handleClose">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+        <div class="share-dialog-body">
+          <input class="share-url-input" :value="href" readonly />
+          <button class="share-copy-btn" @click="copyUrl">复制</button>
+        </div>
+      </div>
     </div>
-    <div class="share-dialog-body">
-      <input class="share-url-input" :value="href" readonly />
-      <button class="share-copy-btn" @click="copyUrl">复制</button>
-    </div>
-  </div>
+  </Teleport>
 </template>
 
 <script setup>
 import { ElMessage } from 'element-plus'
 
-defineEmits(['close'])
+const emit = defineEmits(['close'])
 
 const href = window.location.href
+
+function handleClose() {
+  emit('close')
+}
 
 async function copyUrl() {
   try {
@@ -33,6 +41,12 @@ async function copyUrl() {
 </script>
 
 <style scoped>
+.share-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 499;
+}
+
 .share-dialog {
   position: fixed;
   top: calc(var(--octo-top-nav-height, 56px) + var(--octo-tabbar-height, 56px));
