@@ -17,7 +17,7 @@
             <img v-if="!arkuiJson" :src="iconJson" class="up-drop-icon" alt="" />
             <img v-else :src="iconSuccess" class="up-drop-icon" alt="" />
             <div v-if="!arkuiJson" class="up-drop-text">
-              <span class="up-drop-sub">获取指南：<span class="up-guide-links"><a class="up-link" :href="GUIDE_LINKS.terminal" target="_blank" rel="noopener" @click.stop>终端</a>｜<a class="up-link" :href="GUIDE_LINKS.web" target="_blank" rel="noopener" @click.stop>Web</a></span></span>
+              <span class="up-drop-sub">获取指南：<span class="up-guide-links"><a class="up-link" :href="GUIDE_LINKS.terminal" target="_blank" rel="noopener" @click.stop>鸿蒙</a>｜<a class="up-link" :href="GUIDE_LINKS.web" target="_blank" rel="noopener" @click.stop>Web</a></span></span>
               <span class="up-drop-sub">再将JSON文件拖到此处</span>
             </div>
             <span v-else class="up-drop-done">上传成功</span>
