@@ -123,7 +123,7 @@
               <span class="diff-cmp-key">开发</span>
               <span v-if="isEmptyVal(d.arkuiValue)" class="diff-cmp-none">无</span>
               <span v-else class="diff-cmp-val diff-cmp-val--dev">
-                <ColorDot v-if="isColorProp(d.property)" :hex="d.arkuiValue" />
+                <ColorDot v-if="isColorProp(d.property)" :hex="displayValue(d.property, d.arkuiValue)" />
                 <span class="diff-val-text" :title="String(d.arkuiValue)">{{ displayValue(d.property, d.arkuiValue) }}</span>
               </span>
             </div>
@@ -131,7 +131,7 @@
               <span class="diff-cmp-key">设计</span>
               <span v-if="isEmptyVal(d.designValue)" class="diff-cmp-none">无</span>
               <span v-else class="diff-cmp-val diff-cmp-val--design">
-                <ColorDot v-if="isColorProp(d.property)" :hex="d.designValue" />
+                <ColorDot v-if="isColorProp(d.property)" :hex="displayValue(d.property, d.designValue)" />
                 <span class="diff-val-text" :title="String(d.designValue)">{{ displayValue(d.property, d.designValue) }}</span>
               </span>
             </div>
