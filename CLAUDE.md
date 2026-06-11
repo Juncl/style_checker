@@ -15,12 +15,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 🔴 硬性规则：Git 权限控制
 
-**Git 提交权限只有用户可以操作，AI 绝对不允许执行 `git add`、`git commit`、`git push` 等提交命令。**
+**AI 对 git 只有「只读」权限。除 `git status`、`git diff`、`git log` 等只读查看命令外，AI 绝对不允许执行任何会改变 git 状态的命令（包括但不限于提交、暂存、回退）。**
 
-- ✅ 允许：`git status`、`git diff`、`git log` 等只读操作
+- ✅ 允许：`git status`、`git diff`、`git log`、`git show` 等**只读**操作
 - ✅ 允许：读取 git 文件变化，为用户提供 **提交备注建议**
-- ❌ 禁止：执行 `git add`、`git commit`、`git push`、`git reset --hard` 等修改操作
+- ❌ 禁止：执行 `git add`、`git commit`、`git push` 等提交命令
+- ❌ 禁止：执行 `git stash`（含 `git stash pop/-u`）、`git reset`、`git checkout --`、`git restore`、`git rm`、`git mv` 等**任何暂存或修改工作区/索引状态**的命令
 - ❌ 禁止：使用 `git push --force` 或其他强制操作
+
+> ⚠️ 即便只是「临时暂存一下用于对比、跑完再恢复」也**不允许**。需要对比改动前后效果时，AI 只能用 `git diff` 读取差异，由用户自行决定是否暂存/切换。
 
 **用户需要提交时的流程**：
 1. AI 读取当前改动（`git status`、`git diff`）
@@ -319,6 +322,33 @@ export const ADMIN_BASE_URL = '/mock'         // 当前：外网 mock
   - 用户可能更希望自己在 UI 侧测试，以获得更高效率且不浪费 token
   - 用户需要清楚地知道代码修改是否已经完成，以便自主决策是否需要 AI 测试
 - **不要主动进行自动化测试**，除非用户明确要求
+
+---
+
+## 🟡 工作流规则：12 个 case 匹配结果对比优化
+
+**触发**：当用户发出"**跑一下所有 12 个 case 的匹配结果**"这类指令时，AI **不要直接跑**，先按以下流程逐步与用户确认：
+
+1. **先问用户**：是否需要和 `matchNewTemp` 基线做对比优化？
+   - 否 → 按用户的实际意图处理（例如只想看当前结果）
+   - 是 → 进入下面流程
+
+2. **跑脚本到带时间后缀的新目录**（保留 `matchNewTemp` 基线不动）：
+   ```bash
+   cd server
+   SUFFIX=$(date +%m-%d-%H-%M)
+   SNAPSHOT_DIR=matchNewTemp-$SUFFIX COMPARE_BASE=matchNewTemp node scripts/snapshotPairs.js
+   ```
+   - 在 `test/matchNewTemp-MM-DD-HH-MM/`（与 `matchNewTemp` 同级，时间后缀=月-日-时-分）下生成 `hmPhone/` 文件夹
+   - 12 个 case 结果存入该文件夹，并**自动生成 `hmPhone/summary.json`**：逐 case 列出准确率/召回率/多余对相对 `matchNewTemp` 的增减（delta），以及与验证集的剩余差距（配错 + 漏匹配）
+
+3. **展示 summary 给用户**，等用户看完。
+
+4. **再问用户**：是否保留此次优化？
+   - 保留 → 用新目录这套覆盖 `matchNewTemp`（`cp` 文件操作，AI 可执行，**不涉及 git**）
+   - 不保留 → `matchNewTemp` 保持不变，新目录留作记录或由用户自行删除
+
+> ⚠️ 前提：server 必须已在 3012 端口运行；AI 跑脚本前先验连通，不通则让用户手动启动（AI 不代启）。
 
 ---
 

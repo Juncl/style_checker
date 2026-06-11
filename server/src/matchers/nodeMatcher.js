@@ -38,6 +38,7 @@ import { isCanvasRoot } from '../utils/deduplicateRootNodes.js'
 import { matchAlignedTextRows, matchDynamicTextSlots } from './dynamicTextSlots.js'
 import { matchLongTextFallback } from './longTextFallback.js'
 import { matchByListIndex } from './listIndexMatcher.js'
+import { matchByAnchorRowBridge } from './anchorRowBridge.js'
 
 /**
  * 节点匹配器
@@ -161,6 +162,16 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
       }))
       usedArkui.add(best.node.id)
       matchedDesignIds.add(dn.id)
+    }
+  }
+
+  // ── Pass 4 前置: 同行强锚点桥接（用锚点的同行+方向拓扑消解等距图标列的"差一格"歧义）──
+  {
+    const bridgePairs = matchByAnchorRowBridge(designNodes, arkuiNodes, pairs, usedArkui, matchedDesignIds)
+    for (const pair of bridgePairs) {
+      pairs.push(pair)
+      usedArkui.add(pair.arkui.id)
+      matchedDesignIds.add(pair.design.id)
     }
   }
 

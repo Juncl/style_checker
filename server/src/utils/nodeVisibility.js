@@ -55,10 +55,10 @@ export function isAcceptablePair(pair) {
   if (minRatio < 0.22) return false
   if (design.type === 'container' && arkui.type === 'container' && aspectRatioScore < 0.45) return false
 
-  // ArkUI SymbolGlyph is a complete icon. Avoid matching it to a small path inside
-  // a decomposed design icon.
+  // ArkUI SymbolGlyph 是一个完整图标，避免它匹配到设计稿分解图标里的小碎片 path。
+  // 仅保留尺寸保护；去掉原来的 normRect 中心距检验（两侧系统性偏移会把正确图标对误杀）。
   if (getRawType(arkui) === 'symbolglyph' && isIntrinsicVisualNode(design)) {
-    if (minRatio < 0.72 || centerDist > 0.04) return false
+    if (minRatio < 0.72) return false
   }
 
   // Low-confidence container matches with both position drift and size drift are too risky.
