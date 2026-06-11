@@ -66,7 +66,7 @@ const emit = defineEmits(['run-upload', 'select-case', 'platform-switch'])
 const platformOptions = [
   { value: 'hmPhone', label: '鸿蒙-手机' },
   { value: 'hmWatch', label: '鸿蒙-手表' },
-  { value: 'web',     label: 'web网页'  },
+  { value: 'web',     label: 'Web'  },
 ]
 
 const platformLabel = computed(() =>

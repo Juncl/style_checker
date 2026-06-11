@@ -20,7 +20,7 @@
             <img :src="iconStep3" class="up-url-icon" alt="" />
             <el-input
               v-model="annotationUrl"
-              placeholder="请输入标注视图URL/传送码"
+              placeholder="请输入传送码/标注视图URL"
               class="up-url-input"
               @keyup.enter="validateAnnotationUrl"
             />
@@ -77,13 +77,13 @@
           <OctoLoading :size="48" />
         </div>
         <div class="up-step-title up-step-title--center">
-          <span>Step3:输入标注视图URL/传送码</span>
+          <span>Step3:输入传送码/标注视图URL</span>
         </div>
         <div class="up-url-card">
           <img :src="iconStep3" class="up-url-icon" alt="" />
           <el-input
             v-model="annotationUrl"
-            placeholder="请输入标注视图URL/传送码"
+            placeholder="请输入传送码/标注视图URL"
             class="up-url-input"
             @keyup.enter="validateAnnotationUrl"
           />
