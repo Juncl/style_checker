@@ -342,7 +342,46 @@ export const ADMIN_BASE_URL = '/mock'         // 当前：外网 mock
    - 在 `test/matchNewTemp-MM-DD-HH-MM/`（与 `matchNewTemp` 同级，时间后缀=月-日-时-分）下生成 `hmPhone/` 文件夹
    - 12 个 case 结果存入该文件夹，并**自动生成 `hmPhone/summary.json`**：逐 case 列出准确率/召回率/多余对相对 `matchNewTemp` 的增减（delta），以及与验证集的剩余差距（配错 + 漏匹配）
 
-3. **展示 summary 给用户**，等用户看完。
+3. **生成 `summary.md` 并展示给用户**：
+
+   脚本跑完后，AI 读取新目录下的 12 个 case json 和对应验证集，在新目录根部（与 `hmPhone/` 同级）写入 `summary.md`，内容分两部分：
+
+   **① 汇总表格**（每行一个 case）：
+
+   | case | Pairs总数 | 验证集总数 | 准确数 | 配错数 | 缺失数 | 多余数 | 准确率 |
+   |---|---|---|---|---|---|---|---|
+   | case1 | … | … | … | … | … | … | …% |
+   | … | | | | | | | |
+   | 合计 | … | … | … | … | … | … | …% |
+
+   **② 每个 case 的问题明细**（准确的配对不列出）：
+
+   对每个 case，按以下结构列出三类问题对，每对标注 matchType（缺失对无 matchType，写 `—`）：
+
+   ```
+   ### case1
+
+   **配错（N对）**
+   | arkuiId | 实际 designId | 期望 designId | matchType |
+   |---|---|---|---|
+   | 2094 | 14:2212 | 14:2220 | anchor-topology |
+
+   **缺失（N对）**
+   | arkuiId | 期望 designId |
+   |---|---|
+   | 1718 | 60:315 |
+
+   **多余（N对）**
+   | arkuiId | 实际 designId | matchType |
+   |---|---|---|
+   | 3001 | 14:9999 | text-exact |
+   ```
+
+   - 配错：pairs 里有该 arkuiId，但 designId 与验证集不符
+   - 缺失：验证集里有该 arkuiId，但 pairs 里没有匹配到（无 matchType）
+   - 多余：pairs 里有，但该 arkuiId 不在验证集中
+
+   生成完毕后，将 summary.md 内容直接展示给用户，等用户看完。
 
 4. **再问用户**：是否保留此次优化？
    - 保留 → 用新目录这套覆盖 `matchNewTemp`（`cp` 文件操作，AI 可执行，**不涉及 git**）

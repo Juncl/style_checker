@@ -105,9 +105,9 @@ function textSimilar(c1, c2) {
     }
   }
 
-  // 加权融合：edit 0.5、semantic 0.25、prefixSuffix 0.25
+  // 加权融合：edit 0.63、semantic 0.12、prefixSuffix 0.25
   if (prefixSuffixScore > 0) {
-    const weightedScore = editScore * 0.5 + semanticScore * 0.25 + prefixSuffixScore * 0.25
+    const weightedScore = editScore * 0.63 + semanticScore * 0.12 + prefixSuffixScore * 0.25
     return Math.max(weightedScore, editScore)
   }
 
@@ -160,12 +160,14 @@ function getWeightScore(w1, w2) {
 }
 
 /**
- * 子评分5 · 位置相似度：rect 绝对坐标中心点欧氏距离，双向计算取较高分
- * - 左上角对齐：两节点中心点直接做欧氏距离
- * - 左下角对齐：各自用"距画布底边的中心距离"做欧氏距离（适配 design 画布比 arkui 更长的场景）
- * - 参考对角线 diagonal = 两侧画布对角线均值；中心距 = 对角线 20% 时得 0.5，≥ 50% 截断为 0
+ * 子评分5 · 位置相似度：三维加权（欧氏0.6 + x轴0.3 + y轴0.1），双向计算取较高分
+ * - 顶部对齐：以左上角坐标分别计算欧氏/x/y三个高斯分后加权
+ * - 底部对齐：各自用"距画布底边距离"计算（适配 design 画布比 arkui 更长的场景）
+ * - x轴参数：point={x:0.3*rootRectW, y:0.5}, diffmax=0.6*rootRectW
+ * - y轴参数：point={x:0.4*rootRectMaxH, y:0.5}, diffmax=0.8*rootRectMaxH
+ * - 欧氏参数沿用 diagonal（对角线均值）
  */
-function getPlaceScore(hmNode, deNode, diagonal, canvasHeightHm, canvasHeightDe) {
+function getPlaceScore(hmNode, deNode, diagonal, canvasHeightHm, canvasHeightDe, rootRectW, rootRectMaxH) {
   const bothCenter = hmNode.style?.textAlign === 'center' && deNode.style?.textAlign === 'center'
 
   const hmX = bothCenter ? hmNode.rect.x + hmNode.rect.w / 2 : hmNode.rect.x
@@ -173,18 +175,27 @@ function getPlaceScore(hmNode, deNode, diagonal, canvasHeightHm, canvasHeightDe)
   const deX = bothCenter ? deNode.rect.x + deNode.rect.w / 2 : deNode.rect.x
   const deY = bothCenter ? deNode.rect.y + deNode.rect.h / 2 : deNode.rect.y
 
-  const point = { x: 0.2 * diagonal, y: 0.5 }
-  const diffmax = 0.5 * diagonal
+  const euclidPoint = { x: 0.2 * diagonal, y: 0.5 }
+  const euclidMax   = 0.5 * diagonal
+  const xPoint      = { x: 0.3 * rootRectW, y: 0.5 }
+  const xMax        = 0.6 * rootRectW
+  const yPoint      = { x: 0.4 * rootRectMaxH, y: 0.5 }
+  const yMax        = 0.8 * rootRectMaxH
+
+  function weightedScore(dx, dy) {
+    const euclidScore = gaussianCurveParabola(0, Math.hypot(dx, dy), euclidPoint, euclidMax)
+    const xScore      = gaussianCurveParabola(0, Math.abs(dx), xPoint, xMax)
+    const yScore      = gaussianCurveParabola(0, Math.abs(dy), yPoint, yMax)
+    return euclidScore * 0.6 + xScore * 0.3 + yScore * 0.1
+  }
 
   // 顶部对齐
-  const topDist = Math.hypot(hmX - deX, hmY - deY)
-  const topScore = gaussianCurveParabola(0, topDist, point, diffmax)
+  const topScore = weightedScore(hmX - deX, hmY - deY)
 
   // 底部对齐（各自距底边）
   const hmYBot = canvasHeightHm - hmY
   const deYBot = canvasHeightDe - deY
-  const botDist = Math.hypot(hmX - deX, hmYBot - deYBot)
-  const botScore = gaussianCurveParabola(0, botDist, point, diffmax)
+  const botScore = weightedScore(hmX - deX, hmYBot - deYBot)
 
   return Math.max(topScore, botScore)
 }
@@ -225,6 +236,8 @@ export function matchAllTextNodes(designNodes, arkuiNodes, options = {}) {
   const diagHm = Math.hypot(canvasWidthVp, canvasHeightVp)
   const diagDe = Math.hypot(canvasWidth, canvasHeight)
   const diagonal = (diagHm + diagDe) / 2
+  const rootRectW = (canvasWidthVp + canvasWidth) / 2
+  const rootRectMaxH = Math.max(canvasHeightVp, canvasHeight)
   const hmTextNodes = arkuiNodes.filter(
     n => n.type === 'text' && normalizeText(n.textContent)
   )
@@ -254,7 +267,7 @@ export function matchAllTextNodes(designNodes, arkuiNodes, options = {}) {
       const colorScore = getSimilarityColor(hm.style?.fontColor, de.style?.fontColor)
       const sizeScore = getSimilaritySize(hm.style?.fontSize, de.style?.fontSize)
       const weightScore = getWeightScore(hm.style?.fontWeight, de.style?.fontWeight)
-      const placeScore = getPlaceScore(hm, de, diagonal, canvasHeightVp, canvasHeight)
+      const placeScore = getPlaceScore(hm, de, diagonal, canvasHeightVp, canvasHeight, rootRectW, rootRectMaxH)
       const finalScore = getTextFinalScore(
         contentScore, colorScore, sizeScore, weightScore, placeScore
       )

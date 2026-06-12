@@ -100,11 +100,21 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compT
   const styleBrNonZero = style.borderRadius && Object.values(style.borderRadius).some(v => v > 0)
   const nextClipRadius = (isClip && styleBrNonZero) ? style.borderRadius : clipRadius
 
-  // 非文本节点：自身无圆角时，继承最近 clip 祖先的 borderRadius。
+  // 非文本节点：继承最近 clip 祖先的 borderRadius（取各角 max）。
   // 能收到 clipRadius 说明从 clip 祖先一路同 rect（由 children 循环的 clipRectsMatch
-  // 保证），视觉上等同被裁圆角。继承后该节点会拥有视觉装饰，参与下游匹配/比对。
-  if (!TEXT_TYPES.has(type) && !SPAN_TYPES.has(type) && !styleBrNonZero && nextClipRadius) {
-    style.borderRadius = { ...nextClipRadius }
+  // 保证），视觉上等同被裁圆角。自身无圆角直接继承；自身有圆角但比 clipRadius 小时
+  // 同样以 clipRadius 为准（父级 clip 会把突出部分裁掉）。
+  if (!TEXT_TYPES.has(type) && !SPAN_TYPES.has(type) && nextClipRadius) {
+    if (!styleBrNonZero) {
+      style.borderRadius = { ...nextClipRadius }
+    } else {
+      const corners = ['topLeft', 'topRight', 'bottomLeft', 'bottomRight']
+      const merged = {}
+      for (const c of corners) {
+        merged[c] = Math.max(style.borderRadius?.[c] ?? 0, nextClipRadius[c] ?? 0)
+      }
+      style.borderRadius = merged
+    }
   }
 
   // TitleBar 节点本身不写 compType，但向其后代传播 'titlebar'
