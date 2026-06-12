@@ -23,7 +23,7 @@ const CREDIBLE_THRESHOLD = 0.9
  * - diff > point.x         → 高斯段 exp(-diff²/2σ²)
  * 抛物线与高斯在 diff = point.x 处衔接，值均为 point.y。
  */
-function gaussianCurveParabola(num1, num2, point, diffmax) {
+export function gaussianCurveParabola(num1, num2, point, diffmax) {
   const diff = Math.abs(num1 - num2)
   if (num1 === num2) return 1
   if (diff > diffmax) return 0
