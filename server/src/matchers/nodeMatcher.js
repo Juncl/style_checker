@@ -132,21 +132,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     matchedDesignIds.add(pair.design.id)
   }
 
-  // ── Pass 3: 匹配区域内文本节点全局最优匹配，处理重复列表/卡片里的文本串位 ──────
-  const regionTextPairs = matchRegionTextOptimal(
-    designNodes,
-    arkuiNodes,
-    usedArkui,
-    matchedDesignIds,
-    regionContext
-  )
-  for (const pair of regionTextPairs) {
-    pairs.push(pair)
-    usedArkui.add(pair.arkui.id)
-    matchedDesignIds.add(pair.design.id)
-    if (isTrustedTopologyAnchor(pair, null, pair.topologyScore)) topologyAnchors.push(pair)
-  }
-
   // ── Pass 3.5: 文本语义角色匹配（动态标题/副标题内容不同，但组件槽位一致）────
   for (const dn of designNodes) {
     if (matchedDesignIds.has(dn.id) || dn.type !== 'text' || !hasUsableText(dn)) continue
@@ -196,6 +181,23 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
       usedArkui.add(pair.arkui.id)
       matchedDesignIds.add(pair.design.id)
     }
+  }
+
+  // ── Pass 3（已挪至 Pass 4.5 之后）: 区域内文本节点全局最优匹配 ────────────────
+  // 在拓扑(Pass 4)/list(Pass 4.5)都跑完后，仅对剩余未匹配文本做区域内全局最优收尾。
+  // 注意：此处晚于 Pass 4，topologyAnchors 已被消费完，下面这句 push 不再供锚。
+  const regionTextPairs = matchRegionTextOptimal(
+    designNodes,
+    arkuiNodes,
+    usedArkui,
+    matchedDesignIds,
+    regionContext
+  )
+  for (const pair of regionTextPairs) {
+    pairs.push(pair)
+    usedArkui.add(pair.arkui.id)
+    matchedDesignIds.add(pair.design.id)
+    if (isTrustedTopologyAnchor(pair, null, pair.topologyScore)) topologyAnchors.push(pair)
   }
 
   // ── Pass 5: 文本节点位置回退匹配（处理 mock 数据与真实数据不一致）──────────────
