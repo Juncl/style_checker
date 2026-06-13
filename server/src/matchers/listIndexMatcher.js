@@ -1,15 +1,16 @@
 /**
- * Pass 4.5: 同行同类 list 顺序匹配
+ * Pass 3.5: 同行同类 list 顺序匹配
  *
  * 触发条件（全部满足才生效）：
  *   1. 两侧分别能形成同行 + 同 rawType + 同 w + x 互不重叠的 list（≥2 个元素）
- *   2. 两侧 list 整体 y 中心接近（normRect 容差 0.02）
- *   3. 两侧 list 上方存在共同锚 pair（设计侧 design 在 Ld 上方、且其 arkui 在 La 上方）
- *   4. 两侧 list 下方存在共同锚 pair（同上，方向相反）
- *   5. 两侧 list 首节点 IoU ≥ 0.40
+ *   2. 存在一个强锚点对 p（topologyAnchors），且该锚点是 list 的上邻居 OR 下邻居
+ *      （两侧方向须一致：都在上方，或都在下方）
+ *   3. 同一锚点 p：两侧 list 相对于 p 的 y 偏移差 < list 高度 * 0.2
+ *      即 |(Ld.cy − p.de.cy) − (La.cy − p.ar.cy)| < listH * 0.2
+ *   4. 两侧 list 首节点 IoU ≥ 0.60
  *
  * 通过后按 x 升序对齐前 min(N) 个，不看 IoU 直接锁定（matchType=list-index, confidence=high）。
- * 多出的节点（如 case1 ArkUI 侧 1901）留给后续 Pass。
+ * 多出的节点留给后续 Pass。
  *
  * 不过滤已匹配节点 —— 本 Pass 的本职是纠偏先前 Pass 的错配：
  * 把已匹配节点也纳入 list，让 list-index 的高 priority 在最终 selectOneToOnePairs 中覆盖旧配对。
@@ -18,11 +19,10 @@ import { computeIoU } from '../utils/matchGeometry.js'
 import { makePair } from './matchStrategies.js'
 
 const ROW_TOLERANCE       = 0.005   // 同行 y 中心 / h / w 容差（normRect, 约 4vp）
-const LIST_Y_TOLERANCE    = 0.02    // 跨侧 list 整体 y 中心接近阈值
-const FIRST_NODE_IOU_MIN  = 0.40    // 首节点 IoU 阈值
+const FIRST_NODE_IOU_MIN  = 0.60    // 首节点 IoU 阈值
 const MIN_LIST_SIZE       = 2
 
-export function matchByListIndex(designNodes, arkuiNodes, pairs) {
+export function matchByListIndex(designNodes, arkuiNodes, anchors) {
   const designLists = identifyLists(designNodes)
   const arkuiLists  = identifyLists(arkuiNodes)
   if (designLists.length === 0 || arkuiLists.length === 0) return []
@@ -36,27 +36,35 @@ export function matchByListIndex(designNodes, arkuiNodes, pairs) {
 
     for (const La of arkuiLists) {
       if (La.items.some(n => consumedArkui.has(n.id))) continue
-      if (Math.abs(Ld.cy - La.cy) > LIST_Y_TOLERANCE) continue
 
-      const hasAboveAnchor = pairs.some(p =>
-        p.design.normRect.y + p.design.normRect.h <= Ld.top + 1e-6 &&
-        p.arkui.normRect.y  + p.arkui.normRect.h  <= La.top + 1e-6
-      )
-      if (!hasAboveAnchor) continue
+      // 条件 2+3：找一个强锚点 p，满足：
+      //   - p 是 list 的上邻居（两侧 design/arkui 都在 list 上方）
+      //     OR 下邻居（两侧都在 list 下方）
+      //   - 两侧 list 相对于 p 的 y 偏移差 < list 高度 * 0.2
+      const listH = Math.min(Ld.bottom - Ld.top, La.bottom - La.top)
+      const qualifyingAnchor = anchors.find(p => {
+        const pDeCy = p.design.normRect.y + p.design.normRect.h / 2
+        const pArCy = p.arkui.normRect.y  + p.arkui.normRect.h  / 2
+        const dAbove = p.design.normRect.y + p.design.normRect.h <= Ld.top + 1e-6
+        const dBelow = p.design.normRect.y >= Ld.bottom - 1e-6
+        const aAbove = p.arkui.normRect.y  + p.arkui.normRect.h  <= La.top + 1e-6
+        const aBelow = p.arkui.normRect.y  >= La.bottom - 1e-6
+        const isNeighbor = (dAbove && aAbove) || (dBelow && aBelow)
+        if (!isNeighbor) return false
+        const yDiffDe = Ld.cy - pDeCy
+        const yDiffAr = La.cy - pArCy
+        return Math.abs(yDiffDe - yDiffAr) < listH * 0.2
+      })
+      if (!qualifyingAnchor) continue
 
-      const hasBelowAnchor = pairs.some(p =>
-        p.design.normRect.y >= Ld.bottom - 1e-6 &&
-        p.arkui.normRect.y  >= La.bottom - 1e-6
-      )
-      if (!hasBelowAnchor) continue
-
+      // 条件 4：首节点 IoU
       const iou = computeIoU(Ld.items[0].normRect, La.items[0].normRect)
       if (iou < FIRST_NODE_IOU_MIN) continue
 
       const N = Math.min(Ld.items.length, La.items.length)
       for (let i = 0; i < N; i++) {
         newPairs.push(makePair(Ld.items[i], La.items[i], 'list-index', {
-          confidence: 'high',
+          confidence: 'medium',
           topologyScore: 1.0,
         }))
         consumedDesign.add(Ld.items[i].id)

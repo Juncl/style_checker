@@ -42,10 +42,11 @@ import { matchByListIndex } from './listIndexMatcher.js'
 /**
  * 节点匹配器
  * Pass 1: 全文本节点加权匹配（matchAllTextNodes），可信文本视为强锚点
- * Pass 2: 匹配区域内文本节点全局最优匹配
- * Pass 3: 基于强锚点周边拓扑关系匹配弱节点
- * Pass 4: 文本位置回退匹配
- * Pass 4.5: 同行同类 list 顺序匹配（rawType 严格相同 + 上下邻居互证 + 首节点 IoU）
+ * Pass 2: 动态文本槽位/同行文本对齐/长文本兜底
+ * Pass 2.5: 文本语义角色匹配（title/subtitle/body 槽位对应）
+ * Pass 3: 基于强锚点周边拓扑关系匹配弱节点（含 3.1.1/3.1.2/3.2）
+ * Pass 3.5: 同行同类 list 顺序匹配（rawType 严格相同 + 上下邻居互证 + 首节点 IoU）
+ * Pass 4: 区域内文本节点全局最优匹配
  * Pass 5: 几何 IoU 匹配（容器节点）
  * Pass 6: 非文本视觉容器几何匹配
  * Pass 7: 低置信度兜底匹配
@@ -128,11 +129,9 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   )
   for (const pair of longTextPairs) {
     pairs.push(pair)
-    usedArkui.add(pair.arkui.id)
-    matchedDesignIds.add(pair.design.id)
   }
 
-  // ── Pass 3.5: 文本语义角色匹配（动态标题/副标题内容不同，但组件槽位一致）────
+  // ── Pass 2.5: 文本语义角色匹配（动态标题/副标题内容不同，但组件槽位一致）────
   for (const dn of designNodes) {
     if (matchedDesignIds.has(dn.id) || dn.type !== 'text' || !hasUsableText(dn)) continue
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
@@ -140,16 +139,29 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     )
     const best = bestTextRoleMatch(dn, candidates)
     if (best && (best.score >= 0.85 || isStrongTitleSlotMatch(dn, best.node, best.score))) {
-      pairs.push(makePair(dn, best.node, 'text-role', {
-        confidence: 'medium',
+      const rolePair = makePair(dn, best.node, 'text-role', {
+        confidence: 'high',
         topologyScore: best.score,
-      }))
+      })
+      pairs.push(rolePair)
       usedArkui.add(best.node.id)
       matchedDesignIds.add(dn.id)
+      topologyAnchors.push(rolePair)
     }
   }
 
-  // ── Pass 4: 强锚点周边拓扑匹配（用局部相对位置匹配 mock 文本、图标、形状）──────
+  // ── Pass 3.5: 同行同类 list 顺序匹配 ─────────────────────────────────────
+  // 在 anchor-topology 之前运行：用强锚点（topologyAnchors）作为上/下邻居验证，
+  // 按 x 升序对齐横向列表，confidence=medium，不锁节点，交由 selectOneToOnePairs 最终裁决。
+  // Pass 3（high）产生的配对可覆盖本 Pass 的 medium 配对。
+  {
+    const listPairs = matchByListIndex(designNodes, arkuiNodes, topologyAnchors)
+    for (const pair of listPairs) {
+      pairs.push(pair)
+    }
+  }
+
+  // ── Pass 3: 强锚点周边拓扑匹配（用局部相对位置匹配 mock 文本、图标、形状）──────
   if (topologyAnchors.length > 0) {
     const diagHm = Math.hypot(canvasWidthVp ?? 376, canvasHeightVp ?? 809)
     const diagDe = Math.hypot(canvasWidth ?? 360, canvasHeight ?? 947)
@@ -170,22 +182,9 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     }
   }
 
-  // ── Pass 4.5: 同行同类 list 顺序匹配 ─────────────────────────────────────
-  // 两侧分别识别同行 + rawType 严格相同的 list（≥2 个），并通过
-  // y 接近 + 上下邻居互为同一 pair + 首节点 IoU 验证后，按 x 升序锁定前 N 对。
-  // 不看 IoU 分数，避免横向列表中"溢出节点"被 IoU 抢走匹配。
-  {
-    const listPairs = matchByListIndex(designNodes, arkuiNodes, pairs)
-    for (const pair of listPairs) {
-      pairs.push(pair)
-      usedArkui.add(pair.arkui.id)
-      matchedDesignIds.add(pair.design.id)
-    }
-  }
-
-  // ── Pass 3（已挪至 Pass 4.5 之后）: 区域内文本节点全局最优匹配 ────────────────
-  // 在拓扑(Pass 4)/list(Pass 4.5)都跑完后，仅对剩余未匹配文本做区域内全局最优收尾。
-  // 注意：此处晚于 Pass 4，topologyAnchors 已被消费完，下面这句 push 不再供锚。
+  // ── Pass 4: 区域内文本节点全局最优匹配 ────────────────────────────────────
+  // 在 list(Pass 3.5)/拓扑(Pass 3)都跑完后，仅对剩余未匹配文本做区域内全局最优收尾。
+  // 注意：此处晚于 Pass 3，topologyAnchors 已被消费完，下面这句 push 不再供锚。
   const regionTextPairs = matchRegionTextOptimal(
     designNodes,
     arkuiNodes,

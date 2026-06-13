@@ -1,5 +1,5 @@
 /**
- * Pass 4：强锚点周边拓扑匹配（重构版）
+ * Pass 3：强锚点周边拓扑匹配（重构版）
  *
  * 与旧版的根本区别：
  *   - 全程用 rect 绝对坐标，不碰 normRect
@@ -57,7 +57,7 @@ const isBelow = (outer, inner) => outer.y >= inner.y + inner.h - EPS
  *   'contain'  node 包住 anchor（视觉祖先方向）
  *   'left/right/up/down'  本体脱离 + 落在锚点的同行带 / 同列带
  *   'diagonal' 本体脱离但斜对角（第一轮丢弃、第二轮可用）
- *   null       相交但非包含 → pass4 不碰
+ *   null       相交但非包含 → pass3 不碰
  */
 function relation(nodeRect, anchorRect) {
   if (rectContains(nodeRect, anchorRect)) return 'contain'
@@ -135,12 +135,41 @@ function posScoreVertical(an, dn, aHm, aDe, ctx) {
   const ys = gaussianCurveParabola(0, Math.abs(dy), { x: 0.2 * ctx.rootMaxH, y: 0.5 }, 0.4 * ctx.rootMaxH)
   return eu * 0.5 + xs * 0.38 + ys * 0.12
 }
-// 上下三维：位置(新算法)·0.5 + 面积·0.25 + 宽高比·0.25，三维都 >0 才通过
+// 中心点方向一致性：两侧「锚点→节点」方向向量余弦相似度
+function scoreCenterDirection(an, dn, aHm, aDe) {
+  const dxHm = center(an.rect).x - center(aHm.rect).x
+  const dyHm = center(an.rect).y - center(aHm.rect).y
+  const dxDe = center(dn.rect).x - center(aDe.rect).x
+  const dyDe = center(dn.rect).y - center(aDe.rect).y
+  const lenHm = Math.hypot(dxHm, dyHm)
+  const lenDe = Math.hypot(dxDe, dyDe)
+  if (lenHm < 1e-6 || lenDe < 1e-6) return 1
+  return Math.max(0, (dxHm * dxDe + dyHm * dyDe) / (lenHm * lenDe))
+}
+// 水平对齐一致性：左边/中轴/右边三种对齐取最优，差值用 rootW 归一化后转分
+function scoreHorizontalAlignment(an, dn, aHm, aDe, ctx) {
+  const cx = r => r.x + r.w / 2
+  const leftDiff  = Math.abs((an.rect.x - aHm.rect.x) - (dn.rect.x - aDe.rect.x))
+  const midDiff   = Math.abs((cx(an.rect) - cx(aHm.rect)) - (cx(dn.rect) - cx(aDe.rect)))
+  const rightDiff = Math.abs(((an.rect.x + an.rect.w) - (aHm.rect.x + aHm.rect.w)) -
+                             ((dn.rect.x + dn.rect.w) - (aDe.rect.x + aDe.rect.w)))
+  const minDiff = Math.min(leftDiff, midDiff, rightDiff)
+  return gaussianCurveParabola(0, minDiff, { x: 0.08 * ctx.rootW, y: 0.5 }, 0.25 * ctx.rootW)
+}
+// 样式装饰一致性：两侧是否同为有/无视觉装饰
+function scoreStyleDecoration(an, dn) {
+  return hasVisualDecoration(an) === hasVisualDecoration(dn) ? 1 : 0.3
+}
+// 上下六维：位置·0.45 + 面积·0.15 + 宽高比·0.10 + 中心方向·0.08 + 水平对齐·0.12 + 样式·0.10
+// pass 门控仍用原三维 AND（ps/as/rs > 0），新维度只影响分数
 function verticalTriple(an, dn, aHm, aDe, ctx) {
   const ps = posScoreVertical(an, dn, aHm, aDe, ctx)
   const as = scoreArea(an, dn)
   const rs = scoreAspect(an, dn)
-  return { pass: ps > 0 && as > 0 && rs > 0, score: ps * 0.5 + as * 0.25 + rs * 0.25 }
+  const ds = scoreCenterDirection(an, dn, aHm, aDe)
+  const hs = scoreHorizontalAlignment(an, dn, aHm, aDe, ctx)
+  const ss = scoreStyleDecoration(an, dn)
+  return { pass: ps > 0 && as > 0 && rs > 0, score: ps * 0.45 + as * 0.15 + rs * 0.10 + ds * 0.08 + hs * 0.12 + ss * 0.10 }
 }
 
 // ── 主入口 ─────────────────────────────────────────────────────────────────────
@@ -250,7 +279,8 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
     }
   }
 
-  // 上下：遍历开发侧待匹配节点，守门带内所有可行 dn 都进候选排行（不再只取 best，支持转次选）
+  // 上下：遍历开发侧待匹配节点，距锚点边缘间距 < 0.4 * 画布高度的 an 才纳入，
+  // 守门带内所有可行 dn 都进候选排行（支持转次选）
   for (const an of availArkui) {
     if (lockedArkui.has(an.id)) continue
     for (const anchor of anchors) {
@@ -258,6 +288,7 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
       const dir = verticalRelation(an.rect, aHm.rect)
       if (!dir) continue
       const gapHm = edgeGap(an.rect, aHm.rect, dir)
+      if (gapHm >= 0.4 * ctx.rootRectH) continue
       for (const dn of availDesign) {
         if (lockedDesign.has(dn.id) || !isCompatibleType(dn, an)) continue
         if (verticalRelation(dn.rect, aDe.rect) !== dir) continue

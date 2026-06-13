@@ -678,26 +678,28 @@ case/
 
 ## 多 Pass 节点匹配（`nodeMatcher.js`）
 
-按优先级从高到低依次尝试，每轮匹配成功后标记 `matchedDesignIds` 和 `usedArkui`（**注意：Pass 5b容器/Pass 5容器IoU/Pass 6/Pass 6.5/Pass 7 不标记 usedArkui**，允许后续生成重复候选，由 `selectOneToOnePairs` 最终裁决）：
+按优先级从高到低依次尝试，每轮匹配成功后标记 `matchedDesignIds` 和 `usedArkui`（**注意：Pass 5容器IoU/Pass 6/Pass 6.5/Pass 7 不标记 usedArkui**，允许后续生成重复候选，由 `selectOneToOnePairs` 最终裁决）：
 
-| Pass | 名称 | 触发条件 |
-|---|---|---|
-| 1 | 文本精确匹配 | 文本内容完全一致 + 位置/样式综合得分 |
-| 2a/2b/2c | 动态文本槽位 | 时间/星期等动态文本，按序列位置对应 |
-| 2d | 长文本位置-样式兜底 | ArkUI 侧字数 > 12，位置(0.60)+样式(0.35)+内容(0.05)，最近 3 锚点方向一票否决，score ≥ 0.55 接受 |
-| 3 | 区域内全局最优文本 | 同一区域内多文本节点的最优分配 |
-| 3.5 | 文本语义角色 | title/subtitle/body 等语义槽位对应 |
-| 4 | 强锚点拓扑 | 已匹配强锚点周边节点的相对位置匹配 |
-| 5 | 文本位置回退 | 中心点位置 + 语义内容 + 字号/字重/字色综合评分 |
-| 5b | 数字槽位匹配 | mock 整数与实际整数位置/样式一致，数值可不同 |
-| 5 | 容器 IoU | `type=container` 节点 IoU > 0.60（无装饰）或 > 0.40（有装饰） |
-| 6 | 视觉容器几何 | `isRenderableNonTextNode` 节点 IoU > 0.55 |
-| 6.5 | 空间担保匹配 | 被左右两对已匹配节点夹住、位置明确但 IoU=0 的 container 节点 |
-| 7 | Rescue | 任意兼容类型 IoU > 0.25，confidence=low |
+| Pass | matchType | 名称 | 说明 |
+|---|---|---|---|
+| 1 | `text-content` | 全文本加权匹配 | ArkUI 主序，所有文本节点综合得分（内容/位置/样式）；可信匹配（≥0.9）升为强锚点，驱动后续拓扑 |
+| 2a/2b | `dynamic-text-slot` | 动态时间/星期槽位 | 时间/星期等动态文本，按序列位置对应 |
+| 2c | `text-row-slot` | 同行文本对齐 | 同行文本节点按 x 序对齐，topologyScore ≥ 0.86 时补充为拓扑锚点 |
+| 2d | `long-text-fallback` | 长文本位置-样式兜底 | ArkUI 侧字数 > 12，位置(0.60)+样式(0.35)+内容(0.05)，最近 3 锚点方向一票否决，score ≥ 0.55 接受 |
+| 2.5 | `text-role` | 文本语义角色 | title/subtitle/body 等语义槽位对应，score ≥ 0.85 或强标题槽位命中时接受 |
+| 3 | `anchor-topology-包含/方向/自由` | 强锚点周边拓扑 | 以强锚点为参照，分三轮：①包含容器、②左右最近邻、③上下守门带（Gale-Shapley 稳定匹配）；第二轮放宽方向自由配对（score ≥ 0.55） |
+| 3.5 | `list-index` | 同行同类 list 顺序 | 两侧同行且 rawType 严格相同的横向列表（≥2个），按 x 升序锁定；不依赖 IoU，防溢出节点抢配 |
+| 4 | `region-text-optimal` / `region-text-global-rescue` | 区域内文本全局最优 | 对拓扑/list 后剩余未匹配文本做区域内最优二分匹配；全局兜底阈值 0.60 |
+| 5（文本） | `text-position` | 文本位置回退 | 中心点位置 + 语义内容 + 字号/字重/字色综合评分，score > 0.35 接受 |
+| 5b | `numeric-slot` | 数字槽位 | mock 整数与实际整数位置/样式一致（styleScore ≥ 0.70），数值可不同 |
+| 5（容器） | `container-iou` | 容器 IoU | `type=container` 节点 IoU > 0.60（无装饰）或 > 0.40（有装饰） |
+| 6 | `container-geometry` | 视觉容器几何 | `isRenderableNonTextNode` 节点 IoU > 0.55 |
+| 6.5 | `spatial-bracket` | 空间担保 | 被同行左右两对已匹配节点夹住、尺寸吻合（minRatio ≥ 0.5）的 container 节点 |
+| 7 | `rescue-iou` | Rescue 兜底 | 任意兼容类型 IoU > 0.25，confidence=low |
 
 `selectOneToOnePairs` 最终按 `confidence → matchType优先级 → topologyScore → iou` 排序，保证一对一。
 
-**匹配方向**：默认 `arkui-first`（先以 ArkUI 为主匹配，再反向补充），可通过 `?matchDirection=design` 或环境变量 `STYLE_CHECKER_MATCH_DIRECTION=design` 切换。
+**匹配方向**：固定 design-first（以 design 节点为主序遍历），`matchDirection` 参数与 `STYLE_CHECKER_MATCH_DIRECTION` 环境变量已失效。
 
 ## 样式比对容差（`styleComparator.js`）
 
