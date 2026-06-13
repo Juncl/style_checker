@@ -39,7 +39,7 @@ export function isAcceptablePair(pair) {
   // 比 isStructuralContainer 的视觉装饰检查更严格，故跳过此过滤。
   if (matchType !== 'list-index' && isStructuralContainer(design)) return false
 
-  const weakMatch = ['anchor-topology', 'rescue-iou', 'container-iou', 'container-geometry'].includes(matchType)
+  const weakMatch = matchType?.startsWith('anchor-topology') || ['rescue-iou', 'container-iou', 'container-geometry'].includes(matchType)
   if (!weakMatch) return true
 
   const wRatio = sizeRatio(design.normRect.w, arkui.normRect.w)

@@ -2,7 +2,13 @@
   <div class="c-tabbar">
     <!-- 开发侧 -->
     <div class="c-tabbar-col c-tabbar-col--dev">
-      <img :src="iconDev" alt="" class="up-tab-icon" />
+      <img
+        :src="iconDev"
+        alt=""
+        class="up-tab-icon"
+        :class="{ 'up-tab-icon--ai-trigger': debugMode }"
+        @click.stop="onDevIconClick"
+      />
       <span class="up-tab-text">开发环境</span>
       <DeliverableDropdown
         :items="deliverables"
@@ -115,8 +121,9 @@ import { getJsonImage } from '../../utils-inner/getJsonImage'
 import iconDev from '@/assets/icon-dev.png'
 import iconDesign from '@/assets/icon-design.png'
 
-defineProps({
+const props = defineProps({
   viewMode:             { type: String,  default: 'upload' },
+  debugMode:            { type: Boolean, default: false },
   deliverables:         { type: Array,   default: () => [] },
   selectedDeliverable:  { type: Object,  default: null },
   pages:                { type: Array,   default: () => [] },
@@ -138,6 +145,7 @@ const emit = defineEmits([
   'recheck-dev',
   'recheck-design',
   'replace-design',
+  'toggle-ai-chat',
 ])
 
 const linkPopoverVisible = ref(false)
@@ -183,6 +191,10 @@ async function confirmLink() {
   } finally {
     linkLoading.value = false
   }
+}
+
+function onDevIconClick() {
+  if (props.debugMode) emit('toggle-ai-chat')
 }
 
 function onDocClick() {

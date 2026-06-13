@@ -1151,6 +1151,12 @@ body {
   flex-shrink: 0;
 }
 
+.up-tab-icon--ai-trigger {
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+.up-tab-icon--ai-trigger:hover { opacity: 0.75; }
+
 .up-tab-text {
   font-size: 14px;
   font-weight: 500;

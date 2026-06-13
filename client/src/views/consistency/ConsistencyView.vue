@@ -8,10 +8,15 @@
       </div>
     </div>
 
+    <!-- AI 检视侧边栏（仅 debugger 模式下开启） -->
+    <AiChatDrawer :open="aiChatOpen" @close="aiChatOpen = false" />
+
     <!-- 中间主区 -->
     <main class="center-panel up-board">
       <ConsistencyTabbar
         :view-mode="result ? 'report' : 'upload'"
+        :debug-mode="debugMode"
+        @toggle-ai-chat="aiChatOpen = !aiChatOpen"
         :deliverables="deliverables"
         :selected-deliverable="workingDeliverable"
         :pages="pages"
@@ -169,6 +174,7 @@ import { initApp } from './init/index'
 import { setUrlParams, removeUrlParams } from '../utils/urlParams'
 import { savePlatform } from './init/restorePlatform'
 import AppLayout from './components/AppLayout.vue'
+import AiChatDrawer from './components/AiChatDrawer.vue'
 import ConsistencyTabbar from './components/ConsistencyTabbar.vue'
 import UploadPage from './components/UploadPage.vue'
 import ReportPage from './components/ReportPage.vue'
@@ -192,6 +198,7 @@ const uploadPageRef   = ref(null)
 const debugMode       = ref(false)
 const debugPipelineOn = ref(false)
 const debugOverlayOn  = ref(false)
+const aiChatOpen      = ref(false)
 const rerunLoading      = ref(false)
 const devReuploading    = ref(false)
 const designReuploading = ref(false)

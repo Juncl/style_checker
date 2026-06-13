@@ -20,6 +20,7 @@ import { compareAll }  from '../comparators/styleComparator.js'
 import { compareSpatialRelations } from '../comparators/spatialComparator.js'
 import { getPlatform, resolvePlatform } from '../config/platforms.js'
 import { buildDumpTree } from '../parsers/arkui/1-buildDumpTree.js'
+import { callAI } from '../AIChecker/imgCheck.js'
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage() })
@@ -482,5 +483,42 @@ router.post(
     }
   }
 )
+
+// ── AI 图片检查（智谱 GLM）────────────────────────────────────────────────────
+router.post('/img/checker', async (req, res) => {
+  try {
+    const { model, messages, stream, ...rest } = req.body
+
+    if (!model || !messages) {
+      return res.status(400).json({ error: '缺少 model 或 messages 参数' })
+    }
+
+    const aiResponse = await callAI({ model, messages, stream, ...rest })
+
+    if (!aiResponse.ok) {
+      const errorBody = await aiResponse.text()
+      return res.status(aiResponse.status).json({ error: errorBody })
+    }
+
+    if (stream) {
+      res.setHeader('Content-Type', 'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Connection', 'keep-alive')
+      const reader = aiResponse.body.getReader()
+      const decoder = new TextDecoder()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        res.write(decoder.decode(value))
+      }
+      res.end()
+    } else {
+      const data = await aiResponse.json()
+      res.json(data)
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
 
 export default router

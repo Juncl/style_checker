@@ -176,7 +176,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
       usedArkui,
       matchedDesignIds,
       regionContext,
-      { diagonal, diagDe, diagHm, canvasHeightVp: canvasHeightVp ?? 809, canvasHeight: canvasHeight ?? 947 }
+      { diagonal, diagDe, diagHm, canvasHeightVp: canvasHeightVp ?? 809, canvasHeight: canvasHeight ?? 947, canvasWidthVp: canvasWidthVp ?? 376, canvasWidth: canvasWidth ?? 360 }
     )
     for (const pair of topologyPairs) {
       pairs.push(pair)
@@ -502,6 +502,7 @@ function lowerConfidence(a, b) {
 }
 
 function matchTypePriority(matchType) {
+  if (matchType?.startsWith('anchor-topology')) return 24
   const order = {
     'text-content': 40,
     'region-text-optimal': 34,
