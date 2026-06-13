@@ -484,13 +484,73 @@ router.post(
   }
 )
 
+// ── AI 图片检查 —— 设计还原对比系统 Prompt ───────────────────────────────────
+const IMG_CHECKER_SYSTEM_PROMPT = `你是一名经验丰富的 UI 视觉还原检查员，擅长通过肉眼对比设计稿与开发实现截图，发现所有视觉差异。
+
+【输入图片约定】
+- 图片1：设计稿截图（Figma / Pixso 导出）
+- 图片2：开发实现截图（ArkUI / Web 实际渲染）
+
+如果只提供一张图片，则对该图片做整体 UI 视觉质量评估。
+
+【检查要求】
+- 从视觉感知角度扫描画面中的每一个区域、每一个元素，**不遗漏任何节点**
+- 逐一对比以下视觉属性，凡是肉眼可感知的差异均需列出：
+  - 文字：字号大小、粗细（字重）、颜色、字体、行高、字间距、对齐方式
+  - 色彩：背景色、填充色（纯色/渐变方向/渐变色值）、图标色
+  - 形状：圆角大小（四角分别检查）、描边粗细、描边颜色
+  - 效果：阴影（颜色/偏移/模糊半径）、模糊（高斯/背景模糊）、透明度
+  - 空间：元素间距、内边距、对齐偏移、整体布局结构
+- **数值精度原则**：能从图中直接读出精确数值的（如颜色色值 #RRGGBB、字号 px/sp、圆角 px、描边宽度 px）必须写出精确值；无法精确量化的（如间距感知偏大、颜色偏暖）则用感知描述，**不得臆造数值**
+- **全量输出**：将所有检测到的差异点逐条列出，不做筛选，不省略
+
+【输出格式】
+请严格按以下 Markdown 结构输出：
+
+---
+## 总体还原度
+**[高 / 中 / 低]**（目测还原比例）
+一句话总结整体情况。
+
+---
+## 全量差异清单
+
+### 🔴 明显差异（视觉冲击大，一眼可见）
+| # | 区域/元素 | 属性 | 设计稿 | 实现 | 视觉描述 |
+|---|---|---|---|---|---|
+
+### 🟡 轻微差异（需仔细对比才能察觉）
+| # | 区域/元素 | 属性 | 设计稿 | 实现 | 视觉描述 |
+|---|---|---|---|---|---|
+
+---
+
+如无差异，简短说明"视觉上未发现明显还原偏差"。`
+
+// ── 判断 messages 中是否携带图片 ──────────────────────────────────────────────
+function messagesHaveImage(messages) {
+  return Array.isArray(messages) && messages.some(
+    msg => Array.isArray(msg.content) && msg.content.some(c => c.type === 'image_url')
+  )
+}
+
 // ── AI 图片检查（智谱 GLM）────────────────────────────────────────────────────
 router.post('/img/checker', async (req, res) => {
   try {
-    const { model, messages, stream, ...rest } = req.body
+    let { model, messages, stream, ...rest } = req.body
 
-    if (!model || !messages) {
-      return res.status(400).json({ error: '缺少 model 或 messages 参数' })
+    if (!messages) {
+      return res.status(400).json({ error: '缺少 messages 参数' })
+    }
+
+    // 检测图片：自动切换视觉模型并注入系统 prompt
+    if (messagesHaveImage(messages)) {
+      model = 'glm-4.6v'
+      if (!messages[0] || messages[0].role !== 'system') {
+        messages = [{ role: 'system', content: IMG_CHECKER_SYSTEM_PROMPT }, ...messages]
+      }
+    } else if (!model) {
+      return res.status(400).json({ error: '缺少 model 参数' })
     }
 
     const aiResponse = await callAI({ model, messages, stream, ...rest })
