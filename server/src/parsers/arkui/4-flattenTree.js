@@ -5,7 +5,7 @@
  * - 去掉树构建期的内部字段（_attrs / _rectRaw / _frameworkType / _spanType / _blankType / _prunedReason / children）
  * - paintIndex 概念已移除：下游一律按 path 字典序（utils/pathOrder.js）排序
  * - canvasWidthVp/canvasHeightVp 传参时做根节点去重
- * - 同 rect 语义折叠：rect 精确相同且有祖先-后代关系的 container 组，
+ * - 同 rect 语义折叠：rect 精确相同且有祖先-后代或兄弟关系的 container 组，
  *   外层的 shadow / backgroundColor / opacity 合并到最内层节点，外层节点删除
  */
 
@@ -60,7 +60,8 @@ function deduplicateSameRectContainers(nodes) {
     for (let i = 0; i < group.length; i++) {
       for (let j = i + 1; j < group.length; j++) {
         if (isAncestorPath(group[i].path, group[j].path) ||
-            isAncestorPath(group[j].path, group[i].path)) {
+            isAncestorPath(group[j].path, group[i].path) ||
+            isSiblingPath(group[i].path, group[j].path)) {
           union(group[i], group[j])
         }
       }
@@ -130,6 +131,13 @@ function isAncestorPath(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b)) return false
   if (a.length >= b.length) return false
   return a.every((v, i) => v === b[i])
+}
+
+// A 与 B 是兄弟节点：同一 parent，同一深度，仅最后一个 child index 不同
+function isSiblingPath(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false
+  if (a.length !== b.length || a.length < 1) return false
+  return a.slice(0, -1).every((v, i) => v === b[i])
 }
 
 // ArkUI 颜色格式 #AARRGGBB，AA='00' 为完全透明

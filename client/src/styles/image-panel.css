@@ -204,6 +204,18 @@
   display: inline-block;
 }
 
+/* ── 复制图标 ── */
+.copy-icon {
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--octo-text-tertiary, #999);
+  transition: color 150ms ease;
+  flex-shrink: 0;
+}
+.copy-icon:hover {
+  color: var(--octo-primary);
+}
+
 /* 进入/离开动画 */
 .inspector-fade-enter-active,
 .inspector-fade-leave-active { transition: opacity .18s, transform .18s; }

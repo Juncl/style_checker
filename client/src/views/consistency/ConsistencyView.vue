@@ -1215,6 +1215,7 @@ function reportPlatformChange(platform) {
   })
 }
 
+
 function onDiffSelect(diff) {
   activeDiff.value = diff
   if (!diff) {

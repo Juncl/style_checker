@@ -8,9 +8,10 @@
  * - origCanvasWidth/origCanvasHeight 为原始 dp 画布尺寸（仅 design 侧有）
  */
 
-import { isRenderableNonTextNode } from '../../utils/nodeVisibility.js'
+import { isRenderableNonTextNode, hasBackgroundColor } from '../../utils/nodeVisibility.js'
 import { comparePaths } from '../../utils/pathOrder.js'
 import { deduplicateRootNodes } from '../../utils/deduplicateRootNodes.js'
+import { isTransparent } from '../../utils/colorUtils.js'
 
 export function flattenDesignTree(root, canvasWidth, canvasHeight, origCanvasWidth, origCanvasHeight) {
   const nodes = []
@@ -48,9 +49,14 @@ function deduplicateContainersByRect(nodes) {
       if (nVis && !bVis) { best = n; continue }
       if (!nVis && bVis) continue
 
+      const nHasBg = hasBackgroundColor(n) && !isTransparent(n.style?.backgroundColor)
+      const bHasBg = hasBackgroundColor(best) && !isTransparent(best.style?.backgroundColor)
+      if (nHasBg && !bHasBg) { best = n; continue }
+      if (!nHasBg && bHasBg) continue
+
       const nLen = n.path?.length ?? Infinity
       const bLen = best.path?.length ?? Infinity
-      if (nLen < bLen) { best = n; continue }
+      if (nLen > bLen) { best = n; continue }
       if (nLen === bLen && comparePaths(n.path, best.path) < 0) { best = n }
     }
 

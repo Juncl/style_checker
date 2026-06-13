@@ -1,32 +1,4 @@
 <template>
-  <!-- ── Case 列表悬浮框 ── -->
-  <div v-if="debugMode" class="case-list-float"
-    :style="{ left: caseListX + 'px' }">
-    <div class="clf-head drag-handle" @mousedown="startDrag($event, 'caselist')">
-      <div class="clf-head-left">
-        <span class="clf-title">Cases</span>
-        <span class="clf-count">{{ cases.length }}</span>
-      </div>
-      <button class="clf-chevron" @click.stop="caseListExpanded = !caseListExpanded">
-        {{ caseListExpanded ? '▾' : '▸' }}
-      </button>
-    </div>
-    <div v-if="caseListExpanded" class="clf-body">
-      <button
-        v-for="c in cases"
-        :key="c.id"
-        class="clf-row"
-        :class="{ 'clf-row--active': selectedCase === c.id }"
-        @click="$emit('select-case', c.id)"
-      >
-        <div class="clf-thumb">
-          <img :src="caseImageUrl(c.id)" class="clf-thumb-img" alt="" />
-        </div>
-        <span class="clf-name">{{ c.id }}</span>
-      </button>
-    </div>
-  </div>
-
   <!-- ── Debugger 悬浮框 ── -->
   <div v-if="debugMode" class="debugger-float"
     :style="debugFloatX !== null ? { left: debugFloatX + 'px', right: 'auto' } : {}">
@@ -256,7 +228,6 @@ import OctoLoading from './common/OctoLoading.vue'
 import ImagePanel from './ImagePanel.vue'
 import DevUploadCard from './DevUploadCard.vue'
 import DesignUploadCard from './DesignUploadCard.vue'
-import { fetchCases, imageUrl } from '../../../api/index.ts'
 import { validationBg, confidenceText, confidenceTagType, matchTypePass } from '../../utils/tools.ts'
 
 const props = defineProps({
@@ -306,15 +277,6 @@ const emit = defineEmits([
   'design-hover',
 ])
 
-const cases = ref([])
-
-async function loadCases(platform) {
-  cases.value = []
-  try { cases.value = await fetchCases(platform) } catch { /* 静默 */ }
-}
-
-onMounted(() => loadCases(props.currentPlatform))
-watch(() => props.currentPlatform, loadCases)
 
 const devPanelRef    = ref(null)
 const designPanelRef = ref(null)
@@ -391,22 +353,17 @@ function buildSpacingMark(diff, side, nodes) {
 // 拖拽位置
 const debugFloatX      = ref(null)
 const nodeBarX         = ref(240)
-const caseListX        = ref(10)
-const caseListExpanded = ref(false)
 
 function startDrag(e, which) {
   e.preventDefault()
   const startMouseX = e.clientX
-  const W = which === 'caselist' ? 220 : 280
+  const W = which === 'debug' ? 280 : 280
   const startX = which === 'debug'
     ? (debugFloatX.value ?? (window.innerWidth - W - 10))
-    : which === 'caselist'
-      ? caseListX.value
-      : nodeBarX.value
+    : nodeBarX.value
   const onMove = (ev) => {
     const newX = Math.max(0, Math.min(window.innerWidth - W, startX + ev.clientX - startMouseX))
     if (which === 'debug') debugFloatX.value = newX
-    else if (which === 'caselist') caseListX.value = newX
     else nodeBarX.value = newX
   }
   const onUp = () => {
@@ -415,10 +372,6 @@ function startDrag(e, which) {
   }
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
-}
-
-function caseImageUrl(caseId) {
-  return imageUrl(caseId, 'design', props.currentPlatform)
 }
 </script>
 

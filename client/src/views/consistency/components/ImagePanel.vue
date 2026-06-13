@@ -48,7 +48,10 @@
           <template v-else>
             <div v-if="debugMode" class="prop-row">
               <span class="prop-key">id</span>
-              <span class="prop-val">{{ inspectorNode?.id }}</span>
+              <span class="prop-val">
+                {{ inspectorNode?.id }}
+                <el-icon class="copy-icon" @click.stop="copyId"><CopyDocument /></el-icon>
+              </span>
             </div>
             <div
               v-for="item in displayStyle"
@@ -930,6 +933,14 @@ function toCssColor(color) {
     return `rgba(${r}, ${g}, ${b}, ${Number(a.toFixed(3))})`
   }
   return val
+}
+
+// ── 复制 ID ──────────────────────────────────────────────────────────────────
+
+function copyId() {
+  const id = props.inspectorNode?.id
+  if (!id) return
+  navigator.clipboard.writeText(id).catch(() => {})
 }
 
 // ── Zoom（Ctrl+滚轮缩放，由父组件触发）────────────────────────────────────────

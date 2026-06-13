@@ -55,13 +55,49 @@
             </div>
             <div v-if="msg.content" class="ai-msg-bubble ai-msg-bubble--user">{{ msg.content }}</div>
           </div>
-          <!-- 普通消息 -->
+          <!-- assistant 消息：think 折叠块 + Markdown 正文 -->
+          <template v-else-if="msg.role === 'assistant'">
+            <div
+              v-if="msg.thinkContent"
+              class="ai-think-block"
+              :class="{ 'ai-think-block--collapsed': msg.thinkCollapsed }"
+            >
+              <button class="ai-think-header" @click="msg.thinkCollapsed = !msg.thinkCollapsed">
+                <svg viewBox="0 0 12 12" width="10" height="10" fill="none" class="ai-think-chevron">
+                  <path d="M2 4L6 8L10 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>思考过程</span>
+              </button>
+              <div class="ai-think-body">{{ msg.thinkContent }}</div>
+            </div>
+            <div
+              class="ai-msg-bubble ai-msg-md"
+              v-html="renderMd(msg.content)"
+            />
+          </template>
+          <!-- 普通用户消息 -->
           <div v-else class="ai-msg-bubble">{{ msg.content }}</div>
         </div>
 
         <div v-if="streaming" class="ai-msg ai-msg--assistant">
+          <!-- 流式 think 区域 -->
+          <div
+            v-if="streamingThink"
+            class="ai-think-block"
+            :class="{ 'ai-think-block--collapsed': streamingThinkCollapsed }"
+          >
+            <button class="ai-think-header" @click="streamingThinkCollapsed = !streamingThinkCollapsed">
+              <svg viewBox="0 0 12 12" width="10" height="10" fill="none" class="ai-think-chevron">
+                <path d="M2 4L6 8L10 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>思考过程</span>
+              <span v-if="!thinkDone" class="ai-think-badge">思考中</span>
+            </button>
+            <div class="ai-think-body">{{ streamingThink }}</div>
+          </div>
+          <!-- 流式正文区域 -->
           <div class="ai-msg-bubble ai-msg-streaming">
-            <template v-if="streamingContent">{{ streamingContent }}</template>
+            <template v-if="streamingMain">{{ streamingMain }}</template>
             <span v-else class="ai-typing"><i></i><i></i><i></i></span>
           </div>
         </div>
@@ -139,19 +175,31 @@
 
 <script setup>
 import { ref, computed, nextTick, watch } from 'vue'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
+
+marked.setOptions({ breaks: true })
 
 defineProps({
   open: { type: Boolean, default: false },
 })
 defineEmits(['close'])
 
-const messages         = ref([])
-const inputText        = ref('')
-const streaming        = ref(false)
-const streamingContent = ref('')
-const messagesEl       = ref(null)
-const fileInput0       = ref(null)
-const fileInput1       = ref(null)
+function renderMd(content) {
+  return DOMPurify.sanitize(marked.parse(content || ''))
+}
+
+const messages                  = ref([])
+const inputText                 = ref('')
+const streaming                 = ref(false)
+const streamingMain             = ref('')   // 正文部分
+const streamingThink            = ref('')   // think 部分
+const rawBuffer                 = ref('')   // 原始累积，用于解析 <think> 标签
+const thinkDone                 = ref(false)
+const streamingThinkCollapsed   = ref(false)
+const messagesEl                = ref(null)
+const fileInput0                = ref(null)
+const fileInput1                = ref(null)
 
 // imgSlots[0] = 设计稿, imgSlots[1] = 实现图，各为 { preview: dataURL } | null
 const imgSlots = ref([null, null])
@@ -172,7 +220,12 @@ function scrollToBottom() {
   })
 }
 
-watch(streamingContent, scrollToBottom)
+watch([streamingThink, streamingMain], scrollToBottom)
+
+// think 结束后延迟折叠，给用户短暂看的时间
+watch(thinkDone, (val) => {
+  if (val) setTimeout(() => { streamingThinkCollapsed.value = true }, 600)
+})
 
 function onKeydown(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -223,8 +276,12 @@ async function sendMessage() {
   imgSlots.value   = [null, null]
   scrollToBottom()
 
-  streaming.value        = true
-  streamingContent.value = ''
+  streaming.value               = true
+  streamingMain.value           = ''
+  streamingThink.value          = ''
+  rawBuffer.value               = ''
+  thinkDone.value               = false
+  streamingThinkCollapsed.value = false
 
   // 构建 API messages：历史文字 + 当前多模态
   const historyText = messages.value.slice(0, -1).map(m => ({
@@ -277,20 +334,66 @@ async function sendMessage() {
         if (data === '[DONE]') continue
         try {
           const json  = JSON.parse(data)
-          const delta = json.choices?.[0]?.delta?.content ?? ''
-          streamingContent.value += delta
+          const delta = json.choices?.[0]?.delta
+
+          // 方式1: reasoning_content 独立字段（部分 GLM 推理模型）
+          if (delta?.reasoning_content) {
+            streamingThink.value += delta.reasoning_content
+          }
+          // 方式2: content 字段（可能内嵌 <think> 标签）
+          if (delta?.content) {
+            // 若已通过 reasoning_content 收到 think，则 content 是正文
+            if (streamingThink.value && rawBuffer.value === '') {
+              if (!thinkDone.value) thinkDone.value = true
+              streamingMain.value += delta.content
+            } else {
+              rawBuffer.value += delta.content
+              parseThinkBuffer()
+            }
+          }
         } catch { /* 跳过无效帧 */ }
       }
     }
 
-    messages.value.push({ role: 'assistant', content: streamingContent.value })
+    messages.value.push({
+      role: 'assistant',
+      content: streamingMain.value,
+      thinkContent: streamingThink.value || null,
+      thinkCollapsed: true,
+    })
   } catch (e) {
     messages.value.push({ role: 'assistant', content: `⚠️ 请求失败：${e.message}` })
   } finally {
-    streaming.value        = false
-    streamingContent.value = ''
+    streaming.value               = false
+    streamingMain.value           = ''
+    streamingThink.value          = ''
+    rawBuffer.value               = ''
+    thinkDone.value               = false
     scrollToBottom()
   }
+}
+
+// 解析 rawBuffer 里的 <think>...</think> 标签
+function parseThinkBuffer() {
+  const raw = rawBuffer.value
+  const openIdx  = raw.indexOf('<think>')
+  const closeIdx = raw.indexOf('</think>')
+
+  if (openIdx === -1) {
+    // 没有 think 标签，全部是正文
+    streamingMain.value = raw
+    return
+  }
+  if (closeIdx === -1) {
+    // think 还未关闭，在 think 区域内
+    streamingThink.value = raw.substring(openIdx + 7)
+    streamingMain.value  = ''
+    return
+  }
+  // think 已关闭
+  streamingThink.value = raw.substring(openIdx + 7, closeIdx)
+  streamingMain.value  = raw.substring(closeIdx + 8)
+  if (!thinkDone.value) thinkDone.value = true
 }
 </script>
 
@@ -382,7 +485,55 @@ async function sendMessage() {
 
 .ai-msg          { display: flex; max-width: 92%; }
 .ai-msg--user    { align-self: flex-end; flex-direction: column; align-items: flex-end; }
-.ai-msg--assistant { align-self: flex-start; }
+.ai-msg--assistant { align-self: flex-start; flex-direction: column; gap: 4px; }
+
+/* ── Think 折叠块 ── */
+.ai-think-block {
+  width: 100%;
+  border-radius: 6px;
+  background: #f7f5ff;
+  border-left: 2px solid #b8b0e8;
+  overflow: hidden;
+  transition: none;
+}
+.ai-think-header {
+  display: flex; align-items: center; gap: 5px;
+  width: 100%; padding: 5px 9px;
+  border: none; background: transparent;
+  cursor: pointer; text-align: left;
+  font-size: 11px; color: #7b6fc4;
+  font-weight: 500;
+  transition: background 150ms ease;
+}
+.ai-think-header:hover { background: rgba(123,111,196,0.08); }
+.ai-think-chevron {
+  flex-shrink: 0; color: #7b6fc4;
+  transition: transform 200ms ease;
+}
+.ai-think-block--collapsed .ai-think-chevron {
+  transform: rotate(-90deg);
+}
+.ai-think-badge {
+  margin-left: auto;
+  font-size: 10px; color: #9e93d8;
+  background: rgba(123,111,196,0.12);
+  padding: 1px 5px; border-radius: 3px;
+}
+.ai-think-body {
+  padding: 0 10px 8px 10px;
+  font-size: 11px; line-height: 1.65;
+  color: #8a82bf;
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 220px; overflow-y: auto;
+  transition: max-height 200ms ease, padding 200ms ease, opacity 200ms ease;
+  opacity: 1;
+}
+.ai-think-block--collapsed .ai-think-body {
+  max-height: 0;
+  padding-top: 0; padding-bottom: 0;
+  opacity: 0;
+  overflow: hidden;
+}
 
 .ai-msg-bubble {
   padding: 8px 12px; border-radius: 10px;
@@ -396,6 +547,90 @@ async function sendMessage() {
 .ai-msg--assistant .ai-msg-bubble {
   background: #f0f4f8; color: #191919;
   border-bottom-left-radius: 3px;
+}
+
+/* ── Markdown 渲染样式 ── */
+.ai-msg-md {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.ai-msg-md :deep(h1),
+.ai-msg-md :deep(h2) {
+  font-size: 13px;
+  font-weight: 700;
+  color: #191919;
+  margin: 10px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e0e4ea;
+}
+.ai-msg-md :deep(h3) {
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+  margin: 8px 0 4px;
+}
+.ai-msg-md :deep(p) {
+  margin: 4px 0;
+  line-height: 1.65;
+}
+.ai-msg-md :deep(strong) {
+  font-weight: 600;
+  color: #191919;
+}
+.ai-msg-md :deep(ul),
+.ai-msg-md :deep(ol) {
+  padding-left: 16px;
+  margin: 4px 0;
+}
+.ai-msg-md :deep(li) {
+  margin: 2px 0;
+  line-height: 1.6;
+}
+/* 表格 */
+.ai-msg-md :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin: 6px 0;
+  display: block;
+  overflow-x: auto;
+}
+.ai-msg-md :deep(th) {
+  background: #e6f2fd;
+  color: #0067D1;
+  font-weight: 600;
+  padding: 5px 8px;
+  border: 1px solid #c8dff7;
+  white-space: nowrap;
+  text-align: left;
+}
+.ai-msg-md :deep(td) {
+  padding: 4px 8px;
+  border: 1px solid #dde3ea;
+  vertical-align: top;
+  line-height: 1.5;
+}
+.ai-msg-md :deep(tr:nth-child(even) td) {
+  background: #f8fafc;
+}
+/* 代码 */
+.ai-msg-md :deep(code) {
+  background: #e8ecf0;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 11px;
+  font-family: monospace;
+}
+.ai-msg-md :deep(pre) {
+  background: #e8ecf0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+.ai-msg-md :deep(pre code) {
+  background: none;
+  padding: 0;
 }
 
 /* 带图片的用户消息 */

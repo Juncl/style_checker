@@ -214,23 +214,43 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
     if (s.arkui.id === an.id || s.design.id === dn.id) return true
     return rectContains(s.arkui.rect, an.rect) === rectContains(s.design.rect, dn.rect)
   })
+  // 方向一致性：对每个 pass1 锚点，an 只要与锚点「脱离」（上/下/左/右/斜向）就约束 dn ——
+  // 卡两类明确矛盾：相交(dn 与对端部分重叠非包含) 与 反向(上↔下/左↔右)；放行同向/斜向/包含。
+  // （1819上↔64272相交、1828斜脱离↔64270相交 都被卡；「上↔斜上」这类布局微差放行，不误杀）
+  const OPPOSITE = { up: 'down', down: 'up', left: 'right', right: 'left' }
+  const directionConsistent = (an, dn) => anchors.every(s => {
+    const ra = relation(an.rect, s.arkui.rect)
+    if (ra === null || ra === 'contain') return true      // an 与锚点相交/包含 → 不约束
+    const rd = relation(dn.rect, s.design.rect)
+    if (rd === null) return false                          // 脱离 vs 相交 → 矛盾
+    return rd !== OPPOSITE[ra]                              // 反向 → 矛盾
+  })
 
-  // ── 第一轮 ②③ 左右最近邻 / 上下守门带，候选均过包含一致性 + 三维守门 AND ──
-  const round1 = [] // { an, dn, score, horizontal }
+  // ── 第一轮 ②③ 左右最近邻 / 上下守门带：先各自算候选排行，再竞争式稳定匹配 ──
+  // 每个 an 收集候选 dn：(an,dn) 取最优途径（水平优先，再分数），过包含一致性 + 三维守门 AND
+  const candMap = new Map() // anId → Map<dnId, { dn, horizontal, score }>
+  const betterNom = (a, b) => a.horizontal !== b.horizontal ? a.horizontal : a.score > b.score
+  const addNom = (an, dn, horizontal, score) => {
+    if (!candMap.has(an.id)) candMap.set(an.id, new Map())
+    const m = candMap.get(an.id)
+    const ex = m.get(dn.id)
+    if (!ex || betterNom({ horizontal, score }, ex)) m.set(dn.id, { dn, horizontal, score })
+  }
+
+  // 左右：arkui 最近邻；design 在「未锁 + 兼容 + 包含一致」候选里取最近
   for (const anchor of anchors) {
     const aHm = anchor.arkui, aDe = anchor.design
-    // 左右：arkui 最近邻；design 在「未锁 + 兼容 + 包含一致」候选里取最近
     for (const dir of ['left', 'right']) {
       const an = nearestInDir(availArkui, aHm.rect, dir, n => !lockedArkui.has(n.id))
       if (!an) continue
-      const dn = nearestInDir(availDesign, aDe.rect, dir, d => !lockedDesign.has(d.id) && isCompatibleType(d, an) && containConsistent(an, d))
+      const dn = nearestInDir(availDesign, aDe.rect, dir, d => !lockedDesign.has(d.id) && isCompatibleType(d, an) && containConsistent(an, d) && directionConsistent(an, d))
       if (!dn) continue
       const t = tripleScore(an, dn, aHm, aDe, dir, ctx)
-      if (t.pass) round1.push({ an, dn, score: t.score, horizontal: true })
+      if (t.pass) addNom(an, dn, true, t.score)
     }
   }
 
-  // 上下：遍历开发侧待匹配节点，守门带 + 包含一致性 + 三维择优（放宽方向 + 相对锚点位置评分）
+  // 上下：遍历开发侧待匹配节点，守门带内所有可行 dn 都进候选排行（不再只取 best，支持转次选）
   for (const an of availArkui) {
     if (lockedArkui.has(an.id)) continue
     for (const anchor of anchors) {
@@ -238,32 +258,50 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
       const dir = verticalRelation(an.rect, aHm.rect)
       if (!dir) continue
       const gapHm = edgeGap(an.rect, aHm.rect, dir)
-      let best = null
       for (const dn of availDesign) {
         if (lockedDesign.has(dn.id) || !isCompatibleType(dn, an)) continue
         if (verticalRelation(dn.rect, aDe.rect) !== dir) continue
         // 守门：边缘间距差超过待匹配节点高度 → 放弃，丢后续流程
         if (Math.abs(edgeGap(dn.rect, aDe.rect, dir) - gapHm) > an.rect.h) continue
         if (!containConsistent(an, dn)) continue
+        if (!directionConsistent(an, dn)) continue
         const t = verticalTriple(an, dn, aHm, aDe, ctx)
-        if (t.pass && (!best || t.score > best.score)) best = { dn, score: t.score }
+        if (t.pass) addNom(an, dn, false, t.score)
       }
-      if (best) round1.push({ an, dn: best.dn, score: best.score, horizontal: false })
     }
   }
 
-  // 全局裁决：水平方向优先（同行左右关系比跨行上下更可靠），再按分数降序贪心
-  round1.sort((a, b) => {
-    if (a.horizontal !== b.horizontal) return a.horizontal ? -1 : 1
-    return b.score - a.score
-  })
-  for (const { an, dn, score } of round1) {
-    if (lockedArkui.has(an.id) || lockedDesign.has(dn.id)) continue
-    lockedArkui.add(an.id); lockedDesign.add(dn.id)
-    result.push(makePair(dn, an, 'anchor-topology-方向', {
+  // 竞争式稳定匹配（Gale-Shapley）：an 按候选排行(水平优先→分数)求婚，
+  // dn 在求婚者中选「水平优先→高分」者订婚，输家转次选继续，直到稳定
+  const anById = new Map(availArkui.map(n => [n.id, n]))
+  const prefs = new Map()
+  for (const [anId, m] of candMap) {
+    prefs.set(anId, [...m.values()].sort((a, b) => a.horizontal !== b.horizontal ? (a.horizontal ? -1 : 1) : b.score - a.score))
+  }
+  const ptr = new Map()      // anId → 下一个求婚的候选下标
+  const engaged = new Map()  // dnId → { anId, dn, horizontal, score }
+  const free = [...prefs.keys()]
+  while (free.length) {
+    const anId = free.pop()
+    const list = prefs.get(anId)
+    let i = ptr.get(anId) ?? 0
+    while (i < list.length) {
+      const cand = list[i++]
+      if (lockedDesign.has(cand.dn.id)) continue // 已被包含①锁定
+      const cur = engaged.get(cand.dn.id)
+      if (!cur) { engaged.set(cand.dn.id, { anId, ...cand }); break }
+      if (betterNom(cand, cur)) { engaged.set(cand.dn.id, { anId, ...cand }); free.push(cur.anId); break } // 抢赢，旧的转自由
+      // 被拒，继续求婚下一个
+    }
+    ptr.set(anId, i)
+  }
+  for (const [, e] of engaged) {
+    const an = anById.get(e.anId)
+    lockedArkui.add(an.id); lockedDesign.add(e.dn.id)
+    result.push(makePair(e.dn, an, 'anchor-topology-方向', {
       confidence: 'high',
-      topologyScore: round4(score),
-      iou: computeIoU(dn.normRect, an.normRect),
+      topologyScore: round4(e.score),
+      iou: computeIoU(e.dn.normRect, an.normRect),
     }))
   }
 
