@@ -75,8 +75,8 @@ export async function processUxlintCheckList(list: UxlintCheckItem[]): Promise<U
       versionName:           now,
       devImageBase64Data:    devBase64,
       devJson,
-      designImageBase64Data: null,
-      designJson:            null,
+      designImageBase64Data: '',
+      designJson:            '',
       problems:              [],
       nodeMatchs:            [],
     })
