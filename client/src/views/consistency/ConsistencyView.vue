@@ -41,7 +41,6 @@
         v-if="!result"
         ref="uploadPageRef"
         :upload-files="uploadFiles"
-        :is-drag-over="isDragOver && !loading"
         :debug-mode="debugMode"
         :current-platform="currentPlatform"
         :dev-preview="devPreview"
@@ -51,8 +50,6 @@
         :blob-dev-src="blobUrls.arkui"
         :blob-design-src="blobUrls.design"
         @step-picked="onStepPicked"
-        @drag-over="isDragOver = $event"
-        @drop="onDrop"
       />
 
       <ReportPage
@@ -159,7 +156,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import OctoLoading from './components/common/OctoLoading.vue'
@@ -183,7 +180,7 @@ import ReportPage from './components/ReportPage.vue'
 import UploadPanel from './components/UploadPanel.vue'
 import ReportPanel from './components/ReportPanel.vue'
 import '../../styles/app.css'
-import { CASE_NAMES_BY_PLATFORM, DEBUG_COLORS, FILE_SLOTS } from '../utils/constants'
+import { CASE_NAMES_BY_PLATFORM, DEBUG_COLORS } from '../utils/constants'
 import { reportInteraction } from '../utils-inner/report'
 
 const route           = useRoute()
@@ -195,7 +192,6 @@ const result          = ref(null)
 const activeDiff      = ref(null)
 const selectedPair    = ref(null)
 const lockedNodeIds   = ref(new Set())
-const isDragOver      = ref(false)
 const uploadPageRef   = ref(null)
 const debugMode       = ref(false)
 const debugPipelineOn = ref(false)
@@ -564,60 +560,6 @@ async function onStepPicked({ type, file }) {
   }
 }
 
-function onDrop(e) {
-  isDragOver.value = false
-  assignFiles([...e.dataTransfer.files])
-}
-
-async function assignFiles(files) {
-  const next = { ...uploadFiles.value }
-  const assigned = new Set()
-
-  for (const f of files) {
-    const slot = FILE_SLOTS.find(s => s.match(f))
-    if (slot) { next[slot.key] = f; assigned.add(f) }
-  }
-
-  const jsonFallback  = files.filter(f => f.name.endsWith('.json')        && !assigned.has(f))
-  const dumpFallback  = files.filter(f => f.name.endsWith('.dump')         && !assigned.has(f))
-  const imageFallback = files.filter(f => f.type.startsWith('image/')      && !assigned.has(f))
-  if (!next.designJson  && jsonFallback[0])  { next.designJson  = jsonFallback[0];  assigned.add(jsonFallback[0]) }
-  if (!next.arkuiJson   && jsonFallback[1])  { next.arkuiJson   = jsonFallback[1];  assigned.add(jsonFallback[1]) }
-  if (!next.arkuiJson   && dumpFallback[0])  { next.arkuiJson   = dumpFallback[0];  assigned.add(dumpFallback[0]) }
-  if (!next.designImage && imageFallback[0]) { next.designImage = imageFallback[0]; assigned.add(imageFallback[0]) }
-  if (!next.arkuiImage  && imageFallback[1]) { next.arkuiImage  = imageFallback[1]; assigned.add(imageFallback[1]) }
-
-  const unmatched = files.filter(f => !assigned.has(f)).map(f => f.name)
-  if (unmatched.length) ElMessage.info(`以下文件未能识别：${unmatched.join(', ')}`)
-
-  // dump 转换（和 onStepPicked 走同一函数）
-  if (next.arkuiJson) {
-    try { next.arkuiJson = await resolveArkuiJsonFile(next.arkuiJson) }
-    catch { ElMessage.error('dump 文件转换失败，请检查文件格式'); return }
-  }
-
-  selectedCase.value = ''
-  uploadFiles.value  = next
-  revokeBlobUrls()
-  if (next.designImage) blobUrls.value.design = URL.createObjectURL(next.designImage)
-  if (next.arkuiImage)  blobUrls.value.arkui  = URL.createObjectURL(next.arkuiImage)
-
-  // 平台检测（和 onStepPicked 走同一函数）
-  if (next.arkuiJson) {
-    const ok = await applyPlatformDetection(next.arkuiJson)
-    if (!ok) { uploadFiles.value = { ...uploadFiles.value, arkuiJson: null }; return }
-  }
-
-  const devReady    = uploadFiles.value.arkuiJson && next.arkuiImage
-  const designReady = next.designJson && next.designImage
-
-  if (devReady && designReady) {
-    nextTick(runUpload)
-  } else {
-    if (devReady) triggerDevPreview(uploadFiles.value)
-    if (designReady) triggerDesignPreview(uploadFiles.value)
-  }
-}
 
 const designImgSrc = computed(() => blobUrls.value.design)
 const arkuiImgSrc  = computed(() => blobUrls.value.arkui)

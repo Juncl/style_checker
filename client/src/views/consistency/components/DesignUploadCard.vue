@@ -41,8 +41,12 @@
           <div class="up-step">
             <div class="up-step-title up-step-title--center"><span>Step3：上传 JSON</span></div>
             <div
-              :class="['up-drop', { 'has-file': designJson }]"
+              :class="['up-drop', { 'has-file': designJson, 'drag-over': jsonDragOver }]"
               @click="pickerJson?.click()"
+              @dragenter.prevent.stop="jsonDragOver = true"
+              @dragover.prevent.stop="jsonDragOver = true"
+              @dragleave.prevent.stop="onDragLeave($event, v => (jsonDragOver = v))"
+              @drop.prevent.stop="onJsonDrop"
             >
               <img v-if="!designJson" :src="iconJson" class="up-drop-icon" alt="" />
               <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
@@ -56,8 +60,12 @@
           <div class="up-step">
             <div class="up-step-title up-step-title--center"><span>Step4：上传图片</span></div>
             <div
-              :class="['up-drop', { 'has-file': designImage, 'is-disabled': !designJson }]"
+              :class="['up-drop', { 'has-file': designImage, 'drag-over': imageDragOver, 'is-disabled': !designJson }]"
               @click="triggerImage"
+              @dragenter.prevent.stop="designJson && (imageDragOver = true)"
+              @dragover.prevent.stop="designJson && (imageDragOver = true)"
+              @dragleave.prevent.stop="onDragLeave($event, v => (imageDragOver = v))"
+              @drop.prevent.stop="onImageDrop"
             >
               <img v-if="!designImage" :src="iconImage" class="up-drop-icon" alt="" />
               <el-icon v-else class="up-drop-check"><CircleCheck /></el-icon>
@@ -124,6 +132,25 @@ const debugStep3Mode = ref(true)
 const pickerJson     = ref(null)
 const pickerImage    = ref(null)
 
+// Step3 / Step4 各自独立的拖拽高亮状态，互不影响
+const jsonDragOver  = ref(false)
+const imageDragOver = ref(false)
+
+// dragleave 在进入子元素时也会触发，用 relatedTarget 判断是否真正离开拖拽区
+function onDragLeave(e, setter) {
+  if (!e.currentTarget.contains(e.relatedTarget)) setter(false)
+}
+
+function onJsonDrop(e) {
+  jsonDragOver.value = false
+  handleJsonFile(e.dataTransfer.files?.[0])
+}
+
+function onImageDrop(e) {
+  imageDragOver.value = false
+  handleImageFile(e.dataTransfer.files?.[0])
+}
+
 watch(() => props.designJson, newVal => {
   if (!newVal) {
     annotationUrl.value = ''
@@ -175,28 +202,36 @@ async function validateAnnotationUrl() {
   }
 }
 
-function onJsonPicked(event) {
-  const file = event.target.files?.[0]
+function handleJsonFile(file) {
   if (!file) return
   if (!file.name.endsWith('.json')) {
     ElMessage.error('请上传 .json 文件')
-    event.target.value = ''
     return
   }
   emit('step-picked', { type: 'designJson', file })
+}
+
+function handleImageFile(file) {
+  if (!file) return
+  if (!props.designJson) {
+    ElMessage.warning('请先完成 Step 3：上传 JSON')
+    return
+  }
+  const validExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']
+  if (!file.type.startsWith('image/') && !validExts.some(ext => file.name.toLowerCase().endsWith(ext))) {
+    ElMessage.error('请上传图片文件')
+    return
+  }
+  emit('step-picked', { type: 'designImage', file })
+}
+
+function onJsonPicked(event) {
+  handleJsonFile(event.target.files?.[0])
   event.target.value = ''
 }
 
 function onImagePicked(event) {
-  const file = event.target.files?.[0]
-  if (!file) return
-  const validExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']
-  if (!file.type.startsWith('image/') && !validExts.some(ext => file.name.toLowerCase().endsWith(ext))) {
-    ElMessage.error('请上传图片文件')
-    event.target.value = ''
-    return
-  }
-  emit('step-picked', { type: 'designImage', file })
+  handleImageFile(event.target.files?.[0])
   event.target.value = ''
 }
 </script>

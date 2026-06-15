@@ -11,10 +11,12 @@
             <span>Step1:{{ platform === 'web' ? '上传 JSON文件' : '上传 ArkUI树 JSON/DUMP文件' }}</span>
           </div>
           <div
-            :class="['up-drop', { 'has-file': arkuiJson, 'drag-over': isDragOver }]"
+            :class="['up-drop', { 'has-file': arkuiJson, 'drag-over': jsonDragOver }]"
             @click="triggerJson"
-            @dragover.prevent.stop
-            @drop.prevent.stop="e => handleJsonFile(e.dataTransfer.files[0])"
+            @dragenter.prevent.stop="jsonDragOver = true"
+            @dragover.prevent.stop="jsonDragOver = true"
+            @dragleave.prevent.stop="onDragLeave($event, v => (jsonDragOver = v))"
+            @drop.prevent.stop="onJsonDrop"
           >
             <img v-if="!arkuiJson" :src="iconJson" class="up-drop-icon" alt="" />
             <img v-else :src="iconSuccess" class="up-drop-icon" alt="" />
@@ -31,10 +33,12 @@
             <span>Step2:上传开发图片</span>
           </div>
           <div
-            :class="['up-drop', { 'has-file': arkuiImage, 'drag-over': isDragOver, 'is-disabled': !arkuiJson }]"
+            :class="['up-drop', { 'has-file': arkuiImage, 'drag-over': imageDragOver, 'is-disabled': !arkuiJson }]"
             @click="triggerImage"
-            @dragover.prevent.stop
-            @drop.prevent.stop="e => handleImageFile(e.dataTransfer.files[0])"
+            @dragenter.prevent.stop="arkuiJson && (imageDragOver = true)"
+            @dragover.prevent.stop="arkuiJson && (imageDragOver = true)"
+            @dragleave.prevent.stop="onDragLeave($event, v => (imageDragOver = v))"
+            @drop.prevent.stop="onImageDrop"
           >
             <img v-if="!arkuiImage" :src="iconImage" class="up-drop-icon" alt="" />
             <img v-else :src="iconSuccess" class="up-drop-icon" alt="" />
@@ -61,7 +65,6 @@ import { GUIDE_LINKS } from '@/views/utils/constants'
 const props = defineProps({
   arkuiJson:        { type: Object,  default: null },
   arkuiImage:       { type: Object,  default: null },
-  isDragOver:       { type: Boolean, default: false },
   platform:         { type: String,  default: 'hmPhone' },
   showDownloadLink: { type: Boolean, default: true },
 })
@@ -70,6 +73,25 @@ const emit = defineEmits(['pick-json', 'pick-image'])
 
 const pickerJson  = ref(null)
 const pickerImage = ref(null)
+
+// Step1 / Step2 各自独立的拖拽高亮状态，互不影响
+const jsonDragOver  = ref(false)
+const imageDragOver = ref(false)
+
+// dragleave 在进入子元素时也会触发，用 relatedTarget 判断是否真正离开拖拽区
+function onDragLeave(e, setter) {
+  if (!e.currentTarget.contains(e.relatedTarget)) setter(false)
+}
+
+function onJsonDrop(e) {
+  jsonDragOver.value = false
+  handleJsonFile(e.dataTransfer.files?.[0])
+}
+
+function onImageDrop(e) {
+  imageDragOver.value = false
+  handleImageFile(e.dataTransfer.files?.[0])
+}
 
 function triggerJson() {
   pickerJson.value?.click()

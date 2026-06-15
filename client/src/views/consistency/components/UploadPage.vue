@@ -4,9 +4,6 @@
     <section class="up-col up-col--dev">
       <div
         :class="['up-stage', devPreview && !devPreviewLoading ? 'up-stage--report' : '']"
-        @dragover.prevent="$emit('drag-over', true)"
-        @dragleave.prevent="$emit('drag-over', false)"
-        @drop.prevent="$emit('drop', $event)"
       >
         <!-- 解析中 -->
         <div v-if="devPreviewLoading" class="phone-card">
@@ -31,7 +28,6 @@
           v-else
           :arkui-json="uploadFiles.arkuiJson"
           :arkui-image="uploadFiles.arkuiImage"
-          :is-drag-over="isDragOver"
           :platform="currentPlatform"
           @pick-json="onDevJsonPicked"
           @pick-image="file => $emit('step-picked', { type: 'arkuiImage', file })"
@@ -81,7 +77,6 @@ import OctoLoading from './common/OctoLoading.vue'
 
 const props = defineProps({
   uploadFiles:          { type: Object,  required: true },
-  isDragOver:           { type: Boolean, default: false },
   debugMode:            { type: Boolean, default: false },
   currentPlatform:      { type: String,  default: 'hmPhone' },
   devPreview:           { type: Object,  default: null },
@@ -92,7 +87,7 @@ const props = defineProps({
   blobDesignSrc:        { type: String,  default: '' },
 })
 
-const emit = defineEmits(['step-picked', 'drag-over', 'drop'])
+const emit = defineEmits(['step-picked'])
 
 function onDevJsonPicked(file) {
   emit('step-picked', { type: 'arkuiJson', file })
