@@ -171,6 +171,8 @@ import {
   isBlankLikeNode, isInteractiveImageNode, isSelectableNode, resolveSelectableNode, getUserAccount, inIframe,
 } from '../utils/tools.ts'
 import { initApp } from './init/index'
+import { UXLINT_CHECKLIST_EVENT } from './init/detectIframe'
+import { processUxlintCheckList } from './init/processUxlintCheckList'
 import { setUrlParams, removeUrlParams } from '../utils/urlParams'
 import { savePlatform } from './init/restorePlatform'
 import AppLayout from './components/AppLayout.vue'
@@ -210,6 +212,7 @@ const workingPage         = ref(null)
 const pageVersionList     = ref([])
 const workingVersionId    = ref(null)
 const closeHistoryKey     = ref(0)
+let stopListenFn = null
 
 // 单版本预处理：优先使用 nodeMatchs，回退到兼容旧格式 problems 末尾的 matchedPairIds 特殊项
 function preprocessVersion(v) {
@@ -492,19 +495,45 @@ function revokeBlobUrls() {
   if (blobUrls.value.arkui)  URL.revokeObjectURL(blobUrls.value.arkui)
   blobUrls.value = { design: '', arkui: '' }
 }
-onUnmounted(revokeBlobUrls)
+
+function cleanup() {
+  revokeBlobUrls()
+  if (stopListenFn) stopListenFn()
+  window.removeEventListener(UXLINT_CHECKLIST_EVENT, onUxlintCheckList)
+}
+
+onUnmounted(cleanup)
+
+async function resolveArkuiJsonFile(file) {
+  if (!file.name.endsWith('.dump')) return file
+  const initJson = await convertDumpToJson(file)
+  return jsonToFile(initJson, 'arkui.json')
+}
+
+async function applyPlatformDetection(file) {
+  const detected = await detectPlatformFromJson(file)
+  const isExistingPage = workingPage.value && workingPage.value.id !== '__new__'
+  if (isExistingPage && detected) {
+    const expectedType = workingPage.value.deviceType ?? 'hmPhone'
+    if (detected !== expectedType) {
+      const PLATFORM_NAMES = { hmPhone: '鸿蒙-手机', hmWatch: '鸿蒙-手表', web: 'Web' }
+      ElMessage.error(`请上传 ${PLATFORM_NAMES[expectedType] ?? expectedType} 平台的数据`)
+      return false
+    }
+  } else if (detected && detected !== currentPlatform.value) {
+    currentPlatform.value = detected
+    savePlatform(detected)
+    reportPlatformChange(detected)
+  }
+  return true
+}
 
 async function onStepPicked({ type, file }) {
   if (!file) return
   let resolvedFile = file
-  if (type === 'arkuiJson' && file.name.endsWith('.dump')) {
-    try {
-      const initJson = await convertDumpToJson(file)
-      resolvedFile = jsonToFile(initJson, 'arkui.json')
-    } catch {
-      ElMessage.error('dump 文件转换失败，请检查文件格式')
-      return
-    }
+  if (type === 'arkuiJson') {
+    try { resolvedFile = await resolveArkuiJsonFile(file) }
+    catch { ElMessage.error('dump 文件转换失败，请检查文件格式'); return }
   }
   const next = { ...uploadFiles.value }
   if (type === 'arkuiJson')        next.arkuiJson    = resolvedFile
@@ -523,21 +552,8 @@ async function onStepPicked({ type, file }) {
   }
 
   if (type === 'arkuiJson') {
-    const detected = await detectPlatformFromJson(file)
-    const isExistingPage = workingPage.value && workingPage.value.id !== '__new__'
-    if (isExistingPage && detected) {
-      const expectedType = workingPage.value.deviceType ?? 'hmPhone'
-      if (detected !== expectedType) {
-        const PLATFORM_NAMES = { hmPhone: '鸿蒙-手机', hmWatch: '鸿蒙-手表', web: 'Web' }
-        ElMessage.error(`请上传 ${PLATFORM_NAMES[expectedType] ?? expectedType} 平台的数据`)
-        uploadFiles.value = { ...uploadFiles.value, arkuiJson: null }
-        return
-      }
-    } else if (detected && detected !== currentPlatform.value) {
-      currentPlatform.value = detected
-      savePlatform(detected)
-      reportPlatformChange(detected)
-    }
+    const ok = await applyPlatformDetection(resolvedFile)
+    if (!ok) { uploadFiles.value = { ...uploadFiles.value, arkuiJson: null }; return }
   }
 
   if (type === 'arkuiJson' || type === 'arkuiImage') {
@@ -555,34 +571,30 @@ function onDrop(e) {
 
 async function assignFiles(files) {
   const next = { ...uploadFiles.value }
-  const unmatched = []
+  const assigned = new Set()
 
   for (const f of files) {
     const slot = FILE_SLOTS.find(s => s.match(f))
-    if (slot) next[slot.key] = f
-    else unmatched.push(f.name)
+    if (slot) { next[slot.key] = f; assigned.add(f) }
   }
 
-  const jsonFallback  = files.filter(f => f.name.endsWith('.json'))
-  const dumpFallback  = files.filter(f => f.name.endsWith('.dump'))
-  const imageFallback = files.filter(f => f.type.startsWith('image/'))
-  if (!next.designJson  && jsonFallback[0])  next.designJson  = jsonFallback[0]
-  if (!next.arkuiJson   && jsonFallback[1])  next.arkuiJson   = jsonFallback[1]
-  if (!next.arkuiJson   && dumpFallback[0])  next.arkuiJson   = dumpFallback[0]
-  if (!next.designImage && imageFallback[0]) next.designImage = imageFallback[0]
-  if (!next.arkuiImage  && imageFallback[1]) next.arkuiImage  = imageFallback[1]
+  const jsonFallback  = files.filter(f => f.name.endsWith('.json')        && !assigned.has(f))
+  const dumpFallback  = files.filter(f => f.name.endsWith('.dump')         && !assigned.has(f))
+  const imageFallback = files.filter(f => f.type.startsWith('image/')      && !assigned.has(f))
+  if (!next.designJson  && jsonFallback[0])  { next.designJson  = jsonFallback[0];  assigned.add(jsonFallback[0]) }
+  if (!next.arkuiJson   && jsonFallback[1])  { next.arkuiJson   = jsonFallback[1];  assigned.add(jsonFallback[1]) }
+  if (!next.arkuiJson   && dumpFallback[0])  { next.arkuiJson   = dumpFallback[0];  assigned.add(dumpFallback[0]) }
+  if (!next.designImage && imageFallback[0]) { next.designImage = imageFallback[0]; assigned.add(imageFallback[0]) }
+  if (!next.arkuiImage  && imageFallback[1]) { next.arkuiImage  = imageFallback[1]; assigned.add(imageFallback[1]) }
 
-  if (next.arkuiJson?.name.endsWith('.dump')) {
-    try {
-      const initJson = await convertDumpToJson(next.arkuiJson)
-      next.arkuiJson = jsonToFile(initJson, 'arkui.json')
-    } catch {
-      ElMessage.error('dump 文件转换失败，请检查文件格式')
-      return
-    }
-  }
-
+  const unmatched = files.filter(f => !assigned.has(f)).map(f => f.name)
   if (unmatched.length) ElMessage.info(`以下文件未能识别：${unmatched.join(', ')}`)
+
+  // dump 转换（和 onStepPicked 走同一函数）
+  if (next.arkuiJson) {
+    try { next.arkuiJson = await resolveArkuiJsonFile(next.arkuiJson) }
+    catch { ElMessage.error('dump 文件转换失败，请检查文件格式'); return }
+  }
 
   selectedCase.value = ''
   uploadFiles.value  = next
@@ -590,19 +602,50 @@ async function assignFiles(files) {
   if (next.designImage) blobUrls.value.design = URL.createObjectURL(next.designImage)
   if (next.arkuiImage)  blobUrls.value.arkui  = URL.createObjectURL(next.arkuiImage)
 
-  const devReady    = next.arkuiJson && next.arkuiImage
+  // 平台检测（和 onStepPicked 走同一函数）
+  if (next.arkuiJson) {
+    const ok = await applyPlatformDetection(next.arkuiJson)
+    if (!ok) { uploadFiles.value = { ...uploadFiles.value, arkuiJson: null }; return }
+  }
+
+  const devReady    = uploadFiles.value.arkuiJson && next.arkuiImage
   const designReady = next.designJson && next.designImage
 
   if (devReady && designReady) {
     nextTick(runUpload)
   } else {
-    if (devReady) triggerDevPreview(next)
-    if (designReady) triggerDesignPreview(next)
+    if (devReady) triggerDevPreview(uploadFiles.value)
+    if (designReady) triggerDesignPreview(uploadFiles.value)
   }
 }
 
 const designImgSrc = computed(() => blobUrls.value.design)
 const arkuiImgSrc  = computed(() => blobUrls.value.arkui)
+
+// 处理 iframe 父页面下发的 uxlint checkList：批量创建交付件/页面，展示最后一个页面的空结果
+async function onUxlintCheckList(e) {
+  const list = e.detail
+  loading.value = true
+  try {
+    const checkResult = await processUxlintCheckList(list)
+
+    deliverables.value       = checkResult.deliverableList
+    workingDeliverable.value = checkResult.deliverableList.find(d => String(d.id) === checkResult.deliverableId) ?? null
+    pages.value              = checkResult.pageList
+    workingPage.value        = checkResult.lastPage
+    workingVersionId.value   = checkResult.lastVersion?.id ? String(checkResult.lastVersion.id) : null
+
+    // 复用历史版本渲染：开发侧有数据 → 画布；设计侧为空 → 卡片
+    if (checkResult.lastVersion) {
+      await loadHistoryVersion(checkResult.lastVersion, 'hmPhone')
+    }
+  } catch (err) {
+    console.error('[uxlint] 处理失败', err)
+    ElMessage.error('uxlint 数据处理失败，请检查控制台')
+  } finally {
+    loading.value = false
+  }
+}
 
 onMounted(async () => {
   debugMode.value = route.query['debugger'] === '1'
@@ -613,6 +656,9 @@ onMounted(async () => {
   if (route.query.deliverableId && route.query.pageId && route.query.versionId) {
     loading.value = true
   }
+
+  // 监听 iframe 父页面下发的 uxlint checkList 事件
+  window.addEventListener(UXLINT_CHECKLIST_EVENT, onUxlintCheckList)
 
   let initResult = null
   try {
@@ -626,6 +672,9 @@ onMounted(async () => {
     }
     return
   }
+
+  // 保存 iframe 清理函数
+  stopListenFn = initResult.stopListenFn
 
   currentPlatform.value = initResult.platform
 
@@ -961,68 +1010,88 @@ async function selectCase(id) {
 
 async function loadHistoryVersion(rawVersion, deviceType) {
   const version = preprocessVersion(rawVersion)
-  const [devJsonData, designJsonData] = await Promise.all([
-    fetchVersionJson(version.devJsonUrl),
-    fetchVersionJson(version.designJsonUrl),
-  ])
 
-  const [devImageFile, designImageFile] = await Promise.all([
-    resolveImageFile(version.devBase64Data,    'arkui.jpg',  ADMIN_BASE_URL),
-    resolveImageFile(version.designBase64Data, 'design.jpg', ADMIN_BASE_URL),
-  ])
-  const devJsonFile     = jsonToFile(devJsonData,    'arkui.json')
-  const designJsonFile  = jsonToFile(designJsonData, 'design.json')
+  // 以图片 base64 是否为空判断该侧有无数据（mock 把空 JSON 存成 {}、空图片存成 ''）
+  const devEmpty    = !version.devBase64Data
+  const designEmpty = !version.designBase64Data
 
-  const [devParsed, designParsed] = await Promise.all([
-    parseDevUpload(devJsonFile, devImageFile, deviceType),
-    parseDesignUpload(designJsonFile, designImageFile, deviceType),
-  ])
+  // 只解析非空侧，空侧跳过以免解析占位 {} 产生垃圾节点
+  let devParsed    = { canvas: null, nodes: [] }
+  let designParsed = { canvas: null, nodes: [] }
+  let devJsonFile = null,    devImageFile = null
+  let designJsonFile = null, designImageFile = null
 
-  const diffs = (version.problems ?? []).map(p => {
-    try {
-      const diff = JSON.parse(adaptLegacyProblem(p).data)
-      if (p.isNotProblem === 1) diff._isNotProblem = true
-      diff._problemId = String(p.id)
-      diff._problemData = p.data
-      return diff
-    } catch { return null }
-  }).filter(Boolean)
+  if (!devEmpty) {
+    const devJsonData = await fetchVersionJson(version.devJsonUrl)
+    devImageFile = await resolveImageFile(version.devBase64Data, 'arkui.jpg', ADMIN_BASE_URL)
+    devJsonFile  = jsonToFile(devJsonData, 'arkui.json')
+    devParsed    = await parseDevUpload(devJsonFile, devImageFile, deviceType)
+  }
+  if (!designEmpty) {
+    const designJsonData = await fetchVersionJson(version.designJsonUrl)
+    designImageFile = await resolveImageFile(version.designBase64Data, 'design.jpg', ADMIN_BASE_URL)
+    designJsonFile  = jsonToFile(designJsonData, 'design.json')
+    designParsed    = await parseDesignUpload(designJsonFile, designImageFile, deviceType)
+  }
 
-  const arkuiNodeMap  = new Map((devParsed.nodes  ?? []).map(n => [n.id, n]))
-  const designNodeMap = new Map((designParsed.nodes ?? []).map(n => [n.id, n]))
+  // 任一侧为空则无从配对/比对，pairs 与 diffs 均为空
+  let diffs = []
+  let pairs = []
+  if (!devEmpty && !designEmpty) {
+    diffs = (version.problems ?? []).map(p => {
+      try {
+        const diff = JSON.parse(adaptLegacyProblem(p).data)
+        if (p.isNotProblem === 1) diff._isNotProblem = true
+        diff._problemId = String(p.id)
+        diff._problemData = p.data
+        return diff
+      } catch { return null }
+    }).filter(Boolean)
 
-  let pairs
-  if (version._matchedPairIds) {
-    const pairIds = JSON.parse(version._matchedPairIds)
-    pairs = pairIds
-      .map(([aId, dId]) => ({ arkui: arkuiNodeMap.get(aId), design: designNodeMap.get(dId) }))
-      .filter(p => p.arkui && p.design)
-  } else {
-    // 旧版本数据兼容：从 diffs 反推有差异的节点对
-    const pairMap = new Map()
-    for (const diff of diffs) {
-      if (!diff.arkuiNodeId || !diff.designNodeId) continue
-      const key = `${diff.arkuiNodeId}::${diff.designNodeId}`
-      if (!pairMap.has(key)) pairMap.set(key, { arkuiNodeId: diff.arkuiNodeId, designNodeId: diff.designNodeId })
+    const arkuiNodeMap  = new Map((devParsed.nodes  ?? []).map(n => [n.id, n]))
+    const designNodeMap = new Map((designParsed.nodes ?? []).map(n => [n.id, n]))
+
+    if (version._matchedPairIds) {
+      const pairIds = JSON.parse(version._matchedPairIds)
+      pairs = pairIds
+        .map(([aId, dId]) => ({ arkui: arkuiNodeMap.get(aId), design: designNodeMap.get(dId) }))
+        .filter(p => p.arkui && p.design)
+    } else {
+      // 旧版本数据兼容：从 diffs 反推有差异的节点对
+      const pairMap = new Map()
+      for (const diff of diffs) {
+        if (!diff.arkuiNodeId || !diff.designNodeId) continue
+        const key = `${diff.arkuiNodeId}::${diff.designNodeId}`
+        if (!pairMap.has(key)) pairMap.set(key, { arkuiNodeId: diff.arkuiNodeId, designNodeId: diff.designNodeId })
+      }
+      pairs = [...pairMap.values()]
+        .map(p => ({ arkui: arkuiNodeMap.get(p.arkuiNodeId), design: designNodeMap.get(p.designNodeId) }))
+        .filter(p => p.arkui && p.design)
     }
-    pairs = [...pairMap.values()]
-      .map(p => ({ arkui: arkuiNodeMap.get(p.arkuiNodeId), design: designNodeMap.get(p.designNodeId) }))
-      .filter(p => p.arkui && p.design)
   }
 
   const errorCount   = diffs.filter(d => d.severity === 'error').length
   const warningCount = diffs.filter(d => d.severity === 'warning').length
 
+  // 空侧停在上传卡片状态；非空侧正常渲染报告画布
+  devReuploading.value    = devEmpty
+  designReuploading.value = designEmpty
+  devPreview.value        = null
+  designPreview.value     = null
+
   result.value = {
     pairs,
     diffs,
-    canvas:               { arkui: devParsed.canvas, design: designParsed.canvas },
+    canvas:               { arkui: devParsed.canvas ?? designParsed.canvas, design: designParsed.canvas ?? devParsed.canvas },
     stats:                { errorCount, warningCount },
     allArkuiNodes:        devParsed.nodes  ?? [],
     allDesignNodes:       designParsed.nodes ?? [],
     unmatchedDesignNodes: [],
   }
-  blobUrls.value = { arkui: version.devBase64Data, design: version.designBase64Data }
+  blobUrls.value = {
+    arkui:  devEmpty    ? '' : version.devBase64Data,
+    design: designEmpty ? '' : version.designBase64Data,
+  }
   uploadFiles.value = {
     designJson:  designJsonFile,
     arkuiJson:   devJsonFile,

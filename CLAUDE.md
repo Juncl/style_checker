@@ -183,7 +183,6 @@ init/inner/
   checkAuth.ts       — 登录鉴权（当前：空函数）
   mountPixso.ts      — Pixso SDK 初始化（当前：空函数）
   detectIframe.ts    — iframe 环境检测（当前：空函数）
-  trackEntry.ts      — 入口打点埋点（当前：空函数）
   loadDeliverable.ts — 交付物加载（当前：return null）
 
 utils-inner/

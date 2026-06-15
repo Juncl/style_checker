@@ -13,6 +13,8 @@
           <div
             :class="['up-drop', { 'has-file': arkuiJson, 'drag-over': isDragOver }]"
             @click="triggerJson"
+            @dragover.prevent.stop
+            @drop.prevent.stop="e => handleJsonFile(e.dataTransfer.files[0])"
           >
             <img v-if="!arkuiJson" :src="iconJson" class="up-drop-icon" alt="" />
             <img v-else :src="iconSuccess" class="up-drop-icon" alt="" />
@@ -31,6 +33,8 @@
           <div
             :class="['up-drop', { 'has-file': arkuiImage, 'drag-over': isDragOver, 'is-disabled': !arkuiJson }]"
             @click="triggerImage"
+            @dragover.prevent.stop
+            @drop.prevent.stop="e => handleImageFile(e.dataTransfer.files[0])"
           >
             <img v-if="!arkuiImage" :src="iconImage" class="up-drop-icon" alt="" />
             <img v-else :src="iconSuccess" class="up-drop-icon" alt="" />
@@ -79,28 +83,36 @@ function triggerImage() {
   pickerImage.value?.click()
 }
 
-function onJsonPicked(event) {
-  const file = event.target.files?.[0]
+function handleJsonFile(file) {
   if (!file) return
   if (!file.name.endsWith('.json') && !file.name.endsWith('.dump')) {
     ElMessage.error('请上传 .json 或 .dump 文件')
-    event.target.value = ''
     return
   }
   emit('pick-json', file)
+}
+
+function handleImageFile(file) {
+  if (!file) return
+  if (!props.arkuiJson) {
+    ElMessage.warning('请先完成 Step 1：上传 ArkUI 的 JSON')
+    return
+  }
+  const validExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']
+  if (!file.type.startsWith('image/') && !validExts.some(ext => file.name.toLowerCase().endsWith(ext))) {
+    ElMessage.error('请上传图片文件')
+    return
+  }
+  emit('pick-image', file)
+}
+
+function onJsonPicked(event) {
+  handleJsonFile(event.target.files?.[0])
   event.target.value = ''
 }
 
 function onImagePicked(event) {
-  const file = event.target.files?.[0]
-  if (!file) return
-  const validExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']
-  if (!file.type.startsWith('image/') && !validExts.some(ext => file.name.toLowerCase().endsWith(ext))) {
-    ElMessage.error('请上传图片文件')
-    event.target.value = ''
-    return
-  }
-  emit('pick-image', file)
+  handleImageFile(event.target.files?.[0])
   event.target.value = ''
 }
 </script>
