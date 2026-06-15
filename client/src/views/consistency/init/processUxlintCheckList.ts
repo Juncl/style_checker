@@ -78,7 +78,7 @@ export async function processUxlintCheckList(list: UxlintCheckItem[]): Promise<U
       designImageBase64Data: '',
       designJson:            '',
       problems:              [],
-      nodeMatchs:            [],
+      nodeMatchs:            JSON.stringify({ matchedPairIds: [] }),
     })
 
     if (!pageId) throw new Error(`[uxlint] 创建页面 ${item.name} 失败`)

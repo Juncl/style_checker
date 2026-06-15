@@ -557,9 +557,9 @@ router.post('/img/checker', async (req, res) => {
 
     // 检测图片：自动切换视觉模型并注入系统 prompt
     if (messagesHaveImage(messages)) {
-      model = 'glm-4.6v'
+      model = 'qwen-3.5'
       if (!messages[0] || messages[0].role !== 'system') {
-        messages = [{ role: 'system', content: IMG_CHECKER_SYSTEM_PROMPT }, ...messages]
+        messages = [{ role: 'system', content: [{ type: 'input_text', text: IMG_CHECKER_SYSTEM_PROMPT }] }, ...messages]
       }
     } else if (!model) {
       return res.status(400).json({ error: '缺少 model 参数' })
@@ -567,29 +567,18 @@ router.post('/img/checker', async (req, res) => {
 
     const aiResponse = await callAI({ model, messages, stream, ...rest })
 
-    if (!aiResponse.ok) {
-      const errorBody = await aiResponse.text()
-      return res.status(aiResponse.status).json({ error: errorBody })
-    }
-
     if (stream) {
       res.setHeader('Content-Type', 'text/event-stream')
       res.setHeader('Cache-Control', 'no-cache')
       res.setHeader('Connection', 'keep-alive')
-      const reader = aiResponse.body.getReader()
-      const decoder = new TextDecoder()
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        res.write(decoder.decode(value, { stream: true }))
-      }
-      res.end()
+      aiResponse.data.pipe(res)
     } else {
-      const data = await aiResponse.json()
-      res.json(data)
+      res.json(aiResponse.data)
     }
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    const status = err.response?.status || 500
+    const error = err.response?.data || err.message
+    res.status(status).json({ error })
   }
 })
 

@@ -115,7 +115,8 @@ checkList 消息是**异步到达**的（时机与 `initApp` 生命周期无关�
 4. **串行遍历 list**，每项：
    - `fetchText(arkFileUrl)` 拿开发侧 JSON 文本
    - `fetchBase64(imageUrl)` 拿开发侧截图并转 base64
-   - `addConsistencyCheckPage({ ... designJson: '', designImageBase64Data: '', problems: [], nodeMatchs: [] })` 建页面（设计侧入参传**空字符串**、对比项为空；接口回读该版本时设计侧字段为 `null`）
+   - `addConsistencyCheckPage({ ... designJson: '', designImageBase64Data: '', problems: [], nodeMatchs: JSON.stringify({ matchedPairIds: [] }) })` 建页面（设计侧入参传**空字符串**、对比项为空；接口回读该版本时设计侧字段为 `null`）
+     - ⚠️ `problems` 是数组，`nodeMatchs` 约定为**字符串**（`JSON.stringify({ matchedPairIds: [...] })`），空结果即 `matchedPairIds: []`
    - `getResultsByPageId(pageId)` 取该页面最新版本，记为 `lastVersion`
 5. 返回 `{ deliverableId, deliverableList, pageList, lastPage, lastVersion }`
 

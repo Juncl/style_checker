@@ -678,7 +678,11 @@ watch(devPreview, val => {
 })
 watch(designPreview, val => {
   if (val && result.value && designReuploading.value) {
-    ElMessage.success('上传成功，点击右侧重新对比分析')
+    if (inIframe()) {
+      rerunCheck()
+    } else {
+      ElMessage.success('上传成功，点击右侧重新对比分析')
+    }
   }
 })
 

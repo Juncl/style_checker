@@ -286,16 +286,16 @@ async function sendMessage() {
   // 构建 API messages：历史文字 + 当前多模态
   const historyText = messages.value.slice(0, -1).map(m => ({
     role: m.role,
-    content: m.content,
+    content: [{ type: 'input_text', text: m.content }],
   }))
 
   // 当前 user message：有图片则构建多模态 content
   const currentContent = hasImgs
     ? [
         ...currentImgSrcs.map(src => ({ type: 'image_url', image_url: { url: src } })),
-        { type: 'text', text: text || '请对比两张图，分析设计还原差异' },
+        { type: 'input_text', text: text || '请对比两张图，分析设计还原差异' },
       ]
-    : text
+    : [{ type: 'input_text', text: text }]
 
   const apiMessages = [
     ...historyText,
