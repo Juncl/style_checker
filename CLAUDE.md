@@ -325,9 +325,9 @@ export const ADMIN_BASE_URL = '/mock'         // 当前：外网 mock
 
 ---
 
-## 🟡 工作流规则：12 个 case 匹配结果对比优化
+## 🟡 工作流规则：15 个 case 匹配结果对比优化
 
-**触发**：当用户发出"**跑一下所有 12 个 case 的匹配结果**"这类指令时，AI **不要直接跑**，先按以下流程逐步与用户确认：
+**触发**：当用户发出"**跑一下所有 15 个 case 的匹配结果**"这类指令时，AI **不要直接跑**，先按以下流程逐步与用户确认：
 
 1. **先问用户**：是否需要和 `matchNewTemp` 基线做对比优化？
    - 否 → 按用户的实际意图处理（例如只想看当前结果）
@@ -340,11 +340,11 @@ export const ADMIN_BASE_URL = '/mock'         // 当前：外网 mock
    SNAPSHOT_DIR=matchNewTemp-$SUFFIX COMPARE_BASE=matchNewTemp node scripts/snapshotPairs.js
    ```
    - 在 `test/matchNewTemp-MM-DD-HH-MM/`（与 `matchNewTemp` 同级，时间后缀=月-日-时-分）下生成 `hmPhone/` 文件夹
-   - 12 个 case 结果存入该文件夹，并**自动生成 `hmPhone/summary.json`**：逐 case 列出准确率/召回率/多余对相对 `matchNewTemp` 的增减（delta），以及与验证集的剩余差距（配错 + 漏匹配）
+   - 15 个 case 结果存入该文件夹，并**自动生成 `hmPhone/summary.json`**：逐 case 列出准确率/召回率/多余对相对 `matchNewTemp` 的增减（delta），以及与验证集的剩余差距（配错 + 漏匹配）
 
 3. **生成 `summary.md` 并展示给用户**：
 
-   脚本跑完后，AI 读取新目录下的 12 个 case json 和对应验证集，在新目录根部（与 `hmPhone/` 同级）写入 `summary.md`，内容分两部分：
+   脚本跑完后，AI 读取新目录下的 15 个 case json 和对应验证集，在新目录根部（与 `hmPhone/` 同级）写入 `summary.md`，内容分两部分：
 
    **① 汇总表格**（每行一个 case）：
 

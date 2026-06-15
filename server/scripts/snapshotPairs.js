@@ -34,7 +34,7 @@ const COMPARE_BASE = process.env.COMPARE_BASE || ''
 
 const cases = process.argv.slice(2).length
   ? process.argv.slice(2)
-  : Array.from({ length: 12 }, (_, i) => `case${i + 1}`)
+  : Array.from({ length: 15 }, (_, i) => `case${i + 1}`)
 
 const outDir = join(ROOT, 'test', SNAPSHOT_DIR, PLATFORM)
 
