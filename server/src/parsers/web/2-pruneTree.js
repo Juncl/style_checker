@@ -45,7 +45,7 @@ function hardPrune(node, canvasW, canvasH) {
 function hardPruneReason(node, canvasW, canvasH) {
   if (typeof node.style?.opacity === 'number' && node.style.opacity <= 0) return 'opacity-zero'
   if (isOutOfBoundsRect(node.rect, canvasW, canvasH)) return 'out-of-bounds'
-  if (!node.children || node.children.length) { if (node.rect.w <= 0 || node.rect.h <= 0) return 'zero-size' }
+  if (!node.children || node.children.length === 0) { if (node.rect.w <= 0 || node.rect.h <= 0) return 'zero-size' }
   if (node.type === 'text' && String(node.textContent || '').trim().length === 0) return 'empty-text'
   return null
 }

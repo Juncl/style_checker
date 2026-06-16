@@ -2,7 +2,7 @@
   <div class="deliverable-dropdown" ref="dropdownRef">
     <div class="deliverable-trigger" @click.stop="toggleOpen">
       <span class="deliverable-trigger-sep">/</span>
-      <span class="deliverable-trigger-text">{{ selected?.name ?? placeholder }}</span>
+      <span class="deliverable-trigger-text" :title="selected?.name ?? placeholder">{{ selected?.name ?? placeholder }}</span>
       <el-icon class="deliverable-trigger-arrow" :class="{ 'is-open': open }"><ArrowDown /></el-icon>
     </div>
     <Teleport to="body">
@@ -17,11 +17,11 @@
           v-for="item in items"
           :key="item.id"
           class="deliverable-item"
-          :class="{ 'is-selected': selected?.id === item.id }"
+          :class="{ 'is-selected': String(selected?.id) === String(item.id) }"
           @click="onSelect(item)"
         >
           <img v-if="item.devBase64Data" :src="item.devBase64Data" class="deliverable-thumb" />
-          <span class="deliverable-item-name">{{ item.name }}</span>
+          <span class="deliverable-item-name" :title="item.name">{{ item.name }}</span>
         </div>
       </div>
     </Teleport>
@@ -62,7 +62,7 @@ function toggleOpen() {
 }
 
 function onSelect(item) {
-  if (item.id === props.selected?.id) {
+  if (String(item.id) === String(props.selected?.id)) {
     open.value = false
     return
   }
@@ -91,6 +91,7 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   position: relative;
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 
 .deliverable-trigger {
@@ -99,6 +100,7 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   gap: 4px;
   cursor: pointer;
   user-select: none;
+  min-width: 0;
 }
 
 .deliverable-trigger-sep {
@@ -111,6 +113,8 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   font-weight: 500;
   color: var(--octo-text-primary);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .deliverable-trigger-arrow {
@@ -198,6 +202,7 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   white-space: nowrap;
   background: rgba(25, 25, 25, 0.05);
   transition: background 150ms ease;
+  flex-shrink: 0;
 }
 .deliverable-add-btn:hover {
   background: rgba(25, 25, 25, 0.08);
@@ -213,5 +218,6 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   height: 1px;
   background: rgba(223, 223, 223, 1);
   margin: 2px 0;
+  flex-shrink: 0;
 }
 </style>

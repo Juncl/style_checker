@@ -55,6 +55,7 @@
 
       <!-- 传送码快捷替换图标按钮 -->
       <div
+        ref="linkBtnRef"
         class="design-link-btn"
         :class="{ active: linkPopoverVisible }"
         @click.stop="toggleLinkPopover"
@@ -63,10 +64,12 @@
           <path d="M12.0265 9.49321L13.5199 7.99988C15.0465 6.47321 15.0465 3.99988 13.5199 2.47654C11.9965 0.949876 9.52321 0.949876 7.99988 2.47654L6.50321 3.96988M9.49321 12.0265L7.99988 13.5199C6.47321 15.0465 3.99988 15.0465 2.47654 13.5199C0.949876 11.9965 0.949876 9.52321 2.47654 7.99988L3.96988 6.50321" stroke="currentColor" stroke-linecap="round" stroke-width="1" />
           <path d="M6.5 9.5L9.5 6.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1" />
         </svg>
+      </div>
 
-        <!-- 悬浮卡片 -->
+      <!-- 传送码弹出卡片（Teleport 到 body，避免被画布 z-index 遮挡） -->
+      <Teleport to="body">
         <transition name="link-popover-fade">
-          <div v-if="linkPopoverVisible" class="link-popover" @click.stop>
+          <div v-if="linkPopoverVisible" class="link-popover" :style="linkPopoverStyle" @click.stop>
             <div class="link-popover-inner">
               <el-input
                 v-model="linkCode"
@@ -87,7 +90,7 @@
             </div>
           </div>
         </transition>
-      </div>
+      </Teleport>
 
       <span class="up-tab-text">设计页面</span>
       <!-- upload 模式：有预览时显示重新上传 -->
@@ -114,7 +117,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import DeliverableDropdown from './DeliverableDropdown.vue'
 import { getJsonImage } from '../../utils-inner/getJsonImage'
@@ -148,12 +151,25 @@ const emit = defineEmits([
   'toggle-ai-chat',
 ])
 
+const linkBtnRef         = ref(null)
 const linkPopoverVisible = ref(false)
+const linkPopoverStyle   = ref({})
 const linkCode           = ref('')
 const linkLoading        = ref(false)
 
+function updateLinkPopoverPosition() {
+  if (!linkBtnRef.value) return
+  const rect = linkBtnRef.value.getBoundingClientRect()
+  linkPopoverStyle.value = {
+    position: 'fixed',
+    top:  `${rect.bottom + 8}px`,
+    left: `${rect.left}px`,
+  }
+}
+
 function toggleLinkPopover() {
   linkPopoverVisible.value = !linkPopoverVisible.value
+  if (linkPopoverVisible.value) nextTick(updateLinkPopoverPosition)
 }
 
 function clearLinkCode() {
@@ -217,6 +233,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 
 .c-tabbar-col {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -232,7 +250,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 
 /* ── 传送码快捷替换图标按钮 ── */
 .design-link-btn {
-  position: relative;
   width: 22px;
   height: 22px;
   border-radius: 4px;
@@ -249,18 +266,17 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   color: var(--octo-primary);
   background: #E6F2FD;
 }
+</style>
 
-/* ── 悬浮卡片 ── */
+<style>
+/* ── 传送码弹出卡片（Teleport 到 body，非 scoped）── */
 .link-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
   width: 240px;
   background: #ffffff;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
   padding: 4px;
-  z-index: 1000;
+  z-index: 9999;
 }
 
 .link-popover-inner {
@@ -272,7 +288,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   gap: 12px;
 }
 
-.link-popover-input :deep(textarea) {
+.link-popover-input textarea {
   font-size: 12px;
   line-height: 1.6;
   color: var(--octo-primary);
@@ -281,7 +297,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   border: none;
   box-shadow: none;
 }
-.link-popover-input :deep(.el-textarea__inner) {
+.link-popover-input .el-textarea__inner {
   background: transparent;
   border: none;
   box-shadow: none !important;
@@ -289,7 +305,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   font-size: 12px;
   color: var(--octo-primary);
 }
-.link-popover-input :deep(.el-textarea__inner::placeholder) {
+.link-popover-input .el-textarea__inner::placeholder {
   color: #aaaaaa;
 }
 

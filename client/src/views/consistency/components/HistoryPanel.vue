@@ -1,6 +1,6 @@
 <template>
   <transition name="history-slide">
-    <div v-if="visible" class="history-panel">
+    <div v-show="visible" class="history-panel">
       <button class="history-close" @click.stop="$emit('close')">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
           <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -11,7 +11,7 @@
         <div
           v-for="(item, index) in items"
           :key="item.id"
-          :class="['history-item', { 'is-active': String(item.id) === String(workingVersionId) }]"
+          :class="['history-item', { 'is-active': String(item.id) === localActiveId }]"
           @click="handleView(item)"
         >
           <div class="timeline-col">
@@ -33,6 +33,8 @@
 </template>
 
 <script setup>
+import { ref, watch } from 'vue'
+
 const props = defineProps({
   visible:          { type: Boolean,            default: false },
   items:            { type: Array,              default: () => [] },
@@ -40,6 +42,13 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close', 'view'])
+
+// 本地维护高亮 id，点击后立即更新，不依赖父组件的异步 workingVersionId 更新
+const localActiveId = ref(null)
+
+watch(() => props.workingVersionId, (val) => {
+  localActiveId.value = val != null ? String(val) : null
+}, { immediate: true })
 
 function formatTime(ts) {
   if (!ts) return '—'
@@ -49,10 +58,11 @@ function formatTime(ts) {
 }
 
 function handleView(item) {
-  if (String(item.id) === String(props.workingVersionId)) {
+  if (String(item.id) === localActiveId.value) {
     emit('close')
     return
   }
+  localActiveId.value = String(item.id)
   emit('view', item)
 }
 </script>

@@ -1088,12 +1088,21 @@ async function onSelectPage(page) {
   }
 }
 
-function onHistoryView(item) {
+async function onHistoryView(item) {
   const dId = workingDeliverable.value?.id
   const pId = workingPage.value?.id
   if (!dId || !pId) return
+  workingVersionId.value = item.id ? String(item.id) : null
   setUrlParams({ deliverableId: String(dId), pageId: String(pId), versionId: String(item.id) })
-  window.location.reload()
+  loading.value = true
+  try {
+    await loadHistoryVersion(item, workingPage.value?.deviceType ?? currentPlatform.value)
+  } catch (e) {
+    console.error('加载历史版本失败', e)
+    ElMessage.warning('加载历史版本失败')
+  } finally {
+    loading.value = false
+  }
 }
 
 async function submitResult() {
