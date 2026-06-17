@@ -486,9 +486,19 @@ router.post(
 
 // ── AI 图片检查 ───────────────────────────────────────────────────────────────
 router.post('/img/checker', async (req, res) => {
+  const ac = new AbortController()
+  let aiStream = null
+
+  // 客户端断开（前端 abort / 关闭对话框）时，终止对 AI 的调用
+  req.on('close', () => {
+    ac.abort()
+    aiStream?.destroy()
+  })
+
   try {
-    const result = await handleImgCheck(req.body)
+    const result = await handleImgCheck({ ...req.body, signal: ac.signal })
     if (req.body.stream) {
+      aiStream = result
       res.setHeader('Content-Type', 'text/event-stream')
       res.setHeader('Cache-Control', 'no-cache')
       res.setHeader('Connection', 'keep-alive')
@@ -497,9 +507,10 @@ router.post('/img/checker', async (req, res) => {
       res.json(result)
     }
   } catch (err) {
+    // 客户端主动中止，不返回错误
+    if (err.code === 'ERR_CANCELED' || err.name === 'CanceledError') return
     const status = err.statusCode || err.response?.status || 500
-    const error = err.message
-    res.status(status).json({ error })
+    res.status(status).json({ error: err.message })
   }
 })
 

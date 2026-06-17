@@ -28,7 +28,7 @@ async function callAI({ model, messages, stream, ...rest }) {
       'Content-Type': 'application/json',
       'Authorization': VLM_AUTH,
     },
-    data: JSON.stringify({ model, messages: messages, stream, ...rest }),
+    data: JSON.stringify({ model, messages, stream, ...rest }),
     responseType: stream ? 'stream' : 'json',
   })
   return response.data

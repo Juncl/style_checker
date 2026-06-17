@@ -14,7 +14,7 @@ export const VLM_CONFIG = {
     apikey: 'Bearer ee9949a9ddea4f019772e2d3abbf15bf.DpNYbrsH5iYt85cT',
   },
   INNER: {
-    model: '',
+    model: 'Qwen3.5-27B-Claude-4.6',
     url: 'http://',
     apikey: 'xxxx',
   },

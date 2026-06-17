@@ -156,7 +156,7 @@
           ref="inputEl"
           v-model="inputText"
           class="ai-textarea"
-          :placeholder="imgSlots.some(s => s) ? '补充说明（可选）…' : '输入消息… Enter 发送，Shift+Enter 换行'"
+          :placeholder="hasBothImgs ? '补充说明（可选），Enter 发送…' : '请先上传设计稿和实现图'"
           rows="3"
           :disabled="streaming"
           @keydown="onKeydown"
@@ -190,7 +190,7 @@ import DOMPurify from 'dompurify'
 
 marked.setOptions({ breaks: true })
 
-defineProps({
+const props = defineProps({
   open: { type: Boolean, default: false },
 })
 defineEmits(['close'])
@@ -299,9 +299,26 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  abortCurrentRequest()
   window.removeEventListener('resize',    onWindowResize)
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup',  onMouseUp)
+})
+
+// ── 请求中止 ─────────────────────────────────────────────────────────────────
+
+let currentAbortController = null
+
+function abortCurrentRequest() {
+  if (currentAbortController) {
+    currentAbortController.abort()
+    currentAbortController = null
+  }
+}
+
+// 对话框关闭时中止正在进行的请求
+watch(() => props.open, (val) => {
+  if (!val) abortCurrentRequest()
 })
 
 // ── 消息状态 ─────────────────────────────────────────────────────────────────
@@ -323,9 +340,8 @@ let userScrolledThink = false
 
 const imgSlots = ref([null, null])
 
-const canSend = computed(() =>
-  !streaming.value && (imgSlots.value.some(s => s) || inputText.value.trim() !== '')
-)
+const hasBothImgs = computed(() => imgSlots.value.every(s => s))
+const canSend = computed(() => !streaming.value && hasBothImgs.value)
 
 function clearMessages() {
   if (streaming.value) return
@@ -396,16 +412,14 @@ function removeImg(i) {
 }
 
 async function sendMessage() {
-  const text    = inputText.value.trim()
-  const hasImgs = imgSlots.value.some(s => s)
-  if (!hasImgs && !text) return
-  if (streaming.value) return
+  if (!hasBothImgs.value || streaming.value) return
+  const text = inputText.value.trim()
 
-  const currentImgSrcs = imgSlots.value.filter(s => s).map(s => s.preview)
+  const currentImgSrcs = imgSlots.value.map(s => s.preview)
 
   messages.value.push({
     role: 'user',
-    content: text || (hasImgs ? '请对比两张图，分析设计还原差异' : ''),
+    content: text || '请对比两张图',
     images: currentImgSrcs.length ? currentImgSrcs : undefined,
   })
   inputText.value  = ''
@@ -424,17 +438,17 @@ async function sendMessage() {
     content: [{ type: 'input_text', text: m.content }],
   }))
 
-  const currentContent = hasImgs
-    ? [
-        ...currentImgSrcs.map(src => ({ type: 'image_url', image_url: { url: src } })),
-        { type: 'input_text', text: text || '请对比两张图' },
-      ]
-    : [{ type: 'input_text', text: text }]
+  const currentContent = [
+    ...currentImgSrcs.map(src => ({ type: 'image_url', image_url: { url: src } })),
+    { type: 'input_text', text: text || '请对比两张图' },
+  ]
 
   const apiMessages = [
     ...historyText,
     { role: 'user', content: currentContent },
   ]
+
+  currentAbortController = new AbortController()
 
   try {
     const response = await fetch('/devlint/api/img/checker', {
@@ -444,6 +458,7 @@ async function sendMessage() {
         messages: apiMessages,
         stream: true,
       }),
+      signal: currentAbortController.signal,
     })
 
     if (!response.ok) {
@@ -492,8 +507,11 @@ async function sendMessage() {
       thinkCollapsed: true,
     })
   } catch (e) {
-    messages.value.push({ role: 'assistant', content: `⚠️ 请求失败：${e.message}` })
+    if (e.name !== 'AbortError') {
+      messages.value.push({ role: 'assistant', content: `⚠️ 请求失败：${e.message}` })
+    }
   } finally {
+    currentAbortController        = null
     streaming.value               = false
     streamingMain.value           = ''
     streamingThink.value          = ''
