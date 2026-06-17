@@ -8,15 +8,11 @@
       </div>
     </div>
 
-    <!-- AI 检视侧边栏（仅 debugger 模式下开启） -->
-    <AiChatDrawer :open="aiChatOpen" @close="aiChatOpen = false" />
-
     <!-- 中间主区 -->
     <main class="center-panel up-board">
       <ConsistencyTabbar
         :view-mode="result ? 'report' : 'upload'"
         :debug-mode="debugMode"
-        @toggle-ai-chat="aiChatOpen = !aiChatOpen"
         :deliverables="deliverables"
         :selected-deliverable="workingDeliverable"
         :pages="pages"
@@ -136,6 +132,23 @@
         @history-view="onHistoryView"
       />
     </aside>
+
+    <!-- AI 悬浮小球 + 对话框（仅 debugger 模式） -->
+    <Teleport to="body">
+      <template v-if="debugMode">
+        <button
+          class="ai-float-ball"
+          :class="{ 'ai-float-ball--active': aiChatOpen }"
+          title="AI 检视助手"
+          @click="aiChatOpen = !aiChatOpen"
+        >
+          <svg viewBox="0 0 20 20" width="10" height="10" fill="none">
+            <path d="M10 2L12.5 8H19L13.5 11.5L16 18L10 14.5L4 18L6.5 11.5L1 8H7.5L10 2Z" fill="white" opacity="0.95"/>
+          </svg>
+        </button>
+        <AiChatDrawer :open="aiChatOpen" @close="aiChatOpen = false" />
+      </template>
+    </Teleport>
 
     <div
       id="pixso_render"
@@ -1253,3 +1266,34 @@ function onDiffSelect(diff) {
   // spacing diff 不触发节点高亮
 }
 </script>
+
+<style>
+.ai-float-ball {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #0067D1;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 103, 209, 0.4);
+  z-index: 9998;
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+.ai-float-ball:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 16px rgba(0, 103, 209, 0.5);
+}
+.ai-float-ball:active {
+  transform: scale(0.94);
+}
+.ai-float-ball--active {
+  background: #005aba;
+  box-shadow: 0 4px 12px rgba(0, 90, 186, 0.5);
+}
+</style>

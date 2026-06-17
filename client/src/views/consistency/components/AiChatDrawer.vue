@@ -1,15 +1,22 @@
 <template>
-  <transition name="ai-drawer">
-    <div v-show="open" class="ai-chat-drawer">
-      <!-- 头部 -->
-      <div class="ai-drawer-header">
+  <transition name="ai-dialog">
+    <div
+      v-if="open"
+      class="ai-float-dialog"
+      :style="{ right: posRight + 'px', top: posTop + 'px', width: dlgWidth + 'px', height: dlgHeight + 'px' }"
+    >
+      <!-- 头部（拖拽区域） -->
+      <div class="ai-drawer-header" @mousedown="onDragStart">
         <div class="ai-header-left">
           <svg class="ai-spark-icon" viewBox="0 0 16 16" width="15" height="15" fill="none">
             <path d="M8 1.5L9.8 6.2H14.5L10.5 8.8L12.2 13.5L8 10.8L3.8 13.5L5.5 8.8L1.5 6.2H6.2L8 1.5Z" fill="#0067D1" opacity="0.9"/>
           </svg>
           <span class="ai-drawer-title">AI 检视助手</span>
+          <svg class="ai-drag-hint" viewBox="0 0 16 16" width="12" height="12" fill="none" style="opacity:0.35;margin-left:4px">
+            <path d="M3 5H13M3 8H13M3 11H13" stroke="#555" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
         </div>
-        <div class="ai-header-actions">
+        <div class="ai-header-actions" @mousedown.stop>
           <button class="ai-action-btn" title="清空对话" @click="clearMessages">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none">
               <path d="M3 4H13M5 4V3H11V4M5.5 7V12M10.5 7V12M4 4L5 13H11L12 4H4Z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -93,7 +100,7 @@
               <span>思考过程</span>
               <span v-if="!thinkDone" class="ai-think-badge">思考中</span>
             </button>
-            <div class="ai-think-body">{{ streamingThink }}</div>
+            <div ref="thinkBodyEl" class="ai-think-body" @scroll.passive="onThinkScroll">{{ streamingThink }}</div>
           </div>
           <!-- 流式正文区域 -->
           <div class="ai-msg-bubble ai-msg-streaming">
@@ -166,6 +173,9 @@
         </button>
       </div>
 
+      <!-- 右下角 resize handle -->
+      <div class="ai-resize-handle" @mousedown.stop="onResizeStart"></div>
+
       <!-- 隐藏的 file input -->
       <input ref="fileInput0" type="file" accept="image/*" style="display:none" @change="e => onFileChange(0, e)" />
       <input ref="fileInput1" type="file" accept="image/*" style="display:none" @change="e => onFileChange(1, e)" />
@@ -174,7 +184,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, watch } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -189,22 +199,130 @@ function renderMd(content) {
   return DOMPurify.sanitize(marked.parse(content || ''))
 }
 
+// ── 位置 & 尺寸 ─────────────────────────────────────────────────────────────
+
+const MIN_W = 280, MIN_H = 360
+const MARGIN = 24
+const BALL_AREA = 44 + MARGIN + 10  // 悬浮球高度 + 底部间距 + 对话框与球的间隔
+
+const posRight  = ref(MARGIN)
+const posTop    = ref(0)
+const dlgWidth  = ref(360)
+const dlgHeight = ref(520)
+
+function initTop() {
+  const h = typeof window !== 'undefined' ? window.innerHeight : 800
+  posTop.value = Math.max(0, h - dlgHeight.value - BALL_AREA)
+}
+
+// ── 拖拽 & 缩放 ─────────────────────────────────────────────────────────────
+
+let dragMode  = 'none'  // 'drag' | 'resize'
+let dragStart = {}
+
+function onDragStart(e) {
+  if (e.button !== 0) return
+  dragMode = 'drag'
+  dragStart = {
+    mouseX: e.clientX, mouseY: e.clientY,
+    elRight: posRight.value, elTop: posTop.value,
+  }
+  document.body.style.cursor     = 'grabbing'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup',  onMouseUp)
+}
+
+function onResizeStart(e) {
+  if (e.button !== 0) return
+  dragMode = 'resize'
+  dragStart = {
+    mouseX: e.clientX, mouseY: e.clientY,
+    elWidth: dlgWidth.value, elHeight: dlgHeight.value, elRight: posRight.value,
+  }
+  document.body.style.cursor     = 'se-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup',  onMouseUp)
+}
+
+function onMouseMove(e) {
+  const dx = e.clientX - dragStart.mouseX
+  const dy = e.clientY - dragStart.mouseY
+
+  if (dragMode === 'drag') {
+    // right 定位：向右拖 dx 为正，right 减小
+    const newRight = dragStart.elRight - dx
+    const newTop   = dragStart.elTop   + dy
+    const maxRight = window.innerWidth  - dlgWidth.value
+    const maxTop   = window.innerHeight - dlgHeight.value
+    posRight.value = Math.max(0, Math.min(maxRight, newRight))
+    posTop.value   = Math.max(0, Math.min(maxTop,   newTop))
+
+  } else if (dragMode === 'resize') {
+    // 保持左边界不动，右下角向右下拖 = 宽高增大，right 相应减小
+    const oldLeft  = window.innerWidth - dragStart.elWidth - dragStart.elRight
+    const newWidth = Math.max(MIN_W, Math.min(window.innerWidth  - oldLeft,         dragStart.elWidth  + dx))
+    const newHeight= Math.max(MIN_H, Math.min(window.innerHeight - posTop.value, dragStart.elHeight + dy))
+    dlgWidth.value  = newWidth
+    dlgHeight.value = newHeight
+    posRight.value  = Math.max(0, window.innerWidth - oldLeft - newWidth)
+  }
+}
+
+function onMouseUp() {
+  dragMode = 'none'
+  document.body.style.cursor     = ''
+  document.body.style.userSelect = ''
+  window.removeEventListener('mousemove', onMouseMove)
+  window.removeEventListener('mouseup',  onMouseUp)
+}
+
+// ── 窗口 resize：保持右边距，约束尺寸不溢出 ─────────────────────────────────
+
+function onWindowResize() {
+  const w = window.innerWidth
+  const h = window.innerHeight
+  // 宽度超出时收缩，保持 right 不变
+  if (posRight.value + dlgWidth.value > w) {
+    dlgWidth.value = Math.max(MIN_W, w - posRight.value)
+  }
+  // 高度超出时上移，保持 right 不变
+  if (posTop.value + dlgHeight.value > h) {
+    posTop.value = Math.max(0, h - dlgHeight.value)
+  }
+}
+
+onMounted(() => {
+  initTop()
+  window.addEventListener('resize', onWindowResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize',    onWindowResize)
+  window.removeEventListener('mousemove', onMouseMove)
+  window.removeEventListener('mouseup',  onMouseUp)
+})
+
+// ── 消息状态 ─────────────────────────────────────────────────────────────────
+
 const messages                  = ref([])
 const inputText                 = ref('')
 const streaming                 = ref(false)
-const streamingMain             = ref('')   // 正文部分
-const streamingThink            = ref('')   // think 部分
-const rawBuffer                 = ref('')   // 原始累积，用于解析 <think> 标签
+const streamingMain             = ref('')
+const streamingThink            = ref('')
+const rawBuffer                 = ref('')
 const thinkDone                 = ref(false)
 const streamingThinkCollapsed   = ref(false)
 const messagesEl                = ref(null)
+const thinkBodyEl               = ref(null)
 const fileInput0                = ref(null)
 const fileInput1                = ref(null)
 
-// imgSlots[0] = 设计稿, imgSlots[1] = 实现图，各为 { preview: dataURL } | null
+let userScrolledThink = false
+
 const imgSlots = ref([null, null])
 
-// 有图片时即使无文字也可发送；无图片时需有文字
 const canSend = computed(() =>
   !streaming.value && (imgSlots.value.some(s => s) || inputText.value.trim() !== '')
 )
@@ -220,11 +338,31 @@ function scrollToBottom() {
   })
 }
 
-watch([streamingThink, streamingMain], scrollToBottom)
+function onThinkScroll() {
+  const el = thinkBodyEl.value
+  if (!el) return
+  userScrolledThink = el.scrollTop + el.clientHeight < el.scrollHeight - 10
+}
 
-// think 结束后延迟折叠，给用户短暂看的时间
+function scrollThinkToBottom() {
+  if (userScrolledThink) return
+  nextTick(() => {
+    const el = thinkBodyEl.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
+
+watch(streamingMain, scrollToBottom)
+watch(streamingThink, () => {
+  scrollToBottom()
+  scrollThinkToBottom()
+})
+
 watch(thinkDone, (val) => {
-  if (val) setTimeout(() => { streamingThinkCollapsed.value = true }, 600)
+  if (val) {
+    userScrolledThink = false
+    setTimeout(() => { streamingThinkCollapsed.value = true }, 600)
+  }
 })
 
 function onKeydown(e) {
@@ -263,10 +401,8 @@ async function sendMessage() {
   if (!hasImgs && !text) return
   if (streaming.value) return
 
-  // 发送前记录当前图片（后面会清空 imgSlots）
   const currentImgSrcs = imgSlots.value.filter(s => s).map(s => s.preview)
 
-  // 显示用消息（文字 + 缩略图）
   messages.value.push({
     role: 'user',
     content: text || (hasImgs ? '请对比两张图，分析设计还原差异' : ''),
@@ -283,17 +419,15 @@ async function sendMessage() {
   thinkDone.value               = false
   streamingThinkCollapsed.value = false
 
-  // 构建 API messages：历史文字 + 当前多模态
   const historyText = messages.value.slice(0, -1).map(m => ({
     role: m.role,
     content: [{ type: 'input_text', text: m.content }],
   }))
 
-  // 当前 user message：有图片则构建多模态 content
   const currentContent = hasImgs
     ? [
         ...currentImgSrcs.map(src => ({ type: 'image_url', image_url: { url: src } })),
-        { type: 'input_text', text: text || '请对比两张图，分析设计还原差异' },
+        { type: 'input_text', text: text || '请对比两张图' },
       ]
     : [{ type: 'input_text', text: text }]
 
@@ -307,7 +441,6 @@ async function sendMessage() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'GLM-4.5-Air',  // 后台检测到图片时会自动覆盖为 glm-4.6v
         messages: apiMessages,
         stream: true,
       }),
@@ -336,13 +469,10 @@ async function sendMessage() {
           const json  = JSON.parse(data)
           const delta = json.choices?.[0]?.delta
 
-          // 方式1: reasoning_content 独立字段（部分 GLM 推理模型）
           if (delta?.reasoning_content) {
             streamingThink.value += delta.reasoning_content
           }
-          // 方式2: content 字段（可能内嵌 <think> 标签）
           if (delta?.content) {
-            // 若已通过 reasoning_content 收到 think，则 content 是正文
             if (streamingThink.value && rawBuffer.value === '') {
               if (!thinkDone.value) thinkDone.value = true
               streamingMain.value += delta.content
@@ -373,24 +503,20 @@ async function sendMessage() {
   }
 }
 
-// 解析 rawBuffer 里的 <think>...</think> 标签
 function parseThinkBuffer() {
   const raw = rawBuffer.value
   const openIdx  = raw.indexOf('<think>')
   const closeIdx = raw.indexOf('</think>')
 
   if (openIdx === -1) {
-    // 没有 think 标签，全部是正文
     streamingMain.value = raw
     return
   }
   if (closeIdx === -1) {
-    // think 还未关闭，在 think 区域内
     streamingThink.value = raw.substring(openIdx + 7)
     streamingMain.value  = ''
     return
   }
-  // think 已关闭
   streamingThink.value = raw.substring(openIdx + 7, closeIdx)
   streamingMain.value  = raw.substring(closeIdx + 8)
   if (!thinkDone.value) thinkDone.value = true
@@ -398,40 +524,66 @@ function parseThinkBuffer() {
 </script>
 
 <style scoped>
-.ai-chat-drawer {
-  width: 320px;
-  min-width: 320px;
-  flex-shrink: 0;
-  height: 100%;
+/* ── 悬浮对话框主体 ── */
+.ai-float-dialog {
+  position: fixed;
+  z-index: 9999;
+  min-width: 280px;
+  min-height: 360px;
   display: flex;
   flex-direction: column;
   background: #ffffff;
-  border-right: 1px solid var(--octo-border-separator, #e8eaed);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.08);
   overflow: hidden;
+  border: 1px solid var(--octo-border-separator, #e8eaed);
 }
 
-/* ── 滑入/挤压动画 ── */
-.ai-drawer-enter-active,
-.ai-drawer-leave-active {
-  transition: width 280ms cubic-bezier(0.4, 0, 0.2, 1),
-              min-width 280ms cubic-bezier(0.4, 0, 0.2, 1),
-              opacity 200ms ease;
-  overflow: hidden;
+/* ── 右下角 resize handle ── */
+.ai-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  cursor: se-resize;
+  z-index: 1;
 }
-.ai-drawer-enter-from,
-.ai-drawer-leave-to {
-  width: 0 !important;
-  min-width: 0 !important;
+.ai-resize-handle::before,
+.ai-resize-handle::after {
+  content: '';
+  position: absolute;
+  background: #c8cdd5;
+  border-radius: 1px;
+}
+.ai-resize-handle::before {
+  width: 8px; height: 1.5px;
+  right: 3px; bottom: 7px;
+  transform: rotate(-45deg);
+}
+.ai-resize-handle::after {
+  width: 5px; height: 1.5px;
+  right: 3px; bottom: 4px;
+  transform: rotate(-45deg);
+}
+
+/* ── 出现/消失动画 ── */
+.ai-dialog-enter-active,
+.ai-dialog-leave-active {
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+.ai-dialog-enter-from,
+.ai-dialog-leave-to {
   opacity: 0;
+  transform: scale(0.96) translateY(8px);
 }
-.ai-drawer-enter-to,
-.ai-drawer-leave-from {
-  width: 320px;
-  min-width: 320px;
+.ai-dialog-enter-to,
+.ai-dialog-leave-from {
   opacity: 1;
+  transform: scale(1) translateY(0);
 }
 
-/* ── 头部 ── */
+/* ── 头部（拖拽区域） ── */
 .ai-drawer-header {
   display: flex;
   align-items: center;
@@ -441,6 +593,8 @@ function parseThinkBuffer() {
   flex-shrink: 0;
   border-bottom: 1px solid var(--octo-border-separator, #e8eaed);
   background: #fafbfc;
+  cursor: move;
+  user-select: none;
 }
 .ai-header-left { display: flex; align-items: center; gap: 6px; }
 .ai-spark-icon  { flex-shrink: 0; }
@@ -450,7 +604,11 @@ function parseThinkBuffer() {
   color: var(--octo-text-primary, #191919);
   white-space: nowrap;
 }
-.ai-header-actions { display: flex; gap: 2px; }
+.ai-header-actions {
+  display: flex;
+  gap: 2px;
+  cursor: default;
+}
 .ai-action-btn {
   width: 24px; height: 24px;
   border: none; background: transparent;
@@ -494,7 +652,6 @@ function parseThinkBuffer() {
   background: #f7f5ff;
   border-left: 2px solid #b8b0e8;
   overflow: hidden;
-  transition: none;
 }
 .ai-think-header {
   display: flex; align-items: center; gap: 5px;
@@ -586,7 +743,6 @@ function parseThinkBuffer() {
   margin: 2px 0;
   line-height: 1.6;
 }
-/* 表格 */
 .ai-msg-md :deep(table) {
   width: 100%;
   border-collapse: collapse;
@@ -613,7 +769,6 @@ function parseThinkBuffer() {
 .ai-msg-md :deep(tr:nth-child(even) td) {
   background: #f8fafc;
 }
-/* 代码 */
 .ai-msg-md :deep(code) {
   background: #e8ecf0;
   border-radius: 3px;

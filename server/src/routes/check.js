@@ -20,7 +20,7 @@ import { compareAll }  from '../comparators/styleComparator.js'
 import { compareSpatialRelations } from '../comparators/spatialComparator.js'
 import { getPlatform, resolvePlatform } from '../config/platforms.js'
 import { buildDumpTree } from '../parsers/arkui/1-buildDumpTree.js'
-import { callAI } from '../AIChecker/imgCheck.js'
+import { handleImgCheck } from '../AIChecker/imgCheck.js'
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage() })
@@ -484,100 +484,21 @@ router.post(
   }
 )
 
-// ── AI 图片检查 —— 设计还原对比系统 Prompt ───────────────────────────────────
-const IMG_CHECKER_SYSTEM_PROMPT = `你是一名经验丰富的 UI 视觉还原检查员，擅长通过肉眼对比设计稿与开发实现截图，发现所有视觉样式差异。
-
-【输入图片约定】
-- 图片1：设计稿截图（Figma / Pixso 导出）
-- 图片2：开发实现截图（ArkUI / Web 实际渲染）
-
-如果只提供一张图片，则对该图片做整体 UI 视觉样式质量评估。
-
-【检查范围】
-逐一扫描画面中每一个可见元素，对以下属性进行对比，**不遗漏任何节点**：
-- **字号**：文字大小是否一致
-- **字重**：文字粗细（粗体/细体）是否一致
-- **字色**：文字颜色是否一致
-- **填充色/背景色**：纯色、渐变方向、渐变色值是否一致
-- **圆角**：各角大小是否一致，四角分别检查
-- **描边**：边框粗细与颜色是否一致
-- **透明度**：元素整体透明度是否一致
-- **模糊**：高斯模糊/背景模糊效果是否一致
-- **投影**：阴影颜色、偏移量、模糊半径是否一致
-
-【不检查的项目】
-文本内容、行高、字间距、对齐方式、字体类型——不在检查范围内，不要输出。
-
-【数值精度原则】
-- 能从图中直接识别的精确值（颜色 #RRGGBB、字号 px/sp、圆角 px、描边 px）**必须写出精确值**
-- 无法精确量化的用感知描述（如"偏小约 2px"、"颜色偏暖"）
-- **不得臆造无法确认的数值**
-
-【输出格式】
-使用 Markdown 输出，格式严格如下：
-
-## 总体还原度
-
-**[高 / 中 / 低]**（目测还原比例）
-
-一句话总结整体情况。
-
-## 全量差异清单
-
-### 🔴 明显差异
-
-| # | 区域/元素 | 属性 | 设计稿 | 实现 | 视觉描述 |
-|---|---|---|---|---|---|
-| 1 | ... | ... | ... | ... | ... |
-
-### 🟡 轻微差异
-
-| # | 区域/元素 | 属性 | 设计稿 | 实现 | 视觉描述 |
-|---|---|---|---|---|---|
-| 1 | ... | ... | ... | ... | ... |
-
-如某类无差异，该小节写"无"。如整体无差异，写"视觉上未发现明显还原偏差"。`
-
-// ── 判断 messages 中是否携带图片 ──────────────────────────────────────────────
-function messagesHaveImage(messages) {
-  return Array.isArray(messages) && messages.some(
-    msg => Array.isArray(msg.content) && msg.content.some(c => c.type === 'image_url')
-  )
-}
-
-
-// ── AI 图片检查（智谱 GLM）────────────────────────────────────────────────────
+// ── AI 图片检查 ───────────────────────────────────────────────────────────────
 router.post('/img/checker', async (req, res) => {
   try {
-    let { model, messages, stream, ...rest } = req.body
-
-    if (!messages) {
-      return res.status(400).json({ error: '缺少 messages 参数' })
-    }
-
-    // 检测图片：自动切换视觉模型并注入系统 prompt
-    if (messagesHaveImage(messages)) {
-      model = 'qwen-3.5'
-      if (!messages[0] || messages[0].role !== 'system') {
-        messages = [{ role: 'system', content: [{ type: 'input_text', text: IMG_CHECKER_SYSTEM_PROMPT }] }, ...messages]
-      }
-    } else if (!model) {
-      return res.status(400).json({ error: '缺少 model 参数' })
-    }
-
-    const aiResponse = await callAI({ model, messages, stream, ...rest })
-
-    if (stream) {
+    const result = await handleImgCheck(req.body)
+    if (req.body.stream) {
       res.setHeader('Content-Type', 'text/event-stream')
       res.setHeader('Cache-Control', 'no-cache')
       res.setHeader('Connection', 'keep-alive')
-      aiResponse.data.pipe(res)
+      result.pipe(res)
     } else {
-      res.json(aiResponse.data)
+      res.json(result)
     }
   } catch (err) {
-    const status = err.response?.status || 500
-    const error = err.response?.data || err.message
+    const status = err.statusCode || err.response?.status || 500
+    const error = err.message
     res.status(status).json({ error })
   }
 })

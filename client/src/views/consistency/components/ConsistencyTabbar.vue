@@ -6,8 +6,6 @@
         :src="iconDev"
         alt=""
         class="up-tab-icon"
-        :class="{ 'up-tab-icon--ai-trigger': debugMode }"
-        @click.stop="onDevIconClick"
       />
       <span class="up-tab-text">开发环境</span>
       <DeliverableDropdown
@@ -148,7 +146,6 @@ const emit = defineEmits([
   'recheck-dev',
   'recheck-design',
   'replace-design',
-  'toggle-ai-chat',
 ])
 
 const linkBtnRef         = ref(null)
@@ -207,10 +204,6 @@ async function confirmLink() {
   } finally {
     linkLoading.value = false
   }
-}
-
-function onDevIconClick() {
-  if (props.debugMode) emit('toggle-ai-chat')
 }
 
 function onDocClick() {
