@@ -43,6 +43,7 @@
     :hover-pair="hoverPairForDiff"
     :debug-mode="debugMode"
     :version-id="workingVersionId"
+    :platform="platform"
     @select="$emit('diff-select', $event)"
     @diff-hover="$emit('diff-hover', $event)"
   />
@@ -109,6 +110,7 @@ const props = defineProps({
   versionList:       { type: Array,              default: () => [] },
   workingVersionId:  { type: [Number, String],   default: null },
   closeHistoryKey:   { type: Number,             default: 0 },
+  platform:          { type: String,             default: 'hmPhone' },
 })
 
 const emit = defineEmits([

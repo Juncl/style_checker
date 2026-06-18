@@ -129,6 +129,7 @@
         <ImagePanel
           v-else
           ref="devPanelRef"
+          :platform="currentPlatform"
           :src="arkuiImgSrc"
           :highlight="null"
           :highlight-pair="arkuiSpacingMark"
@@ -193,6 +194,7 @@
         <ImagePanel
           v-else
           ref="designPanelRef"
+          :platform="currentPlatform"
           side="design"
           :src="designImgSrc"
           :highlight="null"

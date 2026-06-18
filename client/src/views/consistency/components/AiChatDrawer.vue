@@ -466,46 +466,61 @@ async function sendMessage() {
       throw new Error(errText || `HTTP ${response.status}`)
     }
 
-    const reader  = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer    = ''
+    const contentType = response.headers.get('Content-Type') || ''
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() ?? ''
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue
-        const data = line.slice(6).trim()
-        if (data === '[DONE]') continue
-        try {
-          const json  = JSON.parse(data)
-          const delta = json.choices?.[0]?.delta
+    if (contentType.includes('application/json')) {
+      // 非流式：一次性 JSON，取 message.content + message.reasoning
+      const json = await response.json()
+      const msg  = json.choices?.[0]?.message
+      messages.value.push({
+        role: 'assistant',
+        content: msg?.content || '',
+        thinkContent: msg?.reasoning || null,
+        thinkCollapsed: true,
+      })
+    } else {
+      // 流式：SSE 逐帧追加
+      const reader  = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer    = ''
 
-          if (delta?.reasoning_content) {
-            streamingThink.value += delta.reasoning_content
-          }
-          if (delta?.content) {
-            if (streamingThink.value && rawBuffer.value === '') {
-              if (!thinkDone.value) thinkDone.value = true
-              streamingMain.value += delta.content
-            } else {
-              rawBuffer.value += delta.content
-              parseThinkBuffer()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const data = line.slice(6).trim()
+          if (data === '[DONE]') continue
+          try {
+            const json  = JSON.parse(data)
+            const delta = json.choices?.[0]?.delta
+
+            if (delta?.reasoning_content) {
+              streamingThink.value += delta.reasoning_content
             }
-          }
-        } catch { /* 跳过无效帧 */ }
+            if (delta?.content) {
+              if (streamingThink.value && rawBuffer.value === '') {
+                if (!thinkDone.value) thinkDone.value = true
+                streamingMain.value += delta.content
+              } else {
+                rawBuffer.value += delta.content
+                parseThinkBuffer()
+              }
+            }
+          } catch { /* 跳过无效帧 */ }
+        }
       }
-    }
 
-    messages.value.push({
-      role: 'assistant',
-      content: streamingMain.value,
-      thinkContent: streamingThink.value || null,
-      thinkCollapsed: true,
-    })
+      messages.value.push({
+        role: 'assistant',
+        content: streamingMain.value,
+        thinkContent: streamingThink.value || null,
+        thinkCollapsed: true,
+      })
+    }
   } catch (e) {
     if (e.name !== 'AbortError') {
       messages.value.push({ role: 'assistant', content: `⚠️ 请求失败：${e.message}` })

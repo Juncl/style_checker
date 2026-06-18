@@ -123,7 +123,7 @@
               <span class="diff-cmp-key">开发</span>
               <span v-if="isEmptyVal(d.arkuiValue)" class="diff-cmp-none">无</span>
               <span v-else class="diff-cmp-val diff-cmp-val--dev">
-                <ColorDot v-if="isColorProp(d.property)" :hex="displayValue(d.property, d.arkuiValue)" />
+                <ColorDot v-if="isColorProp(d.property)" :hex="extractHex(String(d.arkuiValue ?? ''))" />
                 <span class="diff-val-text" :title="String(d.arkuiValue)">{{ displayValue(d.property, d.arkuiValue) }}</span>
               </span>
             </div>
@@ -131,7 +131,7 @@
               <span class="diff-cmp-key">设计</span>
               <span v-if="isEmptyVal(d.designValue)" class="diff-cmp-none">无</span>
               <span v-else class="diff-cmp-val diff-cmp-val--design">
-                <ColorDot v-if="isColorProp(d.property)" :hex="displayValue(d.property, d.designValue)" />
+                <ColorDot v-if="isColorProp(d.property)" :hex="extractHex(String(d.designValue ?? ''))" />
                 <span class="diff-val-text" :title="String(d.designValue)">{{ displayValue(d.property, d.designValue) }}</span>
               </span>
             </div>
@@ -149,6 +149,7 @@ import { ref, computed, watch, nextTick, onMounted, defineComponent, h } from 'v
 import { Search, CircleCheck, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { updateConsistencyCheckProblem } from '../../../api/api.ts'
+import { toWebColorDisplay } from '../../utils/tools.ts'
 import noproblemSvg from '../../../assets/svg/noproblem.svg'
 
 const ColorDot = defineComponent({
@@ -157,6 +158,7 @@ const ColorDot = defineComponent({
     const bg = computed(() => {
       const val = (props.hex || '').trim()
       if (!val) return 'transparent'
+      if (/^rgba?\(/i.test(val)) return val
       if (/^(linear|radial|conic)-gradient\(/i.test(val)) {
         return val.replace(/#([0-9A-Fa-f]{8})\b/g, (_, hex) => {
           const a = parseInt(hex.slice(0, 2), 16) / 255
@@ -189,6 +191,7 @@ const props = defineProps({
   hoverPair:  { type: Object,  default: null },
   debugMode:  { type: Boolean, default: false },
   versionId:  { type: [Number, String], default: null },
+  platform:   { type: String,  default: 'hmPhone' },
 })
 const emit = defineEmits(['select', 'diff-hover'])
 
@@ -420,12 +423,14 @@ function isColorProp(p)  { return COLOR_PROPS.has(p) }
 function extractHex(val) { return (String(val || '').match(/#[0-9A-Fa-f]{6,8}/) || [''])[0] }
 function displayValue(prop, val) {
   const text = String(val ?? '')
-  if (!isColorProp(prop)) return text
-  // 渐变色保留完整字符串，由 CSS 处理缩略
-  if (text.startsWith('linear-gradient(') || text.startsWith('radial-gradient(')) {
-    return text
+  if (!isColorProp(prop) && prop !== 'shadow') return text
+  // shadow / 渐变色：字符串内嵌有颜色，整体替换所有 8 位 hex
+  if (prop === 'shadow' || text.startsWith('linear-gradient(') || text.startsWith('radial-gradient(')) {
+    return toWebColorDisplay(text, props.platform)
   }
-  return extractHex(text) || text.replace(/\s*\(rgba\([^)]+\)\)/i, '')
+  const hex = extractHex(text)
+  if (!hex) return text.replace(/\s*\(rgba\([^)]+\)\)/i, '')
+  return toWebColorDisplay(hex, props.platform)
 }
 function issueKey(property = '') {
   const p = String(property)

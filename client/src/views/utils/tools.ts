@@ -268,6 +268,21 @@ export function confidenceText(c: string): string {
   return c
 }
 
+// ── 颜色格式转换 ──────────────────────────────────────────────────────────────
+
+/**
+ * 将字符串中所有 #AARRGGBB（ARGB）格式的 8 位 hex 转为 #RRGGBBAA（RGBA）。
+ * 适用于 web 平台的颜色值展示（纯色、渐变色、阴影字符串均支持）。
+ * 非 web 平台直接返回原字符串。
+ *
+ * @param text     待转换的颜色字符串
+ * @param platform 当前平台（'web' 时才转换）
+ */
+export function toWebColorDisplay(text: string, platform: string): string {
+  if (platform !== 'web') return text
+  return text.replace(/#([0-9A-Fa-f]{8})\b/g, (_, h) => `#${h.slice(2)}${h.slice(0, 2)}`)
+}
+
 // 匹配置信度 → Element Plus Tag 的 type 属性（高=绿/中=橙/低=红）
 export function confidenceTagType(c: string): string {
   if (c === 'high')   return 'success'

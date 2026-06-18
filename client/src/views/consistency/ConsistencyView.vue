@@ -123,6 +123,7 @@
         :version-list="pageVersionList"
         :working-version-id="workingVersionId"
         :close-history-key="closeHistoryKey"
+        :platform="currentPlatform"
         @diff-select="onDiffSelect"
         @diff-hover="hoveredDiffPair = $event"
         @design-node-click="onDesignNodeClick"
