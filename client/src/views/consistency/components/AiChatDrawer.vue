@@ -1,22 +1,14 @@
 <template>
-  <transition name="ai-dialog">
-    <div
-      v-if="open"
-      class="ai-float-dialog"
-      :style="{ right: posRight + 'px', top: posTop + 'px', width: dlgWidth + 'px', height: dlgHeight + 'px' }"
-    >
-      <!-- 头部（拖拽区域） -->
-      <div class="ai-drawer-header" @mousedown="onDragStart">
+  <div :class="['ai-side-panel', { 'ai-side-panel--open': open }]">
+      <!-- 头部 -->
+      <div class="ai-drawer-header">
         <div class="ai-header-left">
           <svg class="ai-spark-icon" viewBox="0 0 16 16" width="15" height="15" fill="none">
             <path d="M8 1.5L9.8 6.2H14.5L10.5 8.8L12.2 13.5L8 10.8L3.8 13.5L5.5 8.8L1.5 6.2H6.2L8 1.5Z" fill="#0067D1" opacity="0.9"/>
           </svg>
           <span class="ai-drawer-title">AI 检视助手</span>
-          <svg class="ai-drag-hint" viewBox="0 0 16 16" width="12" height="12" fill="none" style="opacity:0.35;margin-left:4px">
-            <path d="M3 5H13M3 8H13M3 11H13" stroke="#555" stroke-width="1.3" stroke-linecap="round"/>
-          </svg>
         </div>
-        <div class="ai-header-actions" @mousedown.stop>
+        <div class="ai-header-actions">
           <button class="ai-action-btn" title="清空对话" @click="clearMessages">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none">
               <path d="M3 4H13M5 4V3H11V4M5.5 7V12M10.5 7V12M4 4L5 13H11L12 4H4Z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -51,18 +43,14 @@
           <!-- 带图片的用户消息 -->
           <div v-if="msg.images && msg.images.length" class="ai-msg-with-imgs">
             <div class="ai-msg-thumbs">
-              <div
-                v-for="(imgSrc, j) in msg.images"
-                :key="j"
-                class="ai-msg-thumb-wrap"
-              >
+              <div v-for="(imgSrc, j) in msg.images" :key="j" class="ai-msg-thumb-wrap">
                 <img :src="imgSrc" class="ai-msg-thumb" :alt="j === 0 ? '设计稿' : '实现图'" />
                 <span class="ai-msg-thumb-label">{{ j === 0 ? '设计稿' : '实现图' }}</span>
               </div>
             </div>
             <div v-if="msg.content" class="ai-msg-bubble ai-msg-bubble--user">{{ msg.content }}</div>
           </div>
-          <!-- assistant 消息：think 折叠块 + Markdown 正文 -->
+          <!-- assistant 消息 -->
           <template v-else-if="msg.role === 'assistant'">
             <div
               v-if="msg.thinkContent"
@@ -77,17 +65,13 @@
               </button>
               <div class="ai-think-body">{{ msg.thinkContent }}</div>
             </div>
-            <div
-              class="ai-msg-bubble ai-msg-md"
-              v-html="renderMd(msg.content)"
-            />
+            <div class="ai-msg-bubble ai-msg-md" v-html="renderMd(msg.content)" />
           </template>
           <!-- 普通用户消息 -->
           <div v-else class="ai-msg-bubble">{{ msg.content }}</div>
         </div>
 
         <div v-if="streaming" class="ai-msg ai-msg--assistant">
-          <!-- 流式 think 区域 -->
           <div
             v-if="streamingThink"
             class="ai-think-block"
@@ -102,7 +86,6 @@
             </button>
             <div ref="thinkBodyEl" class="ai-think-body" @scroll.passive="onThinkScroll">{{ streamingThink }}</div>
           </div>
-          <!-- 流式正文区域 -->
           <div class="ai-msg-bubble ai-msg-streaming">
             <template v-if="streamingMain">{{ streamingMain }}</template>
             <span v-else class="ai-typing"><i></i><i></i><i></i></span>
@@ -110,7 +93,7 @@
         </div>
       </div>
 
-      <!-- 图片预览区（有图时出现） -->
+      <!-- 图片预览区 -->
       <div v-if="imgSlots.some(s => s)" class="ai-img-previews">
         <div
           v-for="(slot, i) in imgSlots"
@@ -132,7 +115,6 @@
 
       <!-- 输入区 -->
       <div class="ai-input-area">
-        <!-- 图片上传按钮 -->
         <div class="ai-upload-btns">
           <button
             v-for="(slot, i) in imgSlots"
@@ -173,18 +155,14 @@
         </button>
       </div>
 
-      <!-- 右下角 resize handle -->
-      <div class="ai-resize-handle" @mousedown.stop="onResizeStart"></div>
-
       <!-- 隐藏的 file input -->
       <input ref="fileInput0" type="file" accept="image/*" style="display:none" @change="e => onFileChange(0, e)" />
       <input ref="fileInput1" type="file" accept="image/*" style="display:none" @change="e => onFileChange(1, e)" />
-    </div>
-  </transition>
+  </div>
 </template>
 
 <script setup>
-import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, watch, onUnmounted } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -199,112 +177,6 @@ function renderMd(content) {
   return DOMPurify.sanitize(marked.parse(content || ''))
 }
 
-// ── 位置 & 尺寸 ─────────────────────────────────────────────────────────────
-
-const MIN_W = 280, MIN_H = 360
-const MARGIN = 24
-const BALL_AREA = 44 + MARGIN + 10  // 悬浮球高度 + 底部间距 + 对话框与球的间隔
-
-const posRight  = ref(MARGIN)
-const posTop    = ref(0)
-const dlgWidth  = ref(360)
-const dlgHeight = ref(520)
-
-function initTop() {
-  const h = typeof window !== 'undefined' ? window.innerHeight : 800
-  posTop.value = Math.max(0, h - dlgHeight.value - BALL_AREA)
-}
-
-// ── 拖拽 & 缩放 ─────────────────────────────────────────────────────────────
-
-let dragMode  = 'none'  // 'drag' | 'resize'
-let dragStart = {}
-
-function onDragStart(e) {
-  if (e.button !== 0) return
-  dragMode = 'drag'
-  dragStart = {
-    mouseX: e.clientX, mouseY: e.clientY,
-    elRight: posRight.value, elTop: posTop.value,
-  }
-  document.body.style.cursor     = 'grabbing'
-  document.body.style.userSelect = 'none'
-  window.addEventListener('mousemove', onMouseMove)
-  window.addEventListener('mouseup',  onMouseUp)
-}
-
-function onResizeStart(e) {
-  if (e.button !== 0) return
-  dragMode = 'resize'
-  dragStart = {
-    mouseX: e.clientX, mouseY: e.clientY,
-    elWidth: dlgWidth.value, elHeight: dlgHeight.value, elRight: posRight.value,
-  }
-  document.body.style.cursor     = 'se-resize'
-  document.body.style.userSelect = 'none'
-  window.addEventListener('mousemove', onMouseMove)
-  window.addEventListener('mouseup',  onMouseUp)
-}
-
-function onMouseMove(e) {
-  const dx = e.clientX - dragStart.mouseX
-  const dy = e.clientY - dragStart.mouseY
-
-  if (dragMode === 'drag') {
-    // right 定位：向右拖 dx 为正，right 减小
-    const newRight = dragStart.elRight - dx
-    const newTop   = dragStart.elTop   + dy
-    const maxRight = window.innerWidth  - dlgWidth.value
-    const maxTop   = window.innerHeight - dlgHeight.value
-    posRight.value = Math.max(0, Math.min(maxRight, newRight))
-    posTop.value   = Math.max(0, Math.min(maxTop,   newTop))
-
-  } else if (dragMode === 'resize') {
-    // 保持左边界不动，右下角向右下拖 = 宽高增大，right 相应减小
-    const oldLeft  = window.innerWidth - dragStart.elWidth - dragStart.elRight
-    const newWidth = Math.max(MIN_W, Math.min(window.innerWidth  - oldLeft,         dragStart.elWidth  + dx))
-    const newHeight= Math.max(MIN_H, Math.min(window.innerHeight - posTop.value, dragStart.elHeight + dy))
-    dlgWidth.value  = newWidth
-    dlgHeight.value = newHeight
-    posRight.value  = Math.max(0, window.innerWidth - oldLeft - newWidth)
-  }
-}
-
-function onMouseUp() {
-  dragMode = 'none'
-  document.body.style.cursor     = ''
-  document.body.style.userSelect = ''
-  window.removeEventListener('mousemove', onMouseMove)
-  window.removeEventListener('mouseup',  onMouseUp)
-}
-
-// ── 窗口 resize：保持右边距，约束尺寸不溢出 ─────────────────────────────────
-
-function onWindowResize() {
-  const w = window.innerWidth
-  const h = window.innerHeight
-  // 宽度超出时收缩，保持 right 不变
-  if (posRight.value + dlgWidth.value > w) {
-    dlgWidth.value = Math.max(MIN_W, w - posRight.value)
-  }
-  // 高度超出时上移，保持 right 不变
-  if (posTop.value + dlgHeight.value > h) {
-    posTop.value = Math.max(0, h - dlgHeight.value)
-  }
-}
-
-onMounted(() => {
-  initTop()
-  window.addEventListener('resize', onWindowResize)
-})
-
-onUnmounted(() => {
-  abortCurrentRequest()
-  window.removeEventListener('resize',    onWindowResize)
-  window.removeEventListener('mousemove', onMouseMove)
-  window.removeEventListener('mouseup',  onMouseUp)
-})
-
 // ── 请求中止 ─────────────────────────────────────────────────────────────────
 
 let currentAbortController = null
@@ -316,32 +188,34 @@ function abortCurrentRequest() {
   }
 }
 
-// 对话框关闭时中止正在进行的请求
 watch(() => props.open, (val) => {
   if (!val) abortCurrentRequest()
 })
 
+onUnmounted(() => {
+  abortCurrentRequest()
+})
+
 // ── 消息状态 ─────────────────────────────────────────────────────────────────
 
-const messages                  = ref([])
-const inputText                 = ref('')
-const streaming                 = ref(false)
-const streamingMain             = ref('')
-const streamingThink            = ref('')
-const rawBuffer                 = ref('')
-const thinkDone                 = ref(false)
-const streamingThinkCollapsed   = ref(false)
-const messagesEl                = ref(null)
-const thinkBodyEl               = ref(null)
-const fileInput0                = ref(null)
-const fileInput1                = ref(null)
+const messages                = ref([])
+const inputText               = ref('')
+const streaming               = ref(false)
+const streamingMain           = ref('')
+const streamingThink          = ref('')
+const rawBuffer               = ref('')
+const thinkDone               = ref(false)
+const streamingThinkCollapsed = ref(false)
+const messagesEl              = ref(null)
+const thinkBodyEl             = ref(null)
+const fileInput0              = ref(null)
+const fileInput1              = ref(null)
 
 let userScrolledThink = false
 
-const imgSlots = ref([null, null])
-
+const imgSlots    = ref([null, null])
 const hasBothImgs = computed(() => imgSlots.value.every(s => s))
-const canSend = computed(() => !streaming.value && hasBothImgs.value)
+const canSend     = computed(() => !streaming.value && hasBothImgs.value)
 
 function clearMessages() {
   if (streaming.value) return
@@ -414,7 +288,6 @@ function removeImg(i) {
 async function sendMessage() {
   if (!hasBothImgs.value || streaming.value) return
   const text = inputText.value.trim()
-
   const currentImgSrcs = imgSlots.value.map(s => s.preview)
 
   messages.value.push({
@@ -422,8 +295,8 @@ async function sendMessage() {
     content: text || '请对比两张图',
     images: currentImgSrcs.length ? currentImgSrcs : undefined,
   })
-  inputText.value  = ''
-  imgSlots.value   = [null, null]
+  inputText.value = ''
+  imgSlots.value  = [null, null]
   scrollToBottom()
 
   streaming.value               = true
@@ -454,10 +327,7 @@ async function sendMessage() {
     const response = await fetch('/devlint/api/img/checker', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: apiMessages,
-        stream: true,
-      }),
+      body: JSON.stringify({ messages: apiMessages, stream: true }),
       signal: currentAbortController.signal,
     })
 
@@ -469,7 +339,6 @@ async function sendMessage() {
     const contentType = response.headers.get('Content-Type') || ''
 
     if (contentType.includes('application/json')) {
-      // 非流式：一次性 JSON，取 message.content + message.reasoning
       const json = await response.json()
       const msg  = json.choices?.[0]?.message
       messages.value.push({
@@ -479,7 +348,6 @@ async function sendMessage() {
         thinkCollapsed: true,
       })
     } else {
-      // 流式：SSE 逐帧追加
       const reader  = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer    = ''
@@ -497,7 +365,6 @@ async function sendMessage() {
           try {
             const json  = JSON.parse(data)
             const delta = json.choices?.[0]?.delta
-
             if (delta?.reasoning_content) {
               streamingThink.value += delta.reasoning_content
             }
@@ -557,66 +424,25 @@ function parseThinkBuffer() {
 </script>
 
 <style scoped>
-/* ── 悬浮对话框主体 ── */
-.ai-float-dialog {
-  position: fixed;
-  z-index: 9999;
-  min-width: 280px;
-  min-height: 360px;
+/* ── 侧边面板主体（在布局流中占位，宽度过渡推挤画布） ── */
+.ai-side-panel {
+  flex-shrink: 0;
+  width: 0;
+  height: 100%;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.08);
-  overflow: hidden;
-  border: 1px solid var(--octo-border-separator, #e8eaed);
+  transition: width 220ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              box-shadow 220ms ease;
+}
+.ai-side-panel--open {
+  width: 340px;
+  border-right: 1px solid var(--octo-border-separator, #e8eaed);
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.08);
 }
 
-/* ── 右下角 resize handle ── */
-.ai-resize-handle {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 16px;
-  height: 16px;
-  cursor: se-resize;
-  z-index: 1;
-}
-.ai-resize-handle::before,
-.ai-resize-handle::after {
-  content: '';
-  position: absolute;
-  background: #c8cdd5;
-  border-radius: 1px;
-}
-.ai-resize-handle::before {
-  width: 8px; height: 1.5px;
-  right: 3px; bottom: 7px;
-  transform: rotate(-45deg);
-}
-.ai-resize-handle::after {
-  width: 5px; height: 1.5px;
-  right: 3px; bottom: 4px;
-  transform: rotate(-45deg);
-}
-
-/* ── 出现/消失动画 ── */
-.ai-dialog-enter-active,
-.ai-dialog-leave-active {
-  transition: opacity 200ms ease, transform 200ms ease;
-}
-.ai-dialog-enter-from,
-.ai-dialog-leave-to {
-  opacity: 0;
-  transform: scale(0.96) translateY(8px);
-}
-.ai-dialog-enter-to,
-.ai-dialog-leave-from {
-  opacity: 1;
-  transform: scale(1) translateY(0);
-}
-
-/* ── 头部（拖拽区域） ── */
+/* ── 头部 ── */
 .ai-drawer-header {
   display: flex;
   align-items: center;
@@ -626,7 +452,6 @@ function parseThinkBuffer() {
   flex-shrink: 0;
   border-bottom: 1px solid var(--octo-border-separator, #e8eaed);
   background: #fafbfc;
-  cursor: move;
   user-select: none;
 }
 .ai-header-left { display: flex; align-items: center; gap: 6px; }
@@ -640,7 +465,6 @@ function parseThinkBuffer() {
 .ai-header-actions {
   display: flex;
   gap: 2px;
-  cursor: default;
 }
 .ai-action-btn {
   width: 24px; height: 24px;
@@ -649,7 +473,6 @@ function parseThinkBuffer() {
   display: flex; align-items: center; justify-content: center;
   color: #777777;
   transition: background 150ms ease, color 150ms ease;
-  flex-shrink: 0;
 }
 .ai-action-btn:hover { background: #efefef; color: #191919; }
 
@@ -700,9 +523,7 @@ function parseThinkBuffer() {
   flex-shrink: 0; color: #7b6fc4;
   transition: transform 200ms ease;
 }
-.ai-think-block--collapsed .ai-think-chevron {
-  transform: rotate(-90deg);
-}
+.ai-think-block--collapsed .ai-think-chevron { transform: rotate(-90deg); }
 .ai-think-badge {
   margin-left: auto;
   font-size: 10px; color: #9e93d8;
@@ -739,102 +560,40 @@ function parseThinkBuffer() {
   border-bottom-left-radius: 3px;
 }
 
-/* ── Markdown 渲染样式 ── */
-.ai-msg-md {
-  max-width: 100%;
-  overflow-x: auto;
+/* ── Markdown 渲染 ── */
+.ai-msg-md { max-width: 100%; overflow-x: auto; }
+.ai-msg-md :deep(h1), .ai-msg-md :deep(h2) {
+  font-size: 13px; font-weight: 700; color: #191919;
+  margin: 10px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #e0e4ea;
 }
-.ai-msg-md :deep(h1),
-.ai-msg-md :deep(h2) {
-  font-size: 13px;
-  font-weight: 700;
-  color: #191919;
-  margin: 10px 0 6px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid #e0e4ea;
-}
-.ai-msg-md :deep(h3) {
-  font-size: 12px;
-  font-weight: 600;
-  color: #333;
-  margin: 8px 0 4px;
-}
-.ai-msg-md :deep(p) {
-  margin: 4px 0;
-  line-height: 1.65;
-}
-.ai-msg-md :deep(strong) {
-  font-weight: 600;
-  color: #191919;
-}
-.ai-msg-md :deep(ul),
-.ai-msg-md :deep(ol) {
-  padding-left: 16px;
-  margin: 4px 0;
-}
-.ai-msg-md :deep(li) {
-  margin: 2px 0;
-  line-height: 1.6;
-}
+.ai-msg-md :deep(h3) { font-size: 12px; font-weight: 600; color: #333; margin: 8px 0 4px; }
+.ai-msg-md :deep(p)  { margin: 4px 0; line-height: 1.65; }
+.ai-msg-md :deep(strong) { font-weight: 600; color: #191919; }
+.ai-msg-md :deep(ul), .ai-msg-md :deep(ol) { padding-left: 16px; margin: 4px 0; }
+.ai-msg-md :deep(li) { margin: 2px 0; line-height: 1.6; }
 .ai-msg-md :deep(table) {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 11px;
-  margin: 6px 0;
-  display: block;
-  overflow-x: auto;
+  width: 100%; border-collapse: collapse; font-size: 11px;
+  margin: 6px 0; display: block; overflow-x: auto;
 }
 .ai-msg-md :deep(th) {
-  background: #e6f2fd;
-  color: #0067D1;
-  font-weight: 600;
-  padding: 5px 8px;
-  border: 1px solid #c8dff7;
-  white-space: nowrap;
-  text-align: left;
+  background: #e6f2fd; color: #0067D1; font-weight: 600;
+  padding: 5px 8px; border: 1px solid #c8dff7; white-space: nowrap; text-align: left;
 }
-.ai-msg-md :deep(td) {
-  padding: 4px 8px;
-  border: 1px solid #dde3ea;
-  vertical-align: top;
-  line-height: 1.5;
-}
-.ai-msg-md :deep(tr:nth-child(even) td) {
-  background: #f8fafc;
-}
+.ai-msg-md :deep(td) { padding: 4px 8px; border: 1px solid #dde3ea; vertical-align: top; line-height: 1.5; }
+.ai-msg-md :deep(tr:nth-child(even) td) { background: #f8fafc; }
 .ai-msg-md :deep(code) {
-  background: #e8ecf0;
-  border-radius: 3px;
-  padding: 1px 4px;
-  font-size: 11px;
-  font-family: monospace;
+  background: #e8ecf0; border-radius: 3px; padding: 1px 4px; font-size: 11px; font-family: monospace;
 }
-.ai-msg-md :deep(pre) {
-  background: #e8ecf0;
-  border-radius: 6px;
-  padding: 8px 10px;
-  overflow-x: auto;
-  margin: 6px 0;
-}
-.ai-msg-md :deep(pre code) {
-  background: none;
-  padding: 0;
-}
+.ai-msg-md :deep(pre) { background: #e8ecf0; border-radius: 6px; padding: 8px 10px; overflow-x: auto; margin: 6px 0; }
+.ai-msg-md :deep(pre code) { background: none; padding: 0; }
 
 /* 带图片的用户消息 */
-.ai-msg-with-imgs {
-  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
-}
-.ai-msg-thumbs {
-  display: flex; gap: 6px;
-}
-.ai-msg-thumb-wrap {
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-}
+.ai-msg-with-imgs { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.ai-msg-thumbs   { display: flex; gap: 6px; }
+.ai-msg-thumb-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .ai-msg-thumb {
-  width: 72px; height: 72px;
-  object-fit: cover; border-radius: 6px;
-  border: 1px solid rgba(255,255,255,0.3);
+  width: 72px; height: 72px; object-fit: cover;
+  border-radius: 6px; border: 1px solid rgba(255,255,255,0.3);
 }
 .ai-msg-thumb-label {
   font-size: 10px; color: rgba(255,255,255,0.75);
@@ -857,81 +616,55 @@ function parseThinkBuffer() {
 
 /* ── 图片预览区 ── */
 .ai-img-previews {
-  flex-shrink: 0;
-  display: flex; gap: 8px;
-  padding: 8px 10px 0;
+  flex-shrink: 0; display: flex; gap: 8px; padding: 8px 10px 0;
 }
 .ai-img-preview-item {
-  position: relative;
-  width: 72px; height: 72px;
-  border-radius: 6px;
-  overflow: visible;
-  flex-shrink: 0;
+  position: relative; width: 72px; height: 72px;
+  border-radius: 6px; overflow: visible; flex-shrink: 0;
 }
 .ai-img-preview-thumb {
-  width: 72px; height: 72px;
-  object-fit: cover; border-radius: 6px;
-  border: 1px solid #D1D5DC;
-  display: block;
+  width: 72px; height: 72px; object-fit: cover;
+  border-radius: 6px; border: 1px solid #D1D5DC; display: block;
 }
 .ai-img-preview-label {
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
+  position: absolute; bottom: 0; left: 0; right: 0;
   font-size: 10px; text-align: center;
   background: rgba(0,0,0,0.45); color: #fff;
-  border-radius: 0 0 6px 6px;
-  padding: 2px 0;
-  pointer-events: none;
+  border-radius: 0 0 6px 6px; padding: 2px 0; pointer-events: none;
 }
 .ai-img-preview-remove {
   position: absolute; top: -6px; right: -6px;
-  width: 16px; height: 16px;
-  border: none; border-radius: 50%;
-  background: #ff4d4f; color: #fff;
-  cursor: pointer; display: flex;
-  align-items: center; justify-content: center;
-  transition: background 150ms ease;
-  padding: 0;
+  width: 16px; height: 16px; border: none; border-radius: 50%;
+  background: #ff4d4f; color: #fff; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 150ms ease; padding: 0;
 }
 .ai-img-preview-remove:hover { background: #d9363e; }
 
 /* ── 输入区 ── */
 .ai-input-area {
-  flex-shrink: 0;
-  padding: 8px 10px 10px;
+  flex-shrink: 0; padding: 8px 10px 10px;
   border-top: 1px solid var(--octo-border-separator, #e8eaed);
   background: #fafbfc;
-  display: flex; flex-wrap: wrap; gap: 6px;
-  align-items: flex-end;
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end;
 }
-
-.ai-upload-btns {
-  display: flex; flex-direction: column; gap: 4px;
-  flex-shrink: 0;
-}
-
+.ai-upload-btns { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
 .ai-upload-btn {
   display: flex; align-items: center; gap: 4px;
   height: 26px; padding: 0 8px;
   border: 1px solid #D1D5DC; border-radius: 4px;
-  background: #fff; color: #555;
-  font-size: 11px; cursor: pointer;
+  background: #fff; color: #555; font-size: 11px; cursor: pointer;
   white-space: nowrap;
   transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
 }
-.ai-upload-btn:hover {
-  border-color: #0067D1; color: #0067D1; background: #e6f2fd;
-}
-.ai-upload-btn--filled {
-  border-color: #52C41A; color: #389e0d; background: #f6ffed;
-}
+.ai-upload-btn:hover { border-color: #0067D1; color: #0067D1; background: #e6f2fd; }
+.ai-upload-btn--filled { border-color: #52C41A; color: #389e0d; background: #f6ffed; }
 .ai-upload-btn--filled:hover { border-color: #389e0d; }
 
 .ai-textarea {
   flex: 1; min-width: 0; resize: none;
   border: 1px solid #D1D5DC; border-radius: 6px;
-  padding: 7px 10px;
-  font-size: 12px; line-height: 1.5; color: #191919;
+  padding: 7px 10px; font-size: 12px; line-height: 1.5; color: #191919;
   outline: none; background: #ffffff;
   transition: border-color 150ms ease, box-shadow 150ms ease;
   font-family: inherit;
@@ -946,9 +679,8 @@ function parseThinkBuffer() {
 .ai-send-btn {
   width: 32px; height: 32px; flex-shrink: 0;
   border: none; border-radius: 6px;
-  background: #0067D1; color: #ffffff;
-  cursor: pointer; display: flex;
-  align-items: center; justify-content: center;
+  background: #0067D1; color: #ffffff; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
   transition: background 150ms ease;
 }
 .ai-send-btn:hover:not(:disabled) { background: #005aba; }

@@ -2,7 +2,7 @@
   <div class="img-panel" ref="panelRef">
     <div class="img-wrapper" ref="wrapperRef" @click.self="emit('bg-click')">
       <div class="zoom-clip" ref="zoomClipRef">
-        <div class="zoom-layer" ref="zoomLayerRef" :style="zoomStyle">
+        <div class="zoom-layer" ref="zoomLayerRef">
           <img :src="src" ref="imgRef" :alt="label" @load="onImgLoad" />
           <canvas
             ref="canvasRef"
@@ -115,13 +115,12 @@ const isDraggingInspector = ref(false)
 const inspectorDragPos = ref(null)
 const dragStart = ref(null)
 
-const zoomScale   = ref(1)
-const zoomOriginX = ref(0)
-const zoomOriginY = ref(0)
-const zoomStyle = computed(() => ({
-  transform: `scale(${zoomScale.value})`,
-  transformOrigin: `${zoomOriginX.value}px ${zoomOriginY.value}px`,
-}))
+const zoomScale = ref(1)
+
+// 缩放基准（非响应式，DOM 派生量）：
+// fitW/fitH = 图片 contain 贴合 wrapper 的尺寸（缩放倍数 1 时的渲染尺寸）
+// wrapW/wrapH = wrapper(≈img-panel) 可用尺寸，即 zoom-clip 视口能放大到的上限
+let fitW = 0, fitH = 0, wrapW = 0, wrapH = 0
 
 // 本地同步记录当前选中 id，用于双击下钻
 // 不能直接用 props.selectedId：dblclick 触发时 Vue 响应式更新尚未完成
@@ -150,16 +149,23 @@ onMounted(() => {
   window.addEventListener('pointermove', onInspectorDrag)
   window.addEventListener('pointerup', endInspectorDrag)
   canvasRef.value?.addEventListener('wheel', onCanvasWheel, { passive: false })
+  zoomClipRef.value?.addEventListener('scroll', onClipScroll, { passive: true })
 })
 onUnmounted(() => {
   ro?.disconnect()
   window.removeEventListener('pointermove', onInspectorDrag)
   window.removeEventListener('pointerup', endInspectorDrag)
   canvasRef.value?.removeEventListener('wheel', onCanvasWheel)
+  zoomClipRef.value?.removeEventListener('scroll', onClipScroll)
 })
+
+// 视口平移（滚动条/滚轮）时，画布跟随 zoom-layer 一起滚动无需重绘，
+// 但浮动 inspector 相对 panel 定位，需要同步刷新位置
+function onClipScroll() { updateInspectorPos() }
 
 function onImgLoad() { nextTick(() => { updateClipSize(); draw(); updateInspectorPos() }) }
 
+// 重新测量 wrapper 与图片，算出 contain 基准尺寸 fitW/fitH，再按当前缩放布局
 function updateClipSize() {
   const wrapper = wrapperRef.value
   const img     = imgRef.value
@@ -168,19 +174,36 @@ function updateClipSize() {
   const nW = img.naturalWidth
   const nH = img.naturalHeight
   if (!nW || !nH) return
-  const wW = wrapper.clientWidth
-  const wH = wrapper.clientHeight
+  wrapW = wrapper.clientWidth
+  wrapH = wrapper.clientHeight
   const ratio = nW / nH
-  let clipW, clipH
-  if (ratio > wW / wH) {
-    clipW = wW; clipH = wW / ratio
+  if (ratio > wrapW / wrapH) {
+    fitW = wrapW; fitH = wrapW / ratio
   } else {
-    clipH = wH; clipW = wH * ratio
+    fitH = wrapH; fitW = wrapH * ratio
   }
+  applyLayout()
+}
+
+// 按当前 zoomScale 设置渲染层与视口尺寸：
+// - zoom-layer 实际宽高 = fit × scale（等比放大，保持图片比例）
+// - zoom-clip 视口 = min(render, panel)，居中；放大到撑满 panel 后不再变大，
+//   超出部分由 clip 的 overflow:auto 滚动（cover 效果）
+function applyLayout() {
+  const clip  = zoomClipRef.value
+  const layer = zoomLayerRef.value
+  if (!clip || !layer || !fitW || !fitH) return
+  const s = zoomScale.value
+  const renderW = fitW * s
+  const renderH = fitH * s
+  const clipW = Math.min(renderW, wrapW)
+  const clipH = Math.min(renderH, wrapH)
+  layer.style.width  = renderW + 'px'
+  layer.style.height = renderH + 'px'
   clip.style.width  = clipW + 'px'
   clip.style.height = clipH + 'px'
-  clip.style.left   = ((wW - clipW) / 2) + 'px'
-  clip.style.top    = ((wH - clipH) / 2) + 'px'
+  clip.style.left   = ((wrapW - clipW) / 2) + 'px'
+  clip.style.top    = ((wrapH - clipH) / 2) + 'px'
 }
 
 watch(() => props.highlight,     () => nextTick(draw))
@@ -327,28 +350,23 @@ function unionRects(rects) {
 
 // 将 rect（画布坐标系）平移到 zoom-clip 视口中央，边缘处取最近可行位置
 function focusToRect(rect) {
-  if (!rect || zoomScale.value <= 1) return
-  const clip = zoomClipRef.value
-  if (!clip) return
-  const clipW = clip.clientWidth
-  const clipH = clip.clientHeight
-  if (!clipW || !clipH) return
+  if (!rect) return
+  const clip  = zoomClipRef.value
+  const layer = zoomLayerRef.value
+  if (!clip || !layer) return
+  const renderW = layer.offsetWidth
+  const renderH = layer.offsetHeight
+  if (!renderW || !renderH) return
 
-  const N  = zoomScale.value
-  // 节点中心在 zoom-clip CSS 像素坐标系（未缩放）中的位置
-  const cx = (rect.x + rect.w / 2) / props.canvasW * clipW
-  const cy = (rect.y + rect.h / 2) / props.canvasH * clipH
+  // 节点中心在渲染层（已放大）坐标系中的位置
+  const cx = (rect.x + rect.w / 2) / props.canvasW * renderW
+  const cy = (rect.y + rect.h / 2) / props.canvasH * renderH
 
-  // 让节点中心出现在视口正中央所需的 transformOrigin
-  // 推导：视觉X = cx*N + ox*(1-N) = clipW/2  =>  ox = (cx*N - clipW/2) / (N-1)
-  const ox = (cx * N - clipW / 2) / (N - 1)
-  const oy = (cy * N - clipH / 2) / (N - 1)
+  // 通过滚动让节点中心落在视口正中央，越界则 clamp 到可滚动范围
+  clip.scrollLeft = Math.max(0, Math.min(cx - clip.clientWidth  / 2, renderW - clip.clientWidth))
+  clip.scrollTop  = Math.max(0, Math.min(cy - clip.clientHeight / 2, renderH - clip.clientHeight))
 
-  // 边界约束：origin 超出 [0, clipW/H] 会出现空白边，直接 clamp
-  zoomOriginX.value = Math.max(0, Math.min(clipW, ox))
-  zoomOriginY.value = Math.max(0, Math.min(clipH, oy))
-
-  nextTick(draw)
+  nextTick(updateInspectorPos)
 }
 
 // ── 绘制 ────────────────────────────────────────────────────────────────────
@@ -358,14 +376,15 @@ function draw() {
   const img    = imgRef.value
   if (!canvas || !img) return
 
-  const W = img.clientWidth
+  const W = img.clientWidth   // 已是 fit × zoomScale 的实际渲染宽度
   const H = img.clientHeight
   if (!W || !H) return
 
   const dpr  = window.devicePixelRatio || 1
-  const s    = Math.min(zoomScale.value, 4)
-  const bufW = Math.round(W * dpr * s)
-  const bufH = Math.round(H * dpr * s)
+  // 缓冲区分辨率系数：缩放 ≤4 时按真实渲染像素绘制；>4 时封顶（高倍下轻微模糊，避免显存爆涨）
+  const q    = Math.min(zoomScale.value, 4) / zoomScale.value
+  const bufW = Math.round(W * dpr * q)
+  const bufH = Math.round(H * dpr * q)
 
   // 只有缓冲区尺寸真正变化时才重建 GPU 纹理，mousemove 时通常不触发
   if (canvas.width !== bufW || canvas.height !== bufH) {
@@ -378,7 +397,7 @@ function draw() {
 
   const ctx = canvas.getContext('2d')
   ctx.save()
-  ctx.scale(dpr * s, dpr * s)
+  ctx.scale(dpr * q, dpr * q)
   ctx.clearRect(0, 0, W, H)
 
   const sx = W / props.canvasW
@@ -703,38 +722,32 @@ function updateInspectorPos() {
     return
   }
 
-  const rect = isSpacing ? props.highlightPair.spaceRect : props.inspectorNode?.rect
-  const clip = zoomClipRef.value
-  if (!rect || !clip) return
+  const rect  = isSpacing ? props.highlightPair.spaceRect : props.inspectorNode?.rect
+  const clip  = zoomClipRef.value
+  const layer = zoomLayerRef.value
+  if (!rect || !clip || !layer) return
 
-  // zoom-clip 无 transform，位置稳定，用它计算节点在 panel 内的坐标
-  const clipW = clip.clientWidth
-  const clipH = clip.clientHeight
   const clipRect  = clip.getBoundingClientRect()
   const panelRect = panelRef.value.getBoundingClientRect()
   const clipOffsetX = clipRect.left - panelRect.left
   const clipOffsetY = clipRect.top  - panelRect.top
 
-  // 节点在 zoom-clip 布局坐标系中的位置（未缩放）
-  const nx = rect.x / props.canvasW * clipW
-  const ny = rect.y / props.canvasH * clipH
-  const nw = rect.w / props.canvasW * clipW
-  const nh = rect.h / props.canvasH * clipH
+  // 节点在渲染层（已放大）坐标系中的位置，减去滚动偏移即得视口内位置
+  const renderW = layer.offsetWidth
+  const renderH = layer.offsetHeight
+  const nx = rect.x / props.canvasW * renderW
+  const ny = rect.y / props.canvasH * renderH
+  const nw = rect.w / props.canvasW * renderW
+  const nh = rect.h / props.canvasH * renderH
 
-  // 布局坐标 → 视觉坐标（scale=1 时两者相等）
-  const N  = zoomScale.value
-  const ox = zoomOriginX.value
-  const oy = zoomOriginY.value
-  const visLeft   = ox + (nx      - ox) * N
-  const visTop    = oy + (ny      - oy) * N
-  const visRight  = ox + (nx + nw - ox) * N
-  const visBottom = oy + (ny + nh - oy) * N
+  const visLeft = nx - clip.scrollLeft
+  const visTop  = ny - clip.scrollTop
 
   const nodeBox = {
     left:   clipOffsetX + visLeft,
     top:    clipOffsetY + visTop,
-    right:  clipOffsetX + visRight,
-    bottom: clipOffsetY + visBottom,
+    right:  clipOffsetX + visLeft + nw,
+    bottom: clipOffsetY + visTop  + nh,
   }
 
   const inspectorW = inspectorRef.value?.offsetWidth || 190
@@ -951,22 +964,37 @@ function copyId() {
 
 // ── Zoom（Ctrl+滚轮缩放，由父组件触发）────────────────────────────────────────
 
-// normX/normY 是鼠标相对于 zoom-clip 的归一化坐标（0-1）
-// transform-origin 跟随鼠标，只用 scale()，不平移
+// normX/normY 是焦点相对于 zoom-clip 视口的归一化坐标（0-1）
+// 渲染层等比放大宽高 + 调整滚动，使焦点处内容在缩放前后保持不动
 function applyZoom(factor, normX, normY) {
-  const clip = zoomClipRef.value
-  if (!clip) return
-  zoomOriginX.value = normX * clip.clientWidth
-  zoomOriginY.value = normY * clip.clientHeight
-  zoomScale.value   = Math.max(1, Math.min(100, zoomScale.value * factor))
-  nextTick(draw)
+  const clip  = zoomClipRef.value
+  const layer = zoomLayerRef.value
+  if (!clip || !layer) return
+
+  // 缩放前：焦点在整张渲染图中的归一化位置
+  const oldRenderW = layer.offsetWidth  || fitW
+  const oldRenderH = layer.offsetHeight || fitH
+  const focalGX = oldRenderW ? (clip.scrollLeft + normX * clip.clientWidth)  / oldRenderW : normX
+  const focalGY = oldRenderH ? (clip.scrollTop  + normY * clip.clientHeight) / oldRenderH : normY
+
+  zoomScale.value = Math.max(1, Math.min(100, zoomScale.value * factor))
+  applyLayout()
+
+  // 缩放后：把同一焦点滚回视口内同样的归一化位置
+  const newRenderW = layer.offsetWidth
+  const newRenderH = layer.offsetHeight
+  clip.scrollLeft = Math.max(0, Math.min(focalGX * newRenderW - normX * clip.clientWidth,  newRenderW - clip.clientWidth))
+  clip.scrollTop  = Math.max(0, Math.min(focalGY * newRenderH - normY * clip.clientHeight, newRenderH - clip.clientHeight))
+
+  nextTick(() => { draw(); updateInspectorPos() })
 }
 
 function resetZoom() {
-  zoomScale.value   = 1
-  zoomOriginX.value = 0
-  zoomOriginY.value = 0
-  nextTick(draw)
+  zoomScale.value = 1
+  applyLayout()
+  const clip = zoomClipRef.value
+  if (clip) { clip.scrollLeft = 0; clip.scrollTop = 0 }
+  nextTick(() => { draw(); updateInspectorPos() })
 }
 
 defineExpose({ applyZoom, resetZoom })

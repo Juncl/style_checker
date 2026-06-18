@@ -23,8 +23,10 @@
         empty-text="暂无页面"
         :show-add-button="true"
         add-button-text="新增页面"
+        :allow-edit="true"
         @select="$emit('select-page', $event)"
         @add="$emit('add-page')"
+        @edit-item="onPageEditItem"
       />
       <!-- upload 模式：有预览时显示重新上传 -->
       <button
@@ -119,6 +121,7 @@ import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import DeliverableDropdown from './DeliverableDropdown.vue'
 import { getJsonImage } from '../../utils-inner/getJsonImage'
+import { updateConsistencyCheckPage } from '@/api/api'
 import iconDev from '@/assets/icon-dev.png'
 import iconDesign from '@/assets/icon-design.png'
 
@@ -146,7 +149,22 @@ const emit = defineEmits([
   'recheck-dev',
   'recheck-design',
   'replace-design',
+  'page-renamed',
 ])
+
+async function onPageEditItem({ item, newName }) {
+  try {
+    await updateConsistencyCheckPage({
+      pageId: item.id,
+      name: newName,
+      deviceType: item.deviceType ?? 'hmPhone',
+    })
+    emit('page-renamed', { pageId: item.id, name: newName })
+    ElMessage.success('页面名称已更新')
+  } catch (e) {
+    ElMessage.error(e.message || '更新失败')
+  }
+}
 
 const linkBtnRef         = ref(null)
 const linkPopoverVisible = ref(false)

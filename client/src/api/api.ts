@@ -84,6 +84,16 @@ export const addConsistencyCheckPage = async (params: Record<string, unknown>) =
   }
 }
 
+// 更新页面名称
+// POST /main/rest.root/reviewTool/consistencyCheck/updateConsistencyCheckPage
+// 返回：成功 true，失败抛出异常
+export const updateConsistencyCheckPage = async (params: { pageId: number; name: string; deviceType: string }) => {
+  const url = `${ADMIN_BASE_URL}/main/rest.root/reviewTool/consistencyCheck/updateConsistencyCheckPage`
+  const ret = await Api.post(url, params, 60000, { uiplusToken })
+  if (!ret.data?.success) throw new Error(ret.data?.message || '更新失败')
+  return true
+}
+
 // 更新问题项状态（标记/取消"非问题"）
 // POST /main/rest.root/reviewTool/consistencyCheck/updateConsistencyCheckProblem
 // 返回：成功 true，失败抛出异常

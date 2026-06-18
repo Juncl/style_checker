@@ -9,7 +9,31 @@
     </div>
 
     <!-- 中间主区 -->
-    <main class="center-panel up-board">
+    <main class="center-panel up-board ai-main-wrap">
+      <!-- AI 侧边面板（在布局流中推挤画布，仅 debugger 模式） -->
+      <AiChatDrawer v-if="debugMode" :open="aiChatOpen" @close="aiChatOpen = false" />
+
+      <!-- 触发按钮（悬浮，随面板展开同步移动，仅 debugger 模式） -->
+      <button
+        v-if="debugMode"
+        class="ai-sidebar-toggle"
+        :class="{ 'ai-sidebar-toggle--open': aiChatOpen }"
+        title="AI 检视助手"
+        @click="aiChatOpen = !aiChatOpen"
+      >
+        <svg viewBox="0 0 8 14" width="8" height="14" fill="none">
+          <path
+            :d="aiChatOpen ? 'M6 1L1 7L6 13' : 'M2 1L7 7L2 13'"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+
+      <!-- 画布内容区（被 AI 面板推挤） -->
+      <div class="ai-canvas-area">
       <ConsistencyTabbar
         :view-mode="result ? 'report' : 'upload'"
         :debug-mode="debugMode"
@@ -31,6 +55,7 @@
         @recheck-dev="recheckDev"
         @recheck-design="recheckDesign"
         @replace-design="onReplaceDesign"
+        @page-renamed="onPageRenamed"
       />
 
       <UploadPage
@@ -92,6 +117,7 @@
         @arkui-hover="onArkuiHover"
         @design-hover="onDesignHover"
       />
+      </div>
     </main>
 
     <!-- 右侧面板 -->
@@ -133,23 +159,6 @@
         @history-view="onHistoryView"
       />
     </aside>
-
-    <!-- AI 悬浮小球 + 对话框（仅 debugger 模式） -->
-    <Teleport to="body">
-      <template v-if="debugMode">
-        <button
-          class="ai-float-ball"
-          :class="{ 'ai-float-ball--active': aiChatOpen }"
-          title="AI 检视助手"
-          @click="aiChatOpen = !aiChatOpen"
-        >
-          <svg viewBox="0 0 20 20" width="10" height="10" fill="none">
-            <path d="M10 2L12.5 8H19L13.5 11.5L16 18L10 14.5L4 18L6.5 11.5L1 8H7.5L10 2Z" fill="white" opacity="0.95"/>
-          </svg>
-        </button>
-        <AiChatDrawer :open="aiChatOpen" @close="aiChatOpen = false" />
-      </template>
-    </Teleport>
 
     <div
       id="pixso_render"
@@ -1073,6 +1082,11 @@ async function onSelectDeliverable(d) {
 }
 
 // 统一的页面切换逻辑
+function onPageRenamed({ pageId, name }) {
+  const page = pages.value.find(p => String(p.id) === String(pageId))
+  if (page) page.name = name
+}
+
 async function onSelectPage(page) {
   workingPage.value = page
   closeHistoryKey.value++
@@ -1269,32 +1283,53 @@ function onDiffSelect(diff) {
 </script>
 
 <style>
-.ai-float-ball {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #0067D1;
-  border: none;
+/* main 改为 flex row，AI 面板和画布并排 */
+.ai-main-wrap {
+  display: flex !important;
+  flex-direction: row !important;
+  position: relative;
+}
+
+/* 画布内容区：占剩余空间，垂直 flex column */
+.ai-canvas-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 触发按钮：悬浮定位，随面板宽度过渡同步移动 */
+.ai-sidebar-toggle {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 48px;
+  background: #ffffff;
+  border: 1px solid var(--octo-border-separator, #D1D5DC);
+  border-left: none;
+  border-radius: 0 6px 6px 0;
   cursor: pointer;
+  z-index: 101;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(0, 103, 209, 0.4);
-  z-index: 9998;
-  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+  color: #999999;
+  padding: 0;
+  transition: left 220ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              background 150ms ease, color 150ms ease, border-color 150ms ease;
 }
-.ai-float-ball:hover {
-  transform: scale(1.08);
-  box-shadow: 0 6px 16px rgba(0, 103, 209, 0.5);
+.ai-sidebar-toggle:hover {
+  background: #e6f2fd;
+  color: #0067D1;
+  border-color: #0067D1;
 }
-.ai-float-ball:active {
-  transform: scale(0.94);
-}
-.ai-float-ball--active {
-  background: #005aba;
-  box-shadow: 0 4px 12px rgba(0, 90, 186, 0.5);
+.ai-sidebar-toggle--open {
+  left: 340px;
+  background: #e6f2fd;
+  color: #0067D1;
+  border-color: #0067D1;
 }
 </style>

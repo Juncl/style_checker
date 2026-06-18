@@ -55,10 +55,10 @@
 }
 
 .zoom-layer {
-  transform-origin: 0 0;
   position: absolute;
-  width: 100%;
-  height: 100%;
+  top: 0;
+  left: 0;
+  /* width / height 由 JS 设为 fit × scale 的实际渲染尺寸（保持图片比例，不变形） */
 }
 
 .img-wrapper img {
