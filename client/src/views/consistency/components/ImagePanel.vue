@@ -157,6 +157,7 @@ onUnmounted(() => {
   window.removeEventListener('pointerup', endInspectorDrag)
   canvasRef.value?.removeEventListener('wheel', onCanvasWheel)
   zoomClipRef.value?.removeEventListener('scroll', onClipScroll)
+  if (zoomRafId) cancelAnimationFrame(zoomRafId)
 })
 
 // 视口平移（滚动条/滚轮）时，画布跟随 zoom-layer 一起滚动无需重绘，
@@ -326,6 +327,10 @@ function onMouseLeave() {
   }
 }
 
+// 缩放节流：一帧内的多次滚轮/双指捏合事件累积成一次渲染，避免事件风暴压垮画布重绘
+let zoomRafId    = null
+let pendingZoom  = null   // { factor, normX, normY }，factor 为本帧累积的连乘缩放量
+
 function onCanvasWheel(e) {
   if (!e.ctrlKey) return
   e.preventDefault()
@@ -335,8 +340,30 @@ function onCanvasWheel(e) {
   const rect = clip.getBoundingClientRect()
   const normX = (e.clientX - rect.left) / rect.width
   const normY = (e.clientY - rect.top) / rect.height
-  applyZoom(factor, normX, normY)
-  emit('zoom', { factor, normX, normY })
+
+  // 累积本帧缩放量；焦点取最近一次事件的位置
+  if (pendingZoom) {
+    pendingZoom.factor *= factor
+    pendingZoom.normX = normX
+    pendingZoom.normY = normY
+  } else {
+    pendingZoom = { factor, normX, normY }
+  }
+  if (!zoomRafId) zoomRafId = requestAnimationFrame(flushZoom)
+}
+
+// rAF 回调：把本帧累积的缩放一次性应用并渲染，同时联动对侧
+function flushZoom() {
+  zoomRafId = null
+  const z = pendingZoom
+  pendingZoom = null
+  if (!z) return
+  // 每帧最大缩放步长 = 单次滚轮步长：鼠标一帧仅 1 个事件不受影响，
+  // 触摸板捏合一帧塞入大量事件（factor 连乘暴冲）则被压到与鼠标一致的节奏
+  const MAX_STEP = 1.1
+  z.factor = Math.max(1 / MAX_STEP, Math.min(MAX_STEP, z.factor))
+  applyZoom(z.factor, z.normX, z.normY)
+  emit('zoom', z)
 }
 
 // ── 聚焦 ────────────────────────────────────────────────────────────────────
@@ -977,7 +1004,7 @@ function applyZoom(factor, normX, normY) {
   const focalGX = oldRenderW ? (clip.scrollLeft + normX * clip.clientWidth)  / oldRenderW : normX
   const focalGY = oldRenderH ? (clip.scrollTop  + normY * clip.clientHeight) / oldRenderH : normY
 
-  zoomScale.value = Math.max(1, Math.min(100, zoomScale.value * factor))
+  zoomScale.value = Math.max(1, Math.min(25, zoomScale.value * factor))
   applyLayout()
 
   // 缩放后：把同一焦点滚回视口内同样的归一化位置
