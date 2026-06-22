@@ -50,9 +50,8 @@
           {{ group.label }}({{ issueCounts[group.key] || 0 }})
         </button>
       </div>
-      <div class="diff-tools">
+      <div v-if="debugMode" class="diff-tools">
         <el-input
-          v-if="debugMode"
           v-model="search"
           placeholder="搜索差异项"
           clearable
@@ -83,7 +82,7 @@
         @mouseleave="emit('diff-hover', null)"
       >
         <!-- 卡片头 -->
-        <div class="diff-card-head">
+        <div class="diff-card-head" @click="expandFold(foldKey(d))">
           <div class="diff-card-title">
             <span v-if="d.confidence === 'low'" class="diff-low-badge">仅参考</span>
             <span class="diff-card-name" :title="cardName(d)">{{ cardName(d) }}</span>
@@ -408,6 +407,12 @@ function toggleFold(key) {
   next.has(key) ? next.delete(key) : next.add(key)
   folded.value = next
 }
+function expandFold(key) {
+  if (!isFolded(key)) return
+  const next = new Set(folded.value)
+  next.delete(key)
+  folded.value = next
+}
 
 // ── 卡片头节点名 ──
 function cardName(d) {
@@ -493,7 +498,7 @@ function issueLabel(property) {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
   padding: 16px 16px 0;
 }
 
@@ -524,6 +529,7 @@ function issueLabel(property) {
   display: flex;
   align-items: center;
   gap: 12px;
+  padding-top: 12px;
 }
 
 
@@ -617,7 +623,6 @@ function issueLabel(property) {
   border: 1px solid transparent;
   border-radius: 8px;
   margin-bottom: 12px;
-  overflow: hidden;
   cursor: pointer;
   transition: background 150ms ease, border-color 150ms ease;
 }
@@ -716,7 +721,7 @@ function issueLabel(property) {
   background: #9999991a;
   color: #999;
   border-radius: 4px;
-  font-size: 10px;
+  font-size: 14px;
   line-height: 18px;
   white-space: nowrap;
   flex-shrink: 0;

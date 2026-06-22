@@ -21,11 +21,11 @@
         title="AI 检视助手"
         @click="aiChatOpen = !aiChatOpen"
       >
-        <svg viewBox="0 0 8 14" width="8" height="14" fill="none">
+        <svg viewBox="0 0 6 10" width="6" height="10" fill="none">
           <path
-            :d="aiChatOpen ? 'M6 1L1 7L6 13' : 'M2 1L7 7L2 13'"
+            :d="aiChatOpen ? 'M5 1L1 5L5 9' : 'M1 1L5 5L1 9'"
             stroke="currentColor"
-            stroke-width="1.5"
+            stroke-width="1.2"
             stroke-linecap="round"
             stroke-linejoin="round"
           />
@@ -1305,31 +1305,27 @@ function onDiffSelect(diff) {
   left: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 18px;
+  width: 12px;
   height: 48px;
   background: #ffffff;
-  border: 1px solid var(--octo-border-separator, #D1D5DC);
+  border: 1px solid #DFDFDF;
   border-left: none;
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 4px 4px 0;
   cursor: pointer;
   z-index: 101;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #999999;
+  color: #777777;
   padding: 0;
   transition: left 220ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
               background 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 .ai-sidebar-toggle:hover {
-  background: #e6f2fd;
-  color: #0067D1;
-  border-color: #0067D1;
+  background: #f5f5f5;
+  color: #191919;
 }
 .ai-sidebar-toggle--open {
-  left: 340px;
-  background: #e6f2fd;
-  color: #0067D1;
-  border-color: #0067D1;
+  left: 374px;
 }
 </style>

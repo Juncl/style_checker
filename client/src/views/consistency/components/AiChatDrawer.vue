@@ -1,35 +1,10 @@
 <template>
   <div :class="['ai-side-panel', { 'ai-side-panel--open': open }]">
-      <!-- 头部 -->
-      <div class="ai-drawer-header">
-        <div class="ai-header-left">
-          <svg class="ai-spark-icon" viewBox="0 0 16 16" width="15" height="15" fill="none">
-            <path d="M8 1.5L9.8 6.2H14.5L10.5 8.8L12.2 13.5L8 10.8L3.8 13.5L5.5 8.8L1.5 6.2H6.2L8 1.5Z" fill="#0067D1" opacity="0.9"/>
-          </svg>
-          <span class="ai-drawer-title">AI 检视助手</span>
-        </div>
-        <div class="ai-header-actions">
-          <button class="ai-action-btn" title="清空对话" @click="clearMessages">
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none">
-              <path d="M3 4H13M5 4V3H11V4M5.5 7V12M10.5 7V12M4 4L5 13H11L12 4H4Z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-          <button class="ai-action-btn" title="关闭" @click="$emit('close')">
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none">
-              <path d="M3 3L13 13M13 3L3 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-
       <!-- 消息列表 -->
       <div ref="messagesEl" class="ai-messages">
         <div v-if="messages.length === 0 && !streaming" class="ai-empty">
           <div class="ai-empty-icon">
-            <svg viewBox="0 0 48 48" width="44" height="44" fill="none">
-              <circle cx="24" cy="24" r="22" fill="#E6F2FD"/>
-              <path d="M24 10L27 19H37L29.5 24.5L32.5 33.5L24 28L15.5 33.5L18.5 24.5L11 19H21L24 10Z" fill="#0067D1" opacity="0.85"/>
-            </svg>
+            <img src="@/assets/svg/octo-logo.svg" width="44" height="44" />
           </div>
           <p class="ai-empty-title">AI 检视助手</p>
           <p class="ai-empty-hint">上传设计稿与实现截图，AI 将自动对比分析差异</p>
@@ -93,45 +68,34 @@
         </div>
       </div>
 
-      <!-- 图片预览区 -->
-      <div v-if="imgSlots.some(s => s)" class="ai-img-previews">
-        <div
-          v-for="(slot, i) in imgSlots"
-          :key="i"
-          class="ai-img-preview-item"
-          :class="{ 'ai-img-preview-item--empty': !slot }"
-        >
-          <template v-if="slot">
-            <img :src="slot.preview" class="ai-img-preview-thumb" />
-            <div class="ai-img-preview-label">{{ i === 0 ? '设计稿' : '实现图' }}</div>
-            <button class="ai-img-preview-remove" @click="removeImg(i)" title="移除">
-              <svg viewBox="0 0 10 10" width="8" height="8" fill="none">
-                <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-              </svg>
-            </button>
-          </template>
-        </div>
-      </div>
 
       <!-- 输入区 -->
+      <div class="ai-input-wrap">
       <div class="ai-input-area">
         <div class="ai-upload-btns">
-          <button
-            v-for="(slot, i) in imgSlots"
-            :key="i"
-            class="ai-upload-btn"
-            :class="{ 'ai-upload-btn--filled': !!slot }"
-            :title="i === 0 ? '上传设计稿图片' : '上传实现截图'"
-            @click="triggerUpload(i)"
-          >
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none">
-              <rect x="1.5" y="3.5" width="13" height="10" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
-              <circle cx="6" cy="8" r="1.5" stroke="currentColor" stroke-width="1.1"/>
-              <path d="M9 10L11 7.5L13 10" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M8 3.5V1.5M6.5 2H9.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
-            </svg>
-            <span>{{ i === 0 ? '设计稿' : '实现图' }}</span>
-          </button>
+          <template v-for="(slot, i) in imgSlots" :key="i">
+            <button
+              class="ai-upload-btn"
+              :class="{ 'ai-upload-btn--filled': !!slot }"
+              :title="i === 0 ? '上传设计稿图片' : '上传实现截图'"
+              @click="triggerUpload(i)"
+            >
+              <template v-if="slot">
+                <img :src="slot.preview" class="ai-upload-preview" />
+              </template>
+              <template v-else>
+                <svg viewBox="0 0 12 12" width="14" height="14" fill="none">
+                  <path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                </svg>
+                <span class="ai-upload-label">{{ i === 0 ? '设计稿' : '实现图' }}</span>
+              </template>
+            </button>
+            <span v-if="i === 0" class="ai-switch-icon">
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="none">
+                <path d="M1 5.68915L14.9992 5.68915L11.1043 1.83325M15 10.3333L1 10.3333L4.89497 14.1892" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="0.9"/>
+              </svg>
+            </span>
+          </template>
         </div>
 
         <textarea
@@ -149,10 +113,9 @@
           @click="sendMessage"
           title="发送"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none">
-            <path d="M13.5 2.5L1.5 7L7 9L9 14.5L13.5 2.5Z" fill="currentColor"/>
-          </svg>
+          <img src="@/assets/svg/send.svg" width="36" height="36" class="ai-send-icon" />
         </button>
+      </div>
       </div>
 
       <!-- 隐藏的 file input -->
@@ -437,53 +400,19 @@ function parseThinkBuffer() {
               box-shadow 220ms ease;
 }
 .ai-side-panel--open {
-  width: 340px;
+  width: 374px;
   border-right: 1px solid var(--octo-border-separator, #e8eaed);
-  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.08);
 }
 
-/* ── 头部 ── */
-.ai-drawer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-  height: 44px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--octo-border-separator, #e8eaed);
-  background: #fafbfc;
-  user-select: none;
-}
-.ai-header-left { display: flex; align-items: center; gap: 6px; }
-.ai-spark-icon  { flex-shrink: 0; }
-.ai-drawer-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--octo-text-primary, #191919);
-  white-space: nowrap;
-}
-.ai-header-actions {
-  display: flex;
-  gap: 2px;
-}
-.ai-action-btn {
-  width: 24px; height: 24px;
-  border: none; background: transparent;
-  cursor: pointer; border-radius: 4px;
-  display: flex; align-items: center; justify-content: center;
-  color: #777777;
-  transition: background 150ms ease, color 150ms ease;
-}
-.ai-action-btn:hover { background: #efefef; color: #191919; }
 
 /* ── 消息列表 ── */
 .ai-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 14px 10px;
+  padding: 24px 24px 40px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 20px;
   scroll-behavior: smooth;
 }
 
@@ -491,11 +420,11 @@ function parseThinkBuffer() {
   flex: 1;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: 10px; padding: 32px 20px; text-align: center;
+  gap: 8px; padding: 32px 20px; text-align: center;
 }
 .ai-empty-icon   { opacity: 0.9; }
-.ai-empty-title  { font-size: 13px; font-weight: 600; color: var(--octo-text-primary, #191919); margin: 0; }
-.ai-empty-hint   { font-size: 11px; color: #999999; line-height: 1.6; margin: 0; }
+.ai-empty-title  { font-size: 32px; font-weight: 700; color: rgba(0, 0, 0, 0.90); margin: 0; }
+.ai-empty-hint   { font-size: 14px; font-weight: 500; color: rgba(0, 0, 0, 0.60); line-height: 22px; margin: 0; }
 
 .ai-msg          { display: flex; max-width: 92%; }
 .ai-msg--user    { align-self: flex-end; flex-direction: column; align-items: flex-end; }
@@ -505,8 +434,8 @@ function parseThinkBuffer() {
 .ai-think-block {
   width: 100%;
   border-radius: 6px;
-  background: #f7f5ff;
-  border-left: 2px solid #b8b0e8;
+  background: transparent;
+  border-left: 2px solid #d1d5dc;
   overflow: hidden;
 }
 .ai-think-header {
@@ -514,26 +443,26 @@ function parseThinkBuffer() {
   width: 100%; padding: 5px 9px;
   border: none; background: transparent;
   cursor: pointer; text-align: left;
-  font-size: 11px; color: #7b6fc4;
+  font-size: 12px; color: #777777;
   font-weight: 500;
   transition: background 150ms ease;
 }
-.ai-think-header:hover { background: rgba(123,111,196,0.08); }
+.ai-think-header:hover { background: rgba(0, 0, 0, 0.04); }
 .ai-think-chevron {
-  flex-shrink: 0; color: #7b6fc4;
+  flex-shrink: 0; color: #777777;
   transition: transform 200ms ease;
 }
 .ai-think-block--collapsed .ai-think-chevron { transform: rotate(-90deg); }
 .ai-think-badge {
   margin-left: auto;
-  font-size: 10px; color: #9e93d8;
-  background: rgba(123,111,196,0.12);
+  font-size: 10px; color: #999999;
+  background: rgba(0, 0, 0, 0.06);
   padding: 1px 5px; border-radius: 3px;
 }
 .ai-think-body {
   padding: 0 10px 8px 10px;
-  font-size: 11px; line-height: 1.65;
-  color: #8a82bf;
+  font-size: 12px; line-height: 21px;
+  color: #191919;
   white-space: pre-wrap; word-break: break-word;
   max-height: 220px; overflow-y: auto;
   transition: max-height 200ms ease, padding 200ms ease, opacity 200ms ease;
@@ -547,30 +476,29 @@ function parseThinkBuffer() {
 }
 
 .ai-msg-bubble {
-  padding: 8px 12px; border-radius: 10px;
-  font-size: 12px; line-height: 1.65;
+  padding: 12px; border-radius: 16px;
+  font-size: 14px; line-height: 22px;
   word-break: break-word; white-space: pre-wrap;
 }
 .ai-msg--user .ai-msg-bubble, .ai-msg-bubble--user {
-  background: #0067D1; color: #ffffff;
-  border-bottom-right-radius: 3px;
+  background: rgba(10, 89, 247, 0.08); color: rgba(0, 0, 0, 0.9);
+  border-bottom-right-radius: 2px;
 }
 .ai-msg--assistant .ai-msg-bubble {
-  background: #f0f4f8; color: #191919;
-  border-bottom-left-radius: 3px;
+  background: transparent; color: rgba(25, 25, 25, 1);
 }
 
 /* ── Markdown 渲染 ── */
 .ai-msg-md { max-width: 100%; overflow-x: auto; }
 .ai-msg-md :deep(h1), .ai-msg-md :deep(h2) {
   font-size: 13px; font-weight: 700; color: #191919;
-  margin: 10px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #e0e4ea;
+  margin: 6px 0 2px; padding-bottom: 3px; border-bottom: 1px solid #e0e4ea;
 }
-.ai-msg-md :deep(h3) { font-size: 12px; font-weight: 600; color: #333; margin: 8px 0 4px; }
-.ai-msg-md :deep(p)  { margin: 4px 0; line-height: 1.65; }
+.ai-msg-md :deep(h3) { font-size: 12px; font-weight: 600; color: #333; margin: 4px 0 2px; }
+.ai-msg-md :deep(p)  { margin: 2px 0; line-height: 1.65; }
 .ai-msg-md :deep(strong) { font-weight: 600; color: #191919; }
-.ai-msg-md :deep(ul), .ai-msg-md :deep(ol) { padding-left: 16px; margin: 4px 0; }
-.ai-msg-md :deep(li) { margin: 2px 0; line-height: 1.6; }
+.ai-msg-md :deep(ul), .ai-msg-md :deep(ol) { padding-left: 16px; margin: 2px 0; }
+.ai-msg-md :deep(li) { margin: 1px 0; line-height: 1.6; }
 .ai-msg-md :deep(table) {
   width: 100%; border-collapse: collapse; font-size: 11px;
   margin: 6px 0; display: block; overflow-x: auto;
@@ -593,11 +521,11 @@ function parseThinkBuffer() {
 .ai-msg-thumb-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .ai-msg-thumb {
   width: 72px; height: 72px; object-fit: cover;
-  border-radius: 6px; border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 8px; border: 1px solid rgba(0,0,0,0.08);
 }
 .ai-msg-thumb-label {
-  font-size: 10px; color: rgba(255,255,255,0.75);
-  background: #0067D1; padding: 1px 5px; border-radius: 3px;
+  font-size: 10px; color: #777777;
+  background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 3px;
 }
 
 /* 流式打字点 */
@@ -614,75 +542,121 @@ function parseThinkBuffer() {
   30% { transform: translateY(-4px); opacity: 1; }
 }
 
-/* ── 图片预览区 ── */
-.ai-img-previews {
-  flex-shrink: 0; display: flex; gap: 8px; padding: 8px 10px 0;
-}
-.ai-img-preview-item {
-  position: relative; width: 72px; height: 72px;
-  border-radius: 6px; overflow: visible; flex-shrink: 0;
-}
-.ai-img-preview-thumb {
-  width: 72px; height: 72px; object-fit: cover;
-  border-radius: 6px; border: 1px solid #D1D5DC; display: block;
-}
-.ai-img-preview-label {
-  position: absolute; bottom: 0; left: 0; right: 0;
-  font-size: 10px; text-align: center;
-  background: rgba(0,0,0,0.45); color: #fff;
-  border-radius: 0 0 6px 6px; padding: 2px 0; pointer-events: none;
-}
-.ai-img-preview-remove {
-  position: absolute; top: -6px; right: -6px;
-  width: 16px; height: 16px; border: none; border-radius: 50%;
-  background: #ff4d4f; color: #fff; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background 150ms ease; padding: 0;
-}
-.ai-img-preview-remove:hover { background: #d9363e; }
 
 /* ── 输入区 ── */
+.ai-input-wrap {
+  flex-shrink: 0;
+  position: relative;
+  margin: 0 24px 24px 24px;
+}
+
+/* 渐变光晕（在输入框下方扩散） */
+.ai-input-wrap::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: conic-gradient(
+    from 0.5turn,
+    rgba(246, 97, 23, 0.70) 0.6%,
+    rgba(95, 45, 255, 0.70) 8.4%,
+    rgba(61, 93, 255, 0.70) 21.8%,
+    rgba(104, 138, 255, 0.70) 43.1%,
+    rgba(28, 171, 111, 0.70) 54.2%,
+    rgba(61, 93, 255, 0.70) 65.8%,
+    rgba(61, 93, 255, 0.70) 87.4%,
+    rgba(206, 7, 232, 0.70) 92.3%,
+    rgba(246, 97, 23, 0.70) 100%
+  );
+  filter: blur(8px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .ai-input-area {
-  flex-shrink: 0; padding: 8px 10px 10px;
-  border-top: 1px solid var(--octo-border-separator, #e8eaed);
-  background: #fafbfc;
+  flex-shrink: 0;
+  padding: 16px 12px 8px 16px;
+  background: #ffffff;
   display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end;
+  position: relative;
+  border-radius: 16px;
 }
-.ai-upload-btns { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+
+/* 角度渐变描边（8色，opacity 0.70，1.2px） */
+.ai-input-area::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1.2px;
+  border-radius: 16px;
+  background: conic-gradient(
+    from 0.5turn,
+    rgba(246, 97, 23, 0.70) 0.6%,
+    rgba(95, 45, 255, 0.70) 8.4%,
+    rgba(61, 93, 255, 0.70) 21.8%,
+    rgba(104, 138, 255, 0.70) 43.1%,
+    rgba(28, 171, 111, 0.70) 54.2%,
+    rgba(61, 93, 255, 0.70) 65.8%,
+    rgba(61, 93, 255, 0.70) 87.4%,
+    rgba(206, 7, 232, 0.70) 92.3%,
+    rgba(246, 97, 23, 0.70) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.ai-upload-btns {
+  flex: 0 0 100%;
+  display: flex;
+  justify-content: flex-start;
+  gap: 16px;
+  padding-bottom: 4px;
+}
 .ai-upload-btn {
-  display: flex; align-items: center; gap: 4px;
-  height: 26px; padding: 0 8px;
-  border: 1px solid #D1D5DC; border-radius: 4px;
-  background: #fff; color: #555; font-size: 11px; cursor: pointer;
-  white-space: nowrap;
-  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+  width: 52px; height: 64px; padding: 0;
+  border: 0.5px solid rgba(223, 223, 223, 1);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.40);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
 }
-.ai-upload-btn:hover { border-color: #0067D1; color: #0067D1; background: #e6f2fd; }
-.ai-upload-btn--filled { border-color: #52C41A; color: #389e0d; background: #f6ffed; }
-.ai-upload-btn--filled:hover { border-color: #389e0d; }
+.ai-upload-btn:nth-child(1) { transform: rotate(-4deg); }
+.ai-upload-btn:nth-child(2) { transform: rotate(3deg); }
+.ai-upload-btn:hover { background: rgba(0, 0, 0, 0.07); border-color: rgba(0, 103, 209, 0.4); }
+.ai-upload-btn--filled { background: rgba(82, 196, 26, 0.06); border-color: rgba(82, 196, 26, 0.6); }
+.ai-upload-btn--filled:hover { border-color: rgba(82, 196, 26, 0.8); }
+.ai-upload-label { font-size: 8px; color: rgba(0, 0, 0, 0.40); line-height: 1; font-weight: 400; }
+.ai-upload-preview { width: 100%; height: 100%; object-fit: cover; border-radius: 1px; display: block; }
+.ai-switch-icon {
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  color: rgba(0, 0, 0, 0.60);
+}
 
 .ai-textarea {
   flex: 1; min-width: 0; resize: none;
-  border: 1px solid #D1D5DC; border-radius: 6px;
-  padding: 7px 10px; font-size: 12px; line-height: 1.5; color: #191919;
-  outline: none; background: #ffffff;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  border: none; border-radius: 0;
+  padding: 7px 10px 7px 0; font-size: 12px; line-height: 1.5; color: #191919;
+  outline: none; background: transparent;
   font-family: inherit;
 }
-.ai-textarea:focus {
-  border-color: #0067D1;
-  box-shadow: 0 0 0 2px rgba(0, 103, 209, 0.15);
-}
-.ai-textarea:disabled { background: #f5f5f5; color: #bfbfbf; cursor: not-allowed; }
-.ai-textarea::placeholder { color: #aaaaaa; }
+.ai-textarea:disabled { background: transparent; color: #bfbfbf; cursor: not-allowed; }
+.ai-textarea::placeholder { color: rgba(0, 0, 0, 0.60); }
 
 .ai-send-btn {
-  width: 32px; height: 32px; flex-shrink: 0;
-  border: none; border-radius: 6px;
-  background: #0067D1; color: #ffffff; cursor: pointer;
+  flex-shrink: 0;
+  border: none; border-radius: 50%;
+  background: transparent;
+  padding: 0; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: background 150ms ease;
+  transition: opacity 150ms ease;
 }
-.ai-send-btn:hover:not(:disabled) { background: #005aba; }
-.ai-send-btn:disabled { background: #D1D5DC; cursor: not-allowed; }
+.ai-send-btn:hover:not(:disabled) { opacity: 0.85; }
+.ai-send-btn:disabled { cursor: not-allowed; opacity: 0.4; }
+.ai-send-icon { display: block; }
 </style>

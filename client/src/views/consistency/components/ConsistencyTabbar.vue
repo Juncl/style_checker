@@ -261,8 +261,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 
 /* ── 传送码快捷替换图标按钮 ── */
 .design-link-btn {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 4px;
   display: flex;
   align-items: center;
@@ -270,6 +270,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   cursor: pointer;
   color: #777777;
   flex-shrink: 0;
+  margin-right: -4px;
   transition: color 150ms ease, background-color 150ms ease;
 }
 .design-link-btn:hover,

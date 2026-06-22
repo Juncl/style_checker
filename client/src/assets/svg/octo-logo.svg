@@ -1,0 +1,15 @@
+<svg viewBox="0 0 25.9604 24.96" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="25.960449" height="24.959961" fill="none" customFrame="#000000">
+	<defs>
+		<linearGradient id="paint_linear_8" x1="1.82307291" x2="18.4445763" y1="20.7902489" y2="4.14246941" gradientUnits="userSpaceOnUse">
+			<stop stop-color="rgb(1,51,206)" offset="0" stop-opacity="1" />
+			<stop stop-color="rgb(1,93,225)" offset="0.349999994" stop-opacity="1" />
+		</linearGradient>
+		<linearGradient id="paint_linear_9" x1="8.5582428" x2="22.9465332" y1="8.79345703" y2="23.2045021" gradientUnits="userSpaceOnUse">
+			<stop stop-color="rgb(1,93,225)" offset="0" stop-opacity="1" />
+			<stop stop-color="rgb(100,205,247)" offset="1" stop-opacity="1" />
+		</linearGradient>
+	</defs>
+	<rect id="容器 72004" width="25.960449" height="24.959961" x="0.000000" y="0.000000" />
+	<path id="path" d="M22.61 9.59C22.61 8.66 22.27 7.85 21.69 7.39L15.23 0.92C14.65 0.34 13.84 0 13.03 0C12.23 0 11.42 0.34 10.84 0.92L4.38 7.28C3.8 7.85 3.34 8.66 3.34 9.59C3.34 11.32 4.73 12.71 6.46 12.71C8.19 12.71 9.57 11.32 9.57 9.59L12.92 6.24L16.27 9.59L7.27 18.6L3.8 15.14L0 18.95L5.07 24.03C5.65 24.61 6.46 24.96 7.27 24.96C8.07 24.96 8.88 24.61 9.46 24.03L21.57 11.9C22.15 11.32 22.61 10.51 22.61 9.59Z" fill="url(#paint_linear_8)" fill-rule="nonzero" />
+	<path id="path_00000170997707182529309390000003411054097233916074_" d="M25.9603 18.95L22.1503 15.14L18.6903 18.6L8.07025 7.96997L4.26025 11.78L16.3803 23.92C16.9603 24.5 17.7703 24.96 18.6903 24.96C19.5003 24.96 20.3003 24.61 20.8803 24.04L25.9603 18.95Z" fill="url(#paint_linear_9)" fill-rule="nonzero" />
+</svg>
