@@ -23,7 +23,7 @@
         empty-text="暂无页面"
         :show-add-button="true"
         add-button-text="新增页面"
-        :allow-edit="true"
+        :allow-edit="debugMode"
         @select="$emit('select-page', $event)"
         @add="$emit('add-page')"
         @edit-item="onPageEditItem"

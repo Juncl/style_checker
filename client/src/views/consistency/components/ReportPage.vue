@@ -68,7 +68,7 @@
           <el-tag
             size="small"
             effect="plain"
-            :type="matchTypePass(selectedPair.matchType) ? 'primary' : ''"
+            :type="matchTypePass(selectedPair.matchType) ? 'primary' : 'info'"
             :class="{ 'tag-unmatched': !matchTypePass(selectedPair.matchType) }"
           >
             {{ matchTypePass(selectedPair.matchType)

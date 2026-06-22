@@ -334,7 +334,12 @@ let pendingZoom  = null   // { factor, normX, normY }，factor 为本帧累积�
 function onCanvasWheel(e) {
   if (!e.ctrlKey) return
   e.preventDefault()
-  const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
+  // 根据 deltaY 大小调整缩放倍数
+  // 鼠标 deltaY≈120，触摸板 deltaY 通常 1-10
+  // 小 deltaY 用小倍数，避免触摸板多事件累乘太快
+  const absDelta = Math.abs(e.deltaY)
+  const base = absDelta > 50 ? 1.1 : 1.01 + (absDelta / 120) * 0.14
+  const factor = e.deltaY < 0 ? base : 1 / base
   const clip = zoomClipRef.value
   if (!clip) return
   const rect = clip.getBoundingClientRect()

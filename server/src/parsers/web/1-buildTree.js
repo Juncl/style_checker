@@ -90,7 +90,7 @@ function extractWebStyle(node, isText) {
       result.fontColor = node.fontColor
     }
     if (typeof node.fontSize === 'number' && node.fontSize > 0) {
-      result.fontSize = node.fontSize
+      result.fontSize = Math.round(node.fontSize)
     }
     if (typeof node.fontWeight === 'number' || typeof node.fontWeight === 'string') {
       result.fontWeight = normalizeWebFontWeight(node.fontWeight)
@@ -110,14 +110,14 @@ function extractWebStyle(node, isText) {
   }
 
   // borderRadius：web 是单个数字，扩展到四角
-  const br = Number(node.borderRadius || 0)
+  const br = Math.round(Number(node.borderRadius || 0) * 10) / 10
   if (br > 0) {
     result.borderRadius = {
       topLeft: br, topRight: br, bottomRight: br, bottomLeft: br,
     }
   }
 
-  const bw = Number(node.borderWidth || 0)
+  const bw = Math.round(Number(node.borderWidth || 0) * 10) / 10
   const bs = String(node.borderStyle || '').toLowerCase()
   const bc = node.borderColor
   if (bw > 0 && bs && bs !== 'none' && bc && !isTransparentColor(bc)) {
