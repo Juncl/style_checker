@@ -4,6 +4,13 @@ import { DEV_ENV, VLM_CONFIG } from '../config/constants.js'
 
 const { model: DEFAULT_MODEL, url: VLM_API_URL, apikey: VLM_AUTH } = VLM_CONFIG[DEV_ENV]
 
+// 检测 messages 中是否携带图片（任意一条 user 消息含 image_url）
+function messagesHaveImage(messages) {
+  return messages.some(m =>
+    Array.isArray(m.content) && m.content.some(c => c.type === 'image_url')
+  )
+}
+
 export async function handleImgCheck({ model = DEFAULT_MODEL, messages, stream, ...rest }) {
   if (!messages) {
     const err = new Error('缺少参数！')
@@ -11,7 +18,9 @@ export async function handleImgCheck({ model = DEFAULT_MODEL, messages, stream, 
     throw err
   }
 
-  if (!messages[0] || messages[0].role !== 'system') {
+  // 有图片 → 注入系统 Prompt（首轮对比或追加新图）
+  // 无图片 → 纯文字追问，直接透传，不注入 Prompt
+  if (messagesHaveImage(messages) && (!messages[0] || messages[0].role !== 'system')) {
     messages = [{ role: 'system', content: [{ type: 'input_text', text: IMG_CHECKER_SYSTEM_PROMPT }] }, ...messages]
   }
 

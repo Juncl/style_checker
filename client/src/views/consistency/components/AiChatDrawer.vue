@@ -102,7 +102,7 @@
           ref="inputEl"
           v-model="inputText"
           class="ai-textarea"
-          :placeholder="hasBothImgs ? '补充说明（可选），Enter 发送…' : '请先上传设计稿和实现图'"
+          :placeholder="placeholder"
           rows="3"
           :disabled="streaming"
           @keydown="onKeydown"
@@ -178,7 +178,22 @@ let userScrolledThink = false
 
 const imgSlots    = ref([null, null])
 const hasBothImgs = computed(() => imgSlots.value.every(s => s))
-const canSend     = computed(() => !streaming.value && hasBothImgs.value)
+// 是否已有对话历史（至少有一条 assistant 回复，说明第一轮已完成）
+const hasHistory  = computed(() => messages.value.some(m => m.role === 'assistant'))
+
+// 发送条件：
+//   无历史（首轮）→ 必须有两张图
+//   有历史（追问）→ 有图 OR 有文字均可
+const canSend = computed(() => {
+  if (streaming.value) return false
+  if (!hasHistory.value) return hasBothImgs.value
+  return hasBothImgs.value || inputText.value.trim().length > 0
+})
+
+const placeholder = computed(() => {
+  if (!hasHistory.value) return hasBothImgs.value ? '补充说明（可选），Enter 发送…' : '请先上传设计稿和实现图'
+  return hasBothImgs.value ? '补充说明（可选），Enter 发送…' : '继续追问（Enter 发送）…'
+})
 
 function clearMessages() {
   if (streaming.value) return
@@ -249,14 +264,19 @@ function removeImg(i) {
 }
 
 async function sendMessage() {
-  if (!hasBothImgs.value || streaming.value) return
-  const text = inputText.value.trim()
-  const currentImgSrcs = imgSlots.value.map(s => s.preview)
+  if (streaming.value) return
+  // 首轮：必须有两张图；追问：有图或有文字即可
+  if (!hasHistory.value && !hasBothImgs.value) return
+  const text    = inputText.value.trim()
+  const hasImgs = hasBothImgs.value
+  if (hasHistory.value && !hasImgs && !text) return
+
+  const currentImgSrcs = hasImgs ? imgSlots.value.map(s => s.preview) : []
 
   messages.value.push({
     role: 'user',
-    content: text || '请对比两张图',
-    images: currentImgSrcs.length ? currentImgSrcs : undefined,
+    content: hasImgs ? (text || '请对比两张图') : text,
+    images: hasImgs ? currentImgSrcs : undefined,
   })
   inputText.value = ''
   imgSlots.value  = [null, null]
@@ -269,15 +289,33 @@ async function sendMessage() {
   thinkDone.value               = false
   streamingThinkCollapsed.value = false
 
-  const historyText = messages.value.slice(0, -1).map(m => ({
-    role: m.role,
-    content: [{ type: 'input_text', text: m.content }],
-  }))
+  // 历史消息：只有最近一条带图的 user 消息保留图片，更早的图片轮次只传文字。
+  // 原因：VLM API 无状态，每轮都重传全部历史；图片 base64 很大，若每轮都带
+  // 所有历史图片，token 消耗会随对话轮次线性膨胀。只保留最近一次图片已足够
+  // 给模型建立视觉上下文，更早的图片轮次退化为文字即可。
+  const historyMsgs = messages.value.slice(0, -1)
+  const lastImgIdx  = historyMsgs.reduce((acc, m, i) => (m.images?.length ? i : acc), -1)
+  const historyText = historyMsgs.map((m, i) => {
+    if (m.role === 'user' && i === lastImgIdx) {
+      return {
+        role: m.role,
+        content: [
+          ...m.images.map(src => ({ type: 'image_url', image_url: { url: src } })),
+          { type: 'input_text', text: m.content },
+        ],
+      }
+    }
+    return { role: m.role, content: [{ type: 'input_text', text: m.content }] }
+  })
 
-  const currentContent = [
-    ...currentImgSrcs.map(src => ({ type: 'image_url', image_url: { url: src } })),
-    { type: 'input_text', text: text || '请对比两张图' },
-  ]
+  // 有图：携带图片 + 文字（注入 prompt 由后端决定）
+  // 无图：纯文字追问（后端不注入 prompt）
+  const currentContent = hasImgs
+    ? [
+        ...currentImgSrcs.map(src => ({ type: 'image_url', image_url: { url: src } })),
+        { type: 'input_text', text: text || '请对比两张图' },
+      ]
+    : [{ type: 'input_text', text }]
 
   const apiMessages = [
     ...historyText,
@@ -629,8 +667,8 @@ function parseThinkBuffer() {
 .ai-upload-btn:nth-child(1) { transform: rotate(-4deg); }
 .ai-upload-btn:nth-child(2) { transform: rotate(3deg); }
 .ai-upload-btn:hover { background: rgba(0, 0, 0, 0.07); border-color: rgba(0, 103, 209, 0.4); }
-.ai-upload-btn--filled { background: rgba(82, 196, 26, 0.06); border-color: rgba(82, 196, 26, 0.6); }
-.ai-upload-btn--filled:hover { border-color: rgba(82, 196, 26, 0.8); }
+.ai-upload-btn--filled { background: rgba(82, 196, 26, 0.06); }
+
 .ai-upload-label { font-size: 8px; color: rgba(0, 0, 0, 0.40); line-height: 1; font-weight: 400; }
 .ai-upload-preview { width: 100%; height: 100%; object-fit: cover; border-radius: 1px; display: block; }
 .ai-switch-icon {
