@@ -214,6 +214,89 @@ function getTextFinalScore(content, color, size, weight, place) {
   return content * 0.25 + color * 0.15 + size * 0.15 + place * 0.35 + weight * 0.1
 }
 
+// ─── 锚点方位共识过滤 ──────────────────────────────────────────────────────────
+
+/**
+ * 计算 P 相对 Q 的 8 象限方位编号（环形）
+ *   2(正上)
+ * 3(左上)  1(右上)
+ * 4(正左)      0(正右)
+ * 5(左下)  7(右下)
+ *   6(正下)
+ * 注意 y 轴向下，正上对应 dy<0，故用 -dy 计算角度。
+ */
+function octant(px, py, qx, qy) {
+  const angle = Math.atan2(-(py - qy), px - qx) // [-π, π]，逆时针为正
+  let idx = Math.round(angle / (Math.PI / 4))   // 每 45° 一格
+  idx = ((idx % 8) + 8) % 8                       // 归一到 0..7
+  return idx
+}
+
+/** 两个象限的环形距离：0..4 */
+function octantDist(a, b) {
+  const d = Math.abs(a - b)
+  return Math.min(d, 8 - d)
+}
+
+/**
+ * 锚点方位共识过滤：对 Pass 1 的高分锚点再加一道宽松的坎，
+ * 踢掉与过半锚点方位矛盾（会把后续拓扑带偏）的离群锚点。
+ *
+ * 规则：
+ * - 锚点两两比对，design 侧方位 vs arkui 侧方位，环形象限距离 ≥3 记一次冲突
+ * - 某锚点冲突率 > 0.5（与过半锚点矛盾）→ 踢出锚点集
+ * - 迭代 1 次（用更纯的群体重算）
+ *
+ * @param {MatchPair[]} pairs Pass 1 转出的强锚点
+ * @returns {{ kept: MatchPair[], dropped: MatchPair[] }}
+ */
+function filterAnchorsByOrientation(pairs) {
+  const CONFLICT_OCTANT = 3   // 象限环距 ≥3 视为方位矛盾
+  const CONFLICT_RATE = 0.5   // 与过半锚点矛盾才踢出
+  const dropped = []
+
+  // 取绝对中心点（方位只看侧内相对角度，绝对坐标即可，无需归一化）
+  const center = (n) => ({ x: n.rect.x + n.rect.w / 2, y: n.rect.y + n.rect.h / 2 })
+
+  let kept = pairs.filter(p => p.design?.rect && p.arkui?.rect)
+  const skipped = pairs.filter(p => !(p.design?.rect && p.arkui?.rect))
+
+  // 最多迭代 2 轮（首轮 + 用更纯群体复核 1 轮），收敛即停
+  for (let iter = 0; iter < 2; iter++) {
+    if (kept.length < 3) break // 锚点太少无群体共识可言，不过滤
+
+    const nodes = kept.map(p => ({
+      pair: p,
+      de: center(p.design),
+      hm: center(p.arkui),
+    }))
+
+    const survivors = []
+    let removedThisRound = false
+    for (let i = 0; i < nodes.length; i++) {
+      let conflict = 0
+      for (let j = 0; j < nodes.length; j++) {
+        if (i === j) continue
+        const dirDe = octant(nodes[i].de.x, nodes[i].de.y, nodes[j].de.x, nodes[j].de.y)
+        const dirHm = octant(nodes[i].hm.x, nodes[i].hm.y, nodes[j].hm.x, nodes[j].hm.y)
+        if (octantDist(dirDe, dirHm) >= CONFLICT_OCTANT) conflict++
+      }
+      const rate = conflict / (nodes.length - 1)
+      if (rate > CONFLICT_RATE) {
+        dropped.push(nodes[i].pair)
+        removedThisRound = true
+      } else {
+        survivors.push(nodes[i].pair)
+      }
+    }
+
+    kept = survivors
+    if (!removedThisRound) break // 本轮无淘汰，已收敛
+  }
+
+  return { kept: [...kept, ...skipped], dropped }
+}
+
 // ─── 主流程 ────────────────────────────────────────────────────────────────────
 
 /**
@@ -327,7 +410,14 @@ export function matchAllTextNodes(designNodes, arkuiNodes, options = {}) {
     pairs.push(pair)
   }
 
-  
+  // 锚点方位共识过滤：踢掉与过半锚点方位矛盾的离群锚点，避免带偏后续拓扑
+  const { kept, dropped } = filterAnchorsByOrientation(pairs)
+  if (dropped.length) {
+    // 被踢出的锚点从可信映射里同步移除（降级为普通候选，后续 pass 仍可救）
+    for (const p of dropped) {
+      delete textHmMapPixCredible[p.arkui.id]
+    }
+  }
 
-  return { pairs, textHmMapPix, textHmMapPixCredible, textHmMapPixDetail }
+  return { pairs: kept, textHmMapPix, textHmMapPixCredible, textHmMapPixDetail }
 }

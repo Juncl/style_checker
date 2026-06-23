@@ -279,8 +279,10 @@ function cjkCommonSuffixBoost(a, b) {
   let len = 0
   const max = Math.min(a.length, b.length)
   while (len < max && a[a.length - 1 - len] === b[b.length - 1 - len]) len += 1
-  // 当后缀长度≥2个字符时，返回高分（只比完全相同低一点点）
-  return len >= 2 ? 0.94 : 0
+  if (len < 2) return 0
+  // 按后缀占较短串的比例连续分级：20%→0.66  40%→0.77  60%→0.82  80%→0.88  100%→0.94
+  const ratio = len / Math.min(a.length, b.length)
+  return 0.60 + ratio * 0.34
 }
 
 export function colorDistance(c1, c2) {

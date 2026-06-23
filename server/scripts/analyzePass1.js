@@ -94,11 +94,10 @@ async function analyze() {
       }
     }
 
-    console.log('\nTop 5 候选:')
+    console.log('\n全部候选:')
     const sorted = Object.entries(detail.compareDeIdS)
       .map(([id, d]) => ({ id, ...d }))
       .sort((a, b) => b.finalScore - a.finalScore)
-      .slice(0, 5)
 
     sorted.forEach((item, idx) => {
       const node = designNodes.find(n => n.id === item.id)

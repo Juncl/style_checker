@@ -14,18 +14,50 @@
  *
  * 不过滤已匹配节点 —— 本 Pass 的本职是纠偏先前 Pass 的错配：
  * 把已匹配节点也纳入 list，让 list-index 的高 priority 在最终 selectOneToOnePairs 中覆盖旧配对。
+ *
+ * 🔴 全程使用绝对坐标 rect（vp/dp），不碰 normRect（见 CLAUDE.md 坐标系统硬性规则）。
  */
-import { computeIoU } from '../utils/matchGeometry.js'
 import { makePair } from './matchStrategies.js'
 
-const ROW_TOLERANCE       = 0.005   // 同行 y 中心 / h / w 容差（normRect, 约 4vp）
-const FIRST_NODE_IOU_MIN  = 0.60    // 首节点 IoU 阈值
-const MIN_LIST_SIZE       = 2
+const ROW_TOL_RATIO        = 0.005  // 同行容差比例（沿用原归一化标定，按画布边换算成绝对 vp/dp）
+const FIRST_NODE_SCORE_MIN = 0.60   // 首节点综合判定分阈值（替代 IoU）
+const MIN_LIST_SIZE        = 2
 
-export function matchByListIndex(designNodes, arkuiNodes, anchors) {
-  const designLists = identifyLists(designNodes)
-  const arkuiLists  = identifyLists(arkuiNodes)
+// 高斯衰减：dist=0→1，dist=σ→0.607
+function gauss(dist, sigma) { return Math.exp(-(dist * dist) / (2 * sigma * sigma)) }
+
+/**
+ * 首节点综合判定分（替代 IoU）：绝对位置 + 相对锚点位置 + 面积比 + 宽高比。
+ * 不用 IoU —— IoU 对小节点 + 画布累积偏移过敏，且设计/开发尺寸本就不完全合一、存在多余。
+ * 用距离系数（对角线尺度）天然宽容小偏移；相对锚点位置消除画布累积偏差（纯绝对坐标，不碰 normRect）。
+ */
+function firstNodeScore(dn, an, anchor, diag) {
+  const d = dn.rect, a = an.rect
+  // 绝对位置：中心距离（对角线尺度，宽容小偏移）
+  const absDist = Math.hypot((d.x + d.w / 2) - (a.x + a.w / 2), (d.y + d.h / 2) - (a.y + a.h / 2))
+  const absPos = gauss(absDist, 0.10 * diag)
+  // 相对锚点位置：首节点相对锚点左上角的偏移，两侧应一致（累积偏差对锚点/首节点一致，相减抵消）
+  const rdx = (d.x - anchor.design.rect.x) - (a.x - anchor.arkui.rect.x)
+  const rdy = (d.y - anchor.design.rect.y) - (a.y - anchor.arkui.rect.y)
+  const relAnchor = gauss(Math.hypot(rdx, rdy), 0.06 * diag)
+  // 面积比
+  const areaD = d.w * d.h, areaA = a.w * a.h
+  const area = Math.min(areaD, areaA) / Math.max(areaD, areaA)
+  // 宽高比
+  const arD = d.w / d.h, arA = a.w / a.h
+  const aspect = Math.min(arD, arA) / Math.max(arD, arA)
+  return absPos * 0.15 + relAnchor * 0.45 + area * 0.20 + aspect * 0.20
+}
+
+export function matchByListIndex(designNodes, arkuiNodes, anchors, opts = {}) {
+  // 两侧分别按各自画布尺寸换算容差：x/w 用画布宽（两侧已对齐到 vp），y/h 用各侧画布高
+  const W  = opts.canvasWidthVp  ?? 376
+  const Hv = opts.canvasHeightVp ?? 809   // arkui 画布高
+  const Hd = opts.canvasHeight   ?? 947   // design 画布高（缩放后）
+  const designLists = identifyLists(designNodes, ROW_TOL_RATIO * W, ROW_TOL_RATIO * Hd)
+  const arkuiLists  = identifyLists(arkuiNodes,  ROW_TOL_RATIO * W, ROW_TOL_RATIO * Hv)
   if (designLists.length === 0 || arkuiLists.length === 0) return []
+  const diag = Math.hypot(W, Hv)
 
   const newPairs = []
   const consumedDesign = new Set()
@@ -37,29 +69,28 @@ export function matchByListIndex(designNodes, arkuiNodes, anchors) {
     for (const La of arkuiLists) {
       if (La.items.some(n => consumedArkui.has(n.id))) continue
 
-      // 条件 2+3：找一个强锚点 p，满足：
-      //   - p 是 list 的上邻居（两侧 design/arkui 都在 list 上方）
-      //     OR 下邻居（两侧都在 list 下方）
-      //   - 两侧 list 相对于 p 的 y 偏移差 < list 高度 * 0.2
-      const listH = Math.min(Ld.bottom - Ld.top, La.bottom - La.top)
-      const qualifyingAnchor = anchors.find(p => {
-        const pDeCy = p.design.normRect.y + p.design.normRect.h / 2
-        const pArCy = p.arkui.normRect.y  + p.arkui.normRect.h  / 2
-        const dAbove = p.design.normRect.y + p.design.normRect.h <= Ld.top + 1e-6
-        const dBelow = p.design.normRect.y >= Ld.bottom - 1e-6
-        const aAbove = p.arkui.normRect.y  + p.arkui.normRect.h  <= La.top + 1e-6
-        const aBelow = p.arkui.normRect.y  >= La.bottom - 1e-6
-        const isNeighbor = (dAbove && aAbove) || (dBelow && aBelow)
-        if (!isNeighbor) return false
-        const yDiffDe = Ld.cy - pDeCy
-        const yDiffAr = La.cy - pArCy
-        return Math.abs(yDiffDe - yDiffAr) < listH * 0.2
+      // 条件 2：找方向一致的邻居锚点（上邻 or 下邻，两侧 design/arkui 方向须一致）。
+      // 去掉原 yDiff<listH*0.2 硬阈值 —— 绝对坐标下底部 list 与顶部锚点间会累积画布高偏移，
+      // 该硬阈值会误杀正常 list。相对偏移的守卫改交给 firstNodeScore 的 relAnchor 系数（平滑、对角线尺度）。
+      const neighbors = anchors.filter(p => {
+        const dAbove = p.design.rect.y + p.design.rect.h <= Ld.top + 1e-6
+        const dBelow = p.design.rect.y >= Ld.bottom - 1e-6
+        const aAbove = p.arkui.rect.y  + p.arkui.rect.h  <= La.top + 1e-6
+        const aBelow = p.arkui.rect.y  >= La.bottom - 1e-6
+        return (dAbove && aAbove) || (dBelow && aBelow)
       })
-      if (!qualifyingAnchor) continue
+      if (!neighbors.length) continue
+      // 选离 list 相对偏移最小的邻居锚点作参照（越近累积偏差越小）
+      let anchor = null, bestRel = Infinity
+      for (const q of neighbors) {
+        const rel = Math.abs((Ld.cy - (q.design.rect.y + q.design.rect.h / 2)) -
+                             (La.cy - (q.arkui.rect.y  + q.arkui.rect.h  / 2)))
+        if (rel < bestRel) { bestRel = rel; anchor = q }
+      }
 
-      // 条件 4：首节点 IoU
-      const iou = computeIoU(Ld.items[0].normRect, La.items[0].normRect)
-      if (iou < FIRST_NODE_IOU_MIN) continue
+      // 条件 3：首节点综合判定分（绝对位置 + 相对锚点 + 面积 + 宽高比），替代 IoU
+      const score = firstNodeScore(Ld.items[0], La.items[0], anchor, diag)
+      if (score < FIRST_NODE_SCORE_MIN) continue
 
       const N = Math.min(Ld.items.length, La.items.length)
       for (let i = 0; i < N; i++) {
@@ -76,16 +107,16 @@ export function matchByListIndex(designNodes, arkuiNodes, anchors) {
   return newPairs
 }
 
-function identifyLists(nodes) {
+function identifyLists(nodes, tolW, tolH) {
   const candidates = nodes.filter(n => n.type === 'container')
 
   const rows = []
   for (const n of candidates) {
-    const cy = n.normRect.y + n.normRect.h / 2
-    const h  = n.normRect.h
+    const cy = n.rect.y + n.rect.h / 2
+    const h  = n.rect.h
     let row = rows.find(r =>
-      Math.abs(r.cy - cy) <= ROW_TOLERANCE &&
-      Math.abs(r.h  - h)  <= ROW_TOLERANCE
+      Math.abs(r.cy - cy) <= tolH &&
+      Math.abs(r.h  - h)  <= tolH
     )
     if (!row) {
       row = { cy, h, nodes: [] }
@@ -107,26 +138,26 @@ function identifyLists(nodes) {
       // 各 cluster 独立成 list，避免整组被父容器拖累丢失真正的 list 项。
       const wClusters = []
       for (const n of group) {
-        let cluster = wClusters.find(c => Math.abs(c.w - n.normRect.w) <= ROW_TOLERANCE)
-        if (!cluster) { cluster = { w: n.normRect.w, items: [] }; wClusters.push(cluster) }
+        let cluster = wClusters.find(c => Math.abs(c.w - n.rect.w) <= tolW)
+        if (!cluster) { cluster = { w: n.rect.w, items: [] }; wClusters.push(cluster) }
         cluster.items.push(n)
       }
       for (const cluster of wClusters) {
         if (cluster.items.length < MIN_LIST_SIZE) continue
-        const sorted = [...cluster.items].sort((a, b) => a.normRect.x - b.normRect.x)
+        const sorted = [...cluster.items].sort((a, b) => a.rect.x - b.rect.x)
         // 同 rawType 同 w 同行的项目若 x 重叠，是异常嵌套，剔除。
         let overlapped = false
         for (let i = 1; i < sorted.length; i++) {
-          const prevEnd = sorted[i - 1].normRect.x + sorted[i - 1].normRect.w
-          if (prevEnd > sorted[i].normRect.x + ROW_TOLERANCE) { overlapped = true; break }
+          const prevEnd = sorted[i - 1].rect.x + sorted[i - 1].rect.w
+          if (prevEnd > sorted[i].rect.x + tolW) { overlapped = true; break }
         }
         if (overlapped) continue
         lists.push({
           rawType,
           items: sorted,
-          top:    Math.min(...sorted.map(g => g.normRect.y)),
-          bottom: Math.max(...sorted.map(g => g.normRect.y + g.normRect.h)),
-          cy:     average(sorted.map(g => g.normRect.y + g.normRect.h / 2)),
+          top:    Math.min(...sorted.map(g => g.rect.y)),
+          bottom: Math.max(...sorted.map(g => g.rect.y + g.rect.h)),
+          cy:     average(sorted.map(g => g.rect.y + g.rect.h / 2)),
         })
       }
     }

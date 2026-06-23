@@ -693,6 +693,8 @@ case/
 
 匹配时大多数 IoU/相对位置计算使用 `normRect`（0-1 范围）。**例外**：Pass 4 拓扑匹配的关系向量和选锚距离改用 `rect` 绝对坐标（dp/vp）+ 各自对角线归一化，避免两侧画布高度不同时 normRect 产生的系统性偏差。
 
+> 🔴 **硬性规则：Pass 1–3 全程禁用 `normRect`**。Pass 1（全文本加权匹配）、Pass 2（动态槽位/同行/长文本/语义角色）、Pass 3（强锚点周边拓扑）的所有位置/方位/距离计算**一律使用绝对坐标 `rect`（dp/vp）**，不得引入 `normRect`。原因：两侧画布高度不同时 normRect 会产生系统性偏差，把前序高置信锚点带偏，进而污染后续拓扑。新增或修改 Pass 1–3 逻辑时，凡涉及坐标的一律读 `rect`。
+
 ## 多 Pass 节点匹配（`nodeMatcher.js`）
 
 按优先级从高到低依次尝试，每轮匹配成功后标记 `matchedDesignIds` 和 `usedArkui`（**注意：Pass 5容器IoU/Pass 6/Pass 6.5/Pass 7 不标记 usedArkui**，允许后续生成重复候选，由 `selectOneToOnePairs` 最终裁决）：

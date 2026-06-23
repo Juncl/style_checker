@@ -100,7 +100,8 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     arkuiNodes,
     usedArkui,
     matchedDesignIds,
-    regionContext
+    regionContext,
+    { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight }
   )
   for (const pair of dynamicSlotPairs) {
     pairs.push(pair)
@@ -113,7 +114,8 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     arkuiNodes,
     usedArkui,
     matchedDesignIds,
-    regionContext
+    regionContext,
+    { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight }
   )
   for (const pair of rowSlotPairs) {
     pairs.push(pair)
@@ -155,7 +157,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   // 按 x 升序对齐横向列表，confidence=medium，不锁节点，交由 selectOneToOnePairs 最终裁决。
   // Pass 3（high）产生的配对可覆盖本 Pass 的 medium 配对。
   {
-    const listPairs = matchByListIndex(designNodes, arkuiNodes, topologyAnchors)
+    const listPairs = matchByListIndex(designNodes, arkuiNodes, topologyAnchors, { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight })
     for (const pair of listPairs) {
       pairs.push(pair)
     }

@@ -291,6 +291,8 @@ function shouldUnwrap(node) {
   if (rawType === TEXT_TYPE && String(node.textContent || '').trim().length === 0) return true
   const s = node.style || {}
   const hasDecoration = !!(s.backgroundColor || s.borderRadius || s.border)
+  // 已语义折叠的节点（semanticAsset）豁免软剪枝，不论有无视觉装饰
+  if (node.semanticAsset) return false
   // GROUP 无视觉装饰时软剪枝
   if (rawType === 'GROUP' && !hasDecoration) return true
   // 极小节点（≤4dp）：保留子节点，只删自身
