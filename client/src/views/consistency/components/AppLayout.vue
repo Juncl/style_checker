@@ -1,5 +1,5 @@
 <template>
-  <div class="app-layout">
+  <div class="app-layout" :style="isIframe ? { '--octo-top-nav-height': '0px' } : undefined">
     <!-- ── 顶部导航（iframe 模式下隐藏）── -->
     <header v-if="!isIframe" class="app-header">
       <img class="header-logo" :src="logoUrl" alt="Octo Designer" />

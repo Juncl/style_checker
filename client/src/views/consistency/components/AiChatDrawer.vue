@@ -366,8 +366,8 @@ async function sendMessage() {
           try {
             const json  = JSON.parse(data)
             const delta = json.choices?.[0]?.delta
-            if (delta?.reasoning_content) {
-              streamingThink.value += delta.reasoning_content
+            if (delta?.reasoning_content || delta?.reasoning) {
+              streamingThink.value += (delta.reasoning ?? delta.reasoning_content)
             }
             if (delta?.content) {
               if (streamingThink.value && rawBuffer.value === '') {

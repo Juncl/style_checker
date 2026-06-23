@@ -211,7 +211,7 @@ const matchMode        = ref('precise')  // 'precise'=高中置信 | 'fuzzy'=高
 const questionHovered  = ref(false)
 const preciseTabRef    = ref(null)
 const fuzzyTabWrapRef  = ref(null)
-const sliderStyle      = ref({ left: '2px', width: '0px' })
+const sliderStyle      = ref({ left: '2px', width: '88px' })
 
 function updateSlider() {
   const el = matchMode.value === 'precise' ? preciseTabRef.value : fuzzyTabWrapRef.value

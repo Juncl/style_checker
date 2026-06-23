@@ -21,7 +21,7 @@ export async function handleImgCheck({ model = DEFAULT_MODEL, messages, stream, 
   // 有图片 → 注入系统 Prompt（首轮对比或追加新图）
   // 无图片 → 纯文字追问，直接透传，不注入 Prompt
   if (messagesHaveImage(messages) && (!messages[0] || messages[0].role !== 'system')) {
-    messages = [{ role: 'system', content: [{ type: 'input_text', text: IMG_CHECKER_SYSTEM_PROMPT }] }, ...messages]
+    messages = [{ role: 'system', content: [{ type: 'text', text: IMG_CHECKER_SYSTEM_PROMPT }] }, ...messages]
   }
 
   const finalMessages = DEV_ENV === 'OUT' ? toGLMMessages(messages) : messages
