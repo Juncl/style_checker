@@ -68,6 +68,28 @@ function relation(nodeRect, anchorRect) {
   return 'diagonal'
 }
 
+// ── 锚点一致性校验工厂（Pass 3.1.2 同款，供 Pass 3.5 等复用）─────────────────────
+// 以一组强锚点为参照，构造两个「否决式」校验器，过滤与锚点拓扑矛盾的候选对 (an, dn)。
+const OPPOSITE = { up: 'down', down: 'up', left: 'right', right: 'left' }
+export function makeAnchorConsistencyCheckers(anchorSet) {
+  // 包含一致性：an 落在某锚点容器内 ⟺ dn 落在其设计侧对端内（嵌套要求所有层一致）
+  const containConsistent = (an, dn) => anchorSet.every(s => {
+    if (s.arkui.id === an.id || s.design.id === dn.id) return true
+    return rectContains(s.arkui.rect, an.rect) === rectContains(s.design.rect, dn.rect)
+  })
+  // 方向一致性：an 与锚点「脱离」（上/下/左/右/斜向）时方位不得与 dn 矛盾 ——
+  // 卡两类明确矛盾：脱离 vs 相交(rd===null) 与 反向(上↔下/左↔右)；放行同向/斜向/包含。
+  const directionConsistent = (an, dn) => anchorSet.every(s => {
+    if (s.arkui.id === an.id || s.design.id === dn.id) return true
+    const ra = relation(an.rect, s.arkui.rect)
+    if (ra === null || ra === 'contain') return true
+    const rd = relation(dn.rect, s.design.rect)
+    if (rd === null) return false
+    return rd !== OPPOSITE[ra]
+  })
+  return { containConsistent, directionConsistent }
+}
+
 // 方向桶内排序键：左右按 x 间距、上下按 y 间距
 function dirDist(rect, anchorRect, dir) {
   const c = center(rect), ac = center(anchorRect)
@@ -238,22 +260,10 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
 
   // 包含强锚点组 = 原文本锚点 + 刚锁定的包含容器配对；约束左右/上下候选
   const strongC = [...anchors, ...result]
-  // 包含一致性：an 落在某容器内 ⟺ dn 落在其设计侧对端内（嵌套要求所有层一致）
-  const containConsistent = (an, dn) => strongC.every(s => {
-    if (s.arkui.id === an.id || s.design.id === dn.id) return true
-    return rectContains(s.arkui.rect, an.rect) === rectContains(s.design.rect, dn.rect)
-  })
-  // 方向一致性：对每个 pass1 锚点，an 只要与锚点「脱离」（上/下/左/右/斜向）就约束 dn ——
-  // 卡两类明确矛盾：相交(dn 与对端部分重叠非包含) 与 反向(上↔下/左↔右)；放行同向/斜向/包含。
-  // （1819上↔64272相交、1828斜脱离↔64270相交 都被卡；「上↔斜上」这类布局微差放行，不误杀）
-  const OPPOSITE = { up: 'down', down: 'up', left: 'right', right: 'left' }
-  const directionConsistent = (an, dn) => anchors.every(s => {
-    const ra = relation(an.rect, s.arkui.rect)
-    if (ra === null || ra === 'contain') return true      // an 与锚点相交/包含 → 不约束
-    const rd = relation(dn.rect, s.design.rect)
-    if (rd === null) return false                          // 脱离 vs 相交 → 矛盾
-    return rd !== OPPOSITE[ra]                              // 反向 → 矛盾
-  })
+  // 包含一致性以 strongC 为参照、方向一致性以原 pass1 文本锚点为参照（见 makeAnchorConsistencyCheckers）
+  // （方向矛盾示例：1819上↔64272相交、1828斜脱离↔64270相交 被卡；「上↔斜上」这类布局微差放行，不误杀）
+  const { containConsistent } = makeAnchorConsistencyCheckers(strongC)
+  const { directionConsistent } = makeAnchorConsistencyCheckers(anchors)
 
   // ── 第一轮 ②③ 左右最近邻 / 上下守门带：先各自算候选排行，再竞争式稳定匹配 ──
   // 每个 an 收集候选 dn：(an,dn) 取最优途径（水平优先，再分数），过包含一致性 + 三维守门 AND

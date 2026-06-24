@@ -125,12 +125,16 @@ function shouldUnwrap(node) {
   // Span / Blank 无独立布局，永远 unwrap
   if (node._spanType) return true
   if (node._blankType) return true
+  
+  // 极小节点（≤4vp）：保留子节点，只删自身
+  if (node.rect && (node.rect.w <= 4 || node.rect.h <= 4)) return true
 
   // 无 rect 的 wrapper / 语法节点（dump 里的 SyntaxItem 等）：无条件 unwrap
   // root 例外（它是整棵树的容器，永远保留）
   if (!node._rectRaw && node.name !== 'root') return true
 
   // 框架节点：root 永不 unwrap；其余无背景色时 unwrap
+  // 零尺寸框架节点（如 BackButton rect=0×0）即使有背景色也 unwrap，视觉上不存在
   if (node._frameworkType) {
     if (node.name === 'root') return false
     return !hasBackgroundColor(node)
@@ -142,8 +146,7 @@ function shouldUnwrap(node) {
     return true
   }
 
-  // 极小节点（≤4vp）：保留子节点，只删自身
-  if (node.rect && (node.rect.w <= 4 || node.rect.h <= 4)) return true
+
 
   // 全屏包裹层（normRect.w/h 均 ≥ 0.999）：保留子节点，只删自身；有背景色的底层蒙版保留
   if (node.normRect && node.normRect.w >= 0.999 && node.normRect.h >= 0.999

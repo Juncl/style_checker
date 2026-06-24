@@ -168,7 +168,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   // 用强锚点（topologyAnchors）作为上/下邻居验证，按 x 升序对齐横向列表。
   // confidence=medium，不锁节点，交由 selectOneToOnePairs 最终裁决。
   {
-    const listPairs = matchByListIndex(designNodes, arkuiNodes, collectAnchors(), { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight })
+    const listPairs = matchByListIndex(designNodes, arkuiNodes, collectAnchors(['text-锚点', 'text-同行', 'text-角色', 'text-con-包含']), { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight })
     for (const pair of listPairs) {
       pairs.push(pair)
     }
