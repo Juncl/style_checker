@@ -233,7 +233,7 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
   for (const { an, dn, score } of round1Contain) {
     if (lockedArkui.has(an.id) || lockedDesign.has(dn.id)) continue
     lockedArkui.add(an.id); lockedDesign.add(dn.id)
-    result.push(makePair(dn, an, 'anchor-topology-包含', { confidence: 'high', topologyScore: round4(score), iou: computeIoU(dn.normRect, an.normRect) }))
+    result.push(makePair(dn, an, 'text-con-包含', { confidence: 'high', topologyScore: round4(score), iou: computeIoU(dn.normRect, an.normRect) }))
   }
 
   // 包含强锚点组 = 原文本锚点 + 刚锁定的包含容器配对；约束左右/上下候选
@@ -329,7 +329,7 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
   for (const [, e] of engaged) {
     const an = anById.get(e.anId)
     lockedArkui.add(an.id); lockedDesign.add(e.dn.id)
-    result.push(makePair(e.dn, an, 'anchor-topology-方向', {
+    result.push(makePair(e.dn, an, e.horizontal ? 'text-con-方向x' : 'text-con-方向y', {
       confidence: 'high',
       topologyScore: round4(e.score),
       iou: computeIoU(e.dn.normRect, an.normRect),
@@ -371,7 +371,7 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
   for (const { an, dn, score } of round2) {
     if (lockedArkui.has(an.id) || lockedDesign.has(dn.id)) continue
     lockedArkui.add(an.id); lockedDesign.add(dn.id)
-    result.push(makePair(dn, an, 'anchor-topology-自由', {
+    result.push(makePair(dn, an, 'text-con-自由', {
       confidence: score > 0.72 ? 'medium' : 'low',
       topologyScore: round4(score),
       iou: computeIoU(dn.normRect, an.normRect),

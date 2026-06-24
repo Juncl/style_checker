@@ -56,7 +56,7 @@ export function matchDynamicTextSlots(designNodes, arkuiNodes, usedArkui, matche
     const matches = orderedSlotAssignment(designTexts, arkuiTexts, regionContext, d)
     for (const match of matches) {
       if (match.score < 0.58) continue
-      result.push(makePair(match.design, match.arkui, 'dynamic-text-slot', {
+      result.push(makePair(match.design, match.arkui, 'text-时间槽', {
         iou: 0,
         confidence: match.score > 0.72 ? 'medium' : 'low',
         topologyScore: match.score,
@@ -86,7 +86,7 @@ function matchDynamicNumberSlots(designNodes, arkuiNodes, usedArkui, matchedDesi
     )
     const best = bestNumericSlotMatch(dn, candidates, regionContext, d)
     if (!best || best.score < 0.70) continue
-    result.push(makePair(dn, best.node, 'dynamic-number-slot', {
+    result.push(makePair(dn, best.node, 'text-数字槽', {
       iou: 0,
       confidence: best.score > 0.82 ? 'medium' : 'low',
       topologyScore: best.score,
@@ -115,7 +115,7 @@ export function matchAlignedTextRows(designNodes, arkuiNodes, usedArkui, matched
     const matches = orderedSlotAssignment(dRow.nodes, aRow.nodes, regionContext, d)
     for (const match of matches) {
       if (match.score < 0.50) continue
-      result.push(makePair(match.design, match.arkui, 'text-row-slot', {
+      result.push(makePair(match.design, match.arkui, 'text-同行', {
         iou: 0,
         confidence: match.score > 0.76 ? 'medium' : 'low',
         topologyScore: match.score,

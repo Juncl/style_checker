@@ -94,7 +94,7 @@ export function matchByListIndex(designNodes, arkuiNodes, anchors, opts = {}) {
 
       const N = Math.min(Ld.items.length, La.items.length)
       for (let i = 0; i < N; i++) {
-        newPairs.push(makePair(Ld.items[i], La.items[i], 'list-index', {
+        newPairs.push(makePair(Ld.items[i], La.items[i], 'text-con-列表', {
           confidence: 'medium',
           topologyScore: 1.0,
         }))

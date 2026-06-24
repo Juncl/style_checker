@@ -18,6 +18,7 @@ import {
 } from '../utils/textSemantics.js'
 import { hasSameTextAttributeFingerprint } from './textFingerprints.js'
 import { hasBackgroundColor, isCompatibleType, isRenderableNonTextNode } from '../utils/nodeVisibility.js'
+import { MATCH_TYPE_PASS } from '../utils/content.js'
 import { candidatePool, regionAffinity } from './regionContext.js'
 import { comparePaths } from '../utils/pathOrder.js'
 
@@ -62,11 +63,24 @@ export function bestExactTextCandidate(targetNode, candidates) {
   return best || closestByY(targetNode, candidates)
 }
 
+
+function resolveMatchPass(matchType) {
+  return MATCH_TYPE_PASS[matchType]?.pass ?? null
+}
+
+function resolveMatchDesc(matchType) {
+  return MATCH_TYPE_PASS[matchType]?.desc ?? null
+}
+
 export function makePair(design, arkui, matchType, extra = {}) {
   return {
     design,
     arkui,
-    matchType,
+    matchDetail: {
+      type: matchType,
+      pass: resolveMatchPass(matchType),
+      desc: resolveMatchDesc(matchType),
+    },
     iou: extra.iou ?? null,
     confidence: extra.confidence || 'medium',
     topologyScore: extra.topologyScore ?? null,
@@ -102,7 +116,7 @@ export function matchRegionTextOptimal(designNodes, arkuiNodes, usedArkui, match
     const matches = maxWeightTextMatching(designTexts, arkuiTexts, regionPair.score)
     for (const match of matches) {
       if (match.score < 0.58) continue
-      result.push(makePair(match.design, match.arkui, 'region-text-optimal', {
+      result.push(makePair(match.design, match.arkui, 'text-区域优选', {
         iou: computeIoU(match.design.normRect, match.arkui.normRect),
         confidence: match.score > 0.74 ? 'medium' : 'low',
         topologyScore: match.score,
@@ -129,7 +143,7 @@ export function matchRegionTextOptimal(designNodes, arkuiNodes, usedArkui, match
     const matches = maxWeightTextMatching(remainingDesignTexts, remainingArkuiTexts, 0.30)
     for (const match of matches) {
       if (match.score < 0.60) continue
-      result.push(makePair(match.design, match.arkui, 'region-text-global-rescue', {
+      result.push(makePair(match.design, match.arkui, 'text-区域兜底', {
         iou: computeIoU(match.design.normRect, match.arkui.normRect),
         confidence: match.score > 0.74 ? 'medium' : 'low',
         topologyScore: match.score,
@@ -307,58 +321,6 @@ export function localTextGeometryScore(a, b) {
   return xScore * 0.40 + yScore * 0.60
 }
 
-export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArkui, matchedDesignIds, regionContext, options = {}) {
-  const { diagonal = 1, diagDe = diagonal, diagHm = diagonal, canvasHeightVp, canvasHeight } = options
-  const result = []
-  const candidateDesignNodes = designNodes
-    .filter(n => !matchedDesignIds.has(n.id))
-    .filter(n => n.type !== 'text' || hasUsableText(n))
-    .map(n => {
-      const anchorsForNode = nearbyAnchors(n, anchors, 'design', diagDe)
-      const best = bestTopologyCandidate(n, arkuiNodes, anchorsForNode, usedArkui, regionContext, diagonal, diagDe, diagHm, canvasHeightVp, canvasHeight)
-      return {
-        node: n,
-        anchors: anchorsForNode,
-        bestScore: best?.score ?? 0,
-        bestAnchorDist: best?.anchorDist ?? Number.POSITIVE_INFINITY,
-      }
-    })
-    .filter(item => item.anchors.length > 0 && item.bestScore > 0.58)
-    .sort((a, b) => {
-      if (b.bestScore !== a.bestScore) return b.bestScore - a.bestScore
-      if (a.bestAnchorDist !== b.bestAnchorDist) return a.bestAnchorDist - b.bestAnchorDist
-      // 分数相同时有背景色的设计侧节点优先，避免空壳节点抢占有视觉内容节点的匹配机会
-      const aHasBg = !!a.node.style?.backgroundColor
-      const bHasBg = !!b.node.style?.backgroundColor
-      if (aHasBg !== bHasBg) return bHasBg ? 1 : -1
-      return comparePaths(a.node.path, b.node.path)
-    })
-
-  for (const { node: dn, anchors: nodeAnchors } of candidateDesignNodes) {
-    const best = bestTopologyCandidate(
-      dn,
-      arkuiNodes,
-      nodeAnchors,
-      usedArkui,
-      regionContext,
-      diagonal,
-      diagDe,
-      diagHm,
-      canvasHeightVp,
-      canvasHeight
-    )
-
-    if (best && best.score > 0.58) {
-      result.push(makePair(dn, best.node, 'anchor-topology', {
-        iou: best.iou,
-        confidence: best.score > 0.72 ? 'medium' : 'low',
-        topologyScore: best.score,
-      }))
-    }
-  }
-
-  return result
-}
 
 function bestTopologyCandidate(dn, arkuiNodes, nodeAnchors, unavailableArkui, regionContext, diagonal = 1, diagDe = diagonal, diagHm = diagonal, canvasHeightVp, canvasHeight) {
   if (!nodeAnchors.length) return null

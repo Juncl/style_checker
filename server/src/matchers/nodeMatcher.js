@@ -39,18 +39,6 @@ import { matchAlignedTextRows, matchDynamicTextSlots } from './dynamicTextSlots.
 import { matchLongTextFallback } from './longTextFallback.js'
 import { matchByListIndex } from './listIndexMatcher.js'
 
-/**
- * 节点匹配器
- * Pass 1: 全文本节点加权匹配（matchAllTextNodes），可信文本视为强锚点
- * Pass 2: 动态文本槽位/同行文本对齐/长文本兜底
- * Pass 2.5: 文本语义角色匹配（title/subtitle/body 槽位对应）
- * Pass 3: 基于强锚点周边拓扑关系匹配弱节点（含 3.1.1/3.1.2/3.2）
- * Pass 3.5: 同行同类 list 顺序匹配（rawType 严格相同 + 上下邻居互证 + 首节点 IoU）
- * Pass 4: 区域内文本节点全局最优匹配
- * Pass 5: 几何 IoU 匹配（容器节点）
- * Pass 6: 非文本视觉容器几何匹配
- * Pass 7: 低置信度兜底匹配
- */
 
 /**
  * 主入口：将 design 节点与 arkui 节点两两配对
@@ -94,7 +82,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
 
   regionContext = buildRegionContext(designRegions, arkuiRegions, strongAnchors)
 
-  // ── Pass 2: 动态时间/星期槽位匹配（mock 与真实数据不同，但序列位置一致）──────
+  // ── Pass 2.1/2.2: 动态数字/时间星期槽位匹配（mock 与真实数据不同，但序列位置一致）──
   const dynamicSlotPairs = matchDynamicTextSlots(
     designNodes,
     arkuiNodes,
@@ -124,7 +112,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     if (pair.topologyScore >= 0.86) topologyAnchors.push(pair)
   }
 
-  // ── Pass 2d: 长文本位置-样式兜底（字数 > 12，锚点方向一票否决）───────────────
+  // ── Pass 2.4: 长文本位置-样式兜底（字数 > 12，锚点方向一票否决）──────────────
   const longTextPairs = matchLongTextFallback(
     designNodes, arkuiNodes, usedArkui, matchedDesignIds, topologyAnchors,
     { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight }
@@ -141,7 +129,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     )
     const best = bestTextRoleMatch(dn, candidates)
     if (best && (best.score >= 0.85 || isStrongTitleSlotMatch(dn, best.node, best.score))) {
-      const rolePair = makePair(dn, best.node, 'text-role', {
+      const rolePair = makePair(dn, best.node, 'text-角色', {
         confidence: 'high',
         topologyScore: best.score,
       })
@@ -201,7 +189,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     if (isTrustedTopologyAnchor(pair, null, pair.topologyScore)) topologyAnchors.push(pair)
   }
 
-  // ── Pass 5: 文本节点位置回退匹配（处理 mock 数据与真实数据不一致）──────────────
+  // ── Pass 5.1: 文本节点位置回退匹配（处理 mock 数据与真实数据不一致）─────────────
   for (const dn of designNodes) {
     if (matchedDesignIds.has(dn.id) || dn.type !== 'text' || !hasUsableText(dn)) continue
     const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
@@ -209,7 +197,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     )
     const best = bestTextPositionMatch(dn.normRect, candidates, dn, regionContext)
     if (best && best.score > 0.35) {
-      pairs.push(makePair(dn, best.node, 'text-position', {
+      pairs.push(makePair(dn, best.node, 'text-位置', {
         confidence: 'medium',
       }))
       usedArkui.add(best.node.id)
@@ -217,7 +205,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     }
   }
 
-  // ── Pass 5b: 数字槽位匹配（mock 整数与实际整数数值不同，但位置与样式一致）─────
+  // ── Pass 5.2: 数字槽位匹配（mock 整数与实际整数数值不同，但位置与样式一致）────
   for (const dn of designNodes) {
     if (matchedDesignIds.has(dn.id) || dn.type !== 'text') continue
     if (textFieldType(normalizeText(dn.textContent)) !== 'number') continue
@@ -242,7 +230,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     }
 
     if (best && bestScore > 0.40) {
-      pairs.push(makePair(dn, best, 'numeric-slot', {
+      pairs.push(makePair(dn, best, 'text-数字位置', {
         confidence: 'medium',
         topologyScore: bestScore,
       }))
@@ -251,7 +239,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     }
   }
 
-  // ── Pass 5: 几何 IoU 匹配容器节点 ─────────────────────────────────────────
+  // ── Pass 5.3: 几何 IoU 匹配容器节点 ────────────────────────────────────────
   for (const dn of designNodes) {
     if (matchedDesignIds.has(dn.id)) continue
     if (dn.type !== 'container') continue
@@ -262,7 +250,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     const best = bestIoUMatch(dn.normRect, candidates, dn, regionContext)
     const threshold = hasVisualDecoration(dn) ? 0.40 : 0.60
     if (best && best.iou > threshold) {
-      pairs.push(makePair(dn, best.node, 'container-iou', {
+      pairs.push(makePair(dn, best.node, 'con-交叠', {
         iou: best.iou,
         confidence: hasVisualDecoration(dn) ? 'high' : 'medium',
       }))
@@ -279,7 +267,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     })
     const best = bestIoUMatch(dn.normRect, candidates, dn, regionContext)
     if (best && best.iou > 0.55) {
-      pairs.push(makePair(dn, best.node, 'container-geometry', {
+      pairs.push(makePair(dn, best.node, 'con-视觉', {
         iou: best.iou,
         confidence: 'medium',
       }))
@@ -369,7 +357,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     const usedBracketArkui  = new Set()
     for (const { dn, an, confidence, score } of bracketCandidates) {
       if (usedBracketDesign.has(dn.id) || usedBracketArkui.has(an.id)) continue
-      pairs.push(makePair(dn, an, 'spatial-bracket', { confidence, topologyScore: score }))
+      pairs.push(makePair(dn, an, 'con-夹持', { confidence, topologyScore: score }))
       usedArkui.add(an.id)
       matchedDesignIds.add(dn.id)
       usedBracketDesign.add(dn.id)
@@ -390,7 +378,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     )
     const best = bestIoUMatch(dn.normRect, candidates, dn, regionContext)
     if (best && best.iou > 0.25) {
-      pairs.push(makePair(dn, best.node, 'rescue-iou', {
+      pairs.push(makePair(dn, best.node, 'text-con-兜底', {
         iou: best.iou,
         confidence: 'low',
       }))
@@ -488,7 +476,7 @@ function selectOneToOnePairs(pairs) {
 function pairPriority(pair) {
   const confidenceScore = pair.confidence === 'high' ? 300 : pair.confidence === 'medium' ? 200 : 100
   const anchorScore = pair.isAnchor ? 25 : 0
-  const typeScore = matchTypePriority(pair.matchType)
+  const typeScore = matchTypePriority(pair.matchDetail?.type)
   const topologyScore = (pair.topologyScore ?? 0) * 10
   const isTextPair = pair.design?.type === 'text' && pair.arkui?.type === 'text'
   const iouScore = isTextPair ? 0 : (pair.iou ?? 0) * 8
@@ -505,22 +493,21 @@ function lowerConfidence(a, b) {
 }
 
 function matchTypePriority(matchType) {
-  if (matchType?.startsWith('anchor-topology')) return 24
+  if (['text-con-包含', 'text-con-方向x', 'text-con-方向y', 'text-con-自由'].includes(matchType)) return 24
   const order = {
-    'text-content': 40,
-    'region-text-optimal': 34,
-    'text-role': 30,
-    'anchor-topology': 24,
-    'dynamic-text-slot': 22,
-    'text-row-slot': 21,
-    'text-position': 20,
-    'numeric-slot': 19,
-    'list-index': 18.5,
-    'container-iou': 18,
-    'spatial-bracket': 16,
-    'container-geometry': 14,
-    'region-text-global-rescue': 8,
-    'rescue-iou': 2,
+    'text-锚点': 40,
+    'text-区域优选': 34,
+    'text-角色': 30,
+    'text-时间槽': 22,
+    'text-同行': 21,
+    'text-位置': 20,
+    'text-数字位置': 19,
+    'text-con-列表': 18.5,
+    'con-交叠': 18,
+    'con-夹持': 16,
+    'con-视觉': 14,
+    'text-区域兜底': 8,
+    'text-con-兜底': 2,
   }
   return order[matchType] ?? 0
 }

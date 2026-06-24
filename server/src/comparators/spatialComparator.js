@@ -14,7 +14,7 @@
  *   - 只做"上"和"左"两个方向，下/右方向不重复计算（相邻两节点的间距是同一段）
  */
 
-import { SPACE_ERR_RANGE } from '../config/constants.js'
+import { SPACE_ERR_RANGE } from '../utils/content.js'
 
 /**
  * @param {Array} pairs 匹配对数组，每项 { design: {id, rect, ...}, arkui: {id, rect, ...}, ... }

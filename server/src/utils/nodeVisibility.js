@@ -27,7 +27,8 @@ const INTRINSIC_VISUAL_RAW_TYPES = new Set([
 
 // Visibility filters keep hidden framework and covered visual nodes out of matching output.
 export function isAcceptablePair(pair) {
-  const { design, arkui, matchType, confidence } = pair
+  const { design, arkui, matchDetail, confidence } = pair
+  const matchType = matchDetail?.type
   if (design.type === 'text') {
     if (arkui.type !== 'text') return false
     const dLen = (design.textContent ?? '').length
@@ -35,11 +36,12 @@ export function isAcceptablePair(pair) {
     if ((dLen < 6 || aLen < 6) && Math.abs(dLen - aLen) > 20) return false
     return true
   }
-  // list-index 已通过"同行/同尺寸/同类/不重叠/上下锚/首节点 IoU"多重几何验证，
+  // text-con-列表 已通过"同行/同尺寸/同类/不重叠/上下锚/首节点 IoU"多重几何验证，
   // 比 isStructuralContainer 的视觉装饰检查更严格，故跳过此过滤。
-  if (matchType !== 'list-index' && isStructuralContainer(design)) return false
+  if (matchType !== 'text-con-列表' && isStructuralContainer(design)) return false
 
-  const weakMatch = matchType?.startsWith('anchor-topology') || ['rescue-iou', 'container-iou', 'container-geometry'].includes(matchType)
+  const weakMatch = ['text-con-包含', 'text-con-方向x', 'text-con-方向y', 'text-con-自由'].includes(matchType) ||
+    ['text-con-兜底', 'con-交叠', 'con-视觉'].includes(matchType)
   if (!weakMatch) return true
 
   const wRatio = sizeRatio(design.normRect.w, arkui.normRect.w)

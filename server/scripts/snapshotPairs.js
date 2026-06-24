@@ -92,7 +92,7 @@ for (const c of cases) {
       .map(p => ({
         design: p.design.id,
         arkui: p.arkui.id,
-        matchType: p.matchType,
+        matchType: p.matchDetail?.type ?? p.matchType,
         confidence: p.confidence ?? null,
         topologyScore: p.topologyScore ?? null,
         iou: p.iou ?? null,
@@ -135,7 +135,7 @@ if (COMPARE_BASE) {
   }
 
   const summaryCases = {}
-  let n = 0, sumP = 0, sumR = 0, sumPBase = 0, sumRBase = 0
+  let n = 0, sumP = 0, sumR = 0, nBase = 0, sumPDelta = 0, sumRDelta = 0
   let totCorrect = 0, totWrong = 0, totRedundant = 0, totMiss = 0, totCorrectBase = 0
 
   for (const c of cases) {
@@ -158,15 +158,15 @@ if (COMPARE_BASE) {
     }
     n++; sumP += cur.precision; sumR += cur.recall
     totCorrect += cur.correct; totWrong += cur.wrong; totRedundant += cur.redundant; totMiss += cur.miss
-    if (base) { sumPBase += base.precision; sumRBase += base.recall; totCorrectBase += base.correct }
+    if (base) { nBase++; sumPDelta += cur.precision - base.precision; sumRDelta += cur.recall - base.recall; totCorrectBase += base.correct }
   }
 
   const overall = {
     cases: n,
     avgPrecision: round4(sumP / n),
-    avgPrecisionDelta: round4((sumP - sumPBase) / n),
+    avgPrecisionDelta: nBase ? round4(sumPDelta / nBase) : null,
     avgRecall: round4(sumR / n),
-    avgRecallDelta: round4((sumR - sumRBase) / n),
+    avgRecallDelta: nBase ? round4(sumRDelta / nBase) : null,
     totalCorrect: totCorrect,
     totalCorrectDelta: totCorrect - totCorrectBase,
     totalWrong: totWrong,

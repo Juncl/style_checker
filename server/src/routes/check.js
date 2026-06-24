@@ -365,7 +365,7 @@ async function runCheck(designJson, devJson, caseId, assets = {}) {
       }))
     })(),
     pairs: pairs.map(p => ({
-      matchType: p.matchType,
+      matchDetail: p.matchDetail,
       iou: p.iou,
       confidence: p.confidence,
       topologyScore: p.topologyScore,

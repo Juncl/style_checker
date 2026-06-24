@@ -343,19 +343,61 @@ export const ADMIN_BASE_URL = '/mock'         // 当前：外网 mock
 
 3. **生成 `summary.md` 并展示给用户**：
 
-   脚本跑完后，AI 读取新目录下的 15 个 case json 和对应验证集，在新目录根部（与 `hmPhone/` 同级）写入 `summary.md`，内容分四部分：
+   脚本跑完后，AI 读取新目录下的 15 个 case json 和对应验证集，在新目录根部（与 `hmPhone/` 同级）写入 `summary.md`，内容分四部分，顺序为 ① 汇总表格 → ② 出错最多的 Pass → ③ 优化建议 → ④ 问题明细：
+
+   第1行为标题行，第2行必须包含数据生成时间（从 case json 中的 `generatedAt` 字段取，格式为 `yyyy-MM-dd HH:mm:ss`），第3行为空行，第4行为快照目录 & 对比基线信息：
+
+   ```markdown
+   # 全量 Case 匹配结果汇总（case1~15）
+
+   > 生成时间：2026-06-24 10:30:00
+
+   > 快照目录：matchNewTemp-06-24-10-30  |  对比基线：matchNewTemp（仅 case1~12 有 delta）
+   ```
 
    **① 汇总表格**（每行一个 case）：
 
-   | case | Pairs总数 | 验证集总数 | 准确数 | 配错数 | 缺失数 | 多余数 | 准确率 | 召回率 | Δ准确率 | Δ召回率 |
+   | case | Pairs总数 | 验证集总数 | 正确数 | 配错数 | 缺失数 | 多余数 | 准确率 | 召回率 | Δ准确率 | Δ召回率 |
    |---|---|---|---|---|---|---|---|---|---|---|
-   | case1 | … | … | … | … | … | … | …% | …% | … | … |
+   | case1 | … | … | … | … | … | … | …% | …% | +N% | +N% |
    | … | | | | | | | | | | |
-   | 合计 | … | … | … | … | … | … | …% | …% | — | — |
+   | **合计** | **…** | **…** | **…** | **…** | **…** | **…** | **…%** | **…%** | — | — |
+   | 指标情况 | — | — | — | — | — | — | …% | …% | +N% | +N% |
 
-   **② 每个 case 的问题明细**（准确的配对不列出）：
+   Δ列统一用百分比格式（如 `+11.04%`），无基线的新增 case 填 `新增`，delta=0 填 `0`。合计行的准确率/召回率与指标情况行一致（取算数平均）。指标情况行的 Δ值为有基线 case 的平均 delta。
 
-   对每个 case，按以下结构列出三类问题对，每对标注 matchType（缺失对无 matchType，写 `—`）：
+   指标情况行下方另起一行，用普通文字（非引用块）描述总量变化：`正确数 ±N，配错数 ±N，缺失数 ±N，多余数 ±N`。
+
+   **② 出错最多的 Pass**：
+
+   统计配错分布和多余对分布，均按 matchType 分组从高到低排列：
+
+   ```markdown
+   ### 配错分布（按 matchType）
+
+   | matchType | 配错次数 | 涉及 case |
+   |---|---|---|
+   | anchor-topology-方向 | N | case1, case7 … |
+
+   ### 多余对分布（按 matchType）
+
+   | matchType | 多余次数 | 涉及 case |
+   |---|---|---|
+   | anchor-topology-方向 | N | case1, case7 … |
+   ```
+
+   **③ 优化建议**：
+
+   根据数据，分析主要问题根因，给出 2~4 条具体的优化方向，格式如下：
+
+   ```
+   1. **[问题描述]**：[根因分析] → [建议改进方向]
+   2. …
+   ```
+
+   **④ 问题明细**（准确的配对不列出）：
+
+   对每个 case 按以下结构列出三类问题对，每对标注 matchType（缺失对无 matchType）。配错/缺失/多余为 0 对时整块省略：
 
    ```
    ### case1
@@ -379,24 +421,6 @@ export const ADMIN_BASE_URL = '/mock'         // 当前：外网 mock
    - 配错：pairs 里有该 arkuiId，但 designId 与验证集不符
    - 缺失：验证集里有该 arkuiId，但 pairs 里没有匹配到（无 matchType）
    - 多余：pairs 里有，但该 arkuiId 不在验证集中
-
-   **③ 出错最多的 Pass**：
-
-   统计所有配错对按 matchType 分组的出错次数，从高到低排列：
-
-   | matchType | 配错次数 | 涉及 case |
-   |---|---|---|
-   | anchor-topology-方向 | N | case1, case7 … |
-   | … | | |
-
-   **④ 优化建议**：
-
-   根据①②③的数据，分析主要问题根因，给出 2~4 条具体的优化方向，格式如下：
-
-   ```
-   1. **[问题描述]**：[根因分析] → [建议改进方向]
-   2. …
-   ```
 
    生成完毕后，将 summary.md 内容直接展示给用户，等用户看完。
 
@@ -697,24 +721,25 @@ case/
 
 ## 多 Pass 节点匹配（`nodeMatcher.js`）
 
-按优先级从高到低依次尝试，每轮匹配成功后标记 `matchedDesignIds` 和 `usedArkui`（**注意：Pass 5容器IoU/Pass 6/Pass 6.5/Pass 7 不标记 usedArkui**，允许后续生成重复候选，由 `selectOneToOnePairs` 最终裁决）：
+按优先级从高到低依次尝试，每轮匹配成功后标记 `matchedDesignIds` 和 `usedArkui`（**注意：Pass 5.3容器IoU/Pass 6/Pass 6.5/Pass 7 不标记 usedArkui**，允许后续生成重复候选，由 `selectOneToOnePairs` 最终裁决）：
 
 | Pass | matchType | 名称 | 说明 |
 |---|---|---|---|
-| 1 | `text-content` | 全文本加权匹配 | ArkUI 主序，所有文本节点综合得分（内容/位置/样式）；可信匹配（≥0.9）升为强锚点，驱动后续拓扑 |
-| 2a/2b | `dynamic-text-slot` | 动态时间/星期槽位 | 时间/星期等动态文本，按序列位置对应 |
-| 2c | `text-row-slot` | 同行文本对齐 | 同行文本节点按 x 序对齐，topologyScore ≥ 0.86 时补充为拓扑锚点 |
-| 2d | `long-text-fallback` | 长文本位置-样式兜底 | ArkUI 侧字数 > 12，位置(0.60)+样式(0.35)+内容(0.05)，最近 3 锚点方向一票否决，score ≥ 0.55 接受 |
-| 2.5 | `text-role` | 文本语义角色 | title/subtitle/body 等语义槽位对应，score ≥ 0.85 或强标题槽位命中时接受 |
-| 3 | `anchor-topology-包含/方向/自由` | 强锚点周边拓扑 | 以强锚点为参照，分三轮：①包含容器、②左右最近邻、③上下守门带（Gale-Shapley 稳定匹配）；第二轮放宽方向自由配对（score ≥ 0.55） |
-| 3.5 | `list-index` | 同行同类 list 顺序 | 两侧同行且 rawType 严格相同的横向列表（≥2个），按 x 升序锁定；不依赖 IoU，防溢出节点抢配 |
-| 4 | `region-text-optimal` / `region-text-global-rescue` | 区域内文本全局最优 | 对拓扑/list 后剩余未匹配文本做区域内最优二分匹配；全局兜底阈值 0.60 |
-| 5（文本） | `text-position` | 文本位置回退 | 中心点位置 + 语义内容 + 字号/字重/字色综合评分，score > 0.35 接受 |
-| 5b | `numeric-slot` | 数字槽位 | mock 整数与实际整数位置/样式一致（styleScore ≥ 0.70），数值可不同 |
-| 5（容器） | `container-iou` | 容器 IoU | `type=container` 节点 IoU > 0.60（无装饰）或 > 0.40（有装饰） |
-| 6 | `container-geometry` | 视觉容器几何 | `isRenderableNonTextNode` 节点 IoU > 0.55 |
-| 6.5 | `spatial-bracket` | 空间担保 | 被同行左右两对已匹配节点夹住、尺寸吻合（minRatio ≥ 0.5）的 container 节点 |
-| 7 | `rescue-iou` | Rescue 兜底 | 任意兼容类型 IoU > 0.25，confidence=low |
+| 1 | `text-锚点` | 全文本加权匹配 | ArkUI 主序，所有文本节点综合得分（内容/位置/样式）；可信匹配（≥0.9）升为强锚点，驱动后续拓扑 |
+| 2.1 | `text-数字槽` | 动态数字槽位 | 数字类动态文本，位置/样式一致、数值可不同 |
+| 2.2 | `text-时间槽` | 动态时间/星期槽位 | 时间/星期等动态文本，按序列位置对应 |
+| 2.3 | `text-同行` | 同行文本对齐 | 同行文本节点按 x 序对齐，topologyScore ≥ 0.86 时补充为拓扑锚点 |
+| 2.4 | `text-长文` | 长文本位置-样式兜底 | ArkUI 侧字数 > 12，位置(0.60)+样式(0.35)+内容(0.05)，最近 3 锚点方向一票否决，score ≥ 0.55 接受 |
+| 2.5 | `text-角色` | 文本语义角色 | title/subtitle/body 等语义槽位对应，score ≥ 0.85 或强标题槽位命中时接受 |
+| 3 | `text-con-包含` / `text-con-方向x` / `text-con-方向y` / `text-con-自由` | 强锚点周边拓扑 | 以强锚点为参照，分三轮：①包含容器、②左右最近邻（方向x）/上下守门带（方向y）（Gale-Shapley 稳定匹配）；第二轮放宽方向自由配对（score ≥ 0.55） |
+| 3.5 | `text-con-列表` | 同行同类 list 顺序 | 两侧同行且 rawType 严格相同的横向列表（≥2个），按 x 升序锁定；不依赖 IoU，防溢出节点抢配 |
+| 4 | `text-区域优选` / `text-区域兜底` | 区域内文本全局最优 | 对拓扑/list 后剩余未匹配文本做区域内最优二分匹配；全局兜底阈值 0.60 |
+| 5.1 | `text-位置` | 文本位置回退 | 中心点位置 + 语义内容 + 字号/字重/字色综合评分，score > 0.35 接受 |
+| 5.2 | `text-数字位置` | 数字槽位 | mock 整数与实际整数位置/样式一致（styleScore ≥ 0.70），数值可不同 |
+| 5.3 | `con-交叠` | 容器 IoU | `type=container` 节点 IoU > 0.60（无装饰）或 > 0.40（有装饰） |
+| 6 | `con-视觉` | 视觉容器几何 | `isRenderableNonTextNode` 节点 IoU > 0.55 |
+| 6.5 | `con-夹持` | 空间担保 | 被同行左右两对已匹配节点夹住、尺寸吻合（minRatio ≥ 0.5）的 container 节点 |
+| 7 | `text-con-兜底` | Rescue 兜底 | 任意兼容类型 IoU > 0.25，confidence=low |
 
 `selectOneToOnePairs` 最终按 `confidence → matchType优先级 → topologyScore → iou` 排序，保证一对一。
 

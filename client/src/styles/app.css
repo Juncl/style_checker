@@ -1957,6 +1957,14 @@ body {
   width: 100%;
 }
 
+.node-bar-desc {
+  width: 100%;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #191919;
+  margin-top: 2px;
+}
+
 .tag-unmatched.el-tag {
   background: #EBEBEB !important;
   border-color: transparent !important;

@@ -187,7 +187,7 @@ export function matchLongTextFallback(
   candidates.sort((a, b) => b.score - a.score)
   for (const { an, dn, score } of candidates) {
     if (localUsed.has(an.id) || localMatched.has(dn.id)) continue
-    result.push(makePair(dn, an, 'long-text-fallback', {
+    result.push(makePair(dn, an, 'text-长文', {
       iou:           0,
       confidence:    score >= MEDIUM_THRESHOLD ? 'medium' : 'low',
       topologyScore: score,

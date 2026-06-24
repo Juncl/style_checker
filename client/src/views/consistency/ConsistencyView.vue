@@ -894,7 +894,7 @@ function onDesignNodeClick(nodeId) {
     selectedPair.value = pair
   } else {
     const designNode = node || result.value?.allDesignNodes?.find(n => n.id === nodeId)
-    if (designNode) selectedPair.value = { matchType: 'unmatched', design: designNode, arkui: null }
+    if (designNode) selectedPair.value = { matchDetail: { type: 'unmatched' }, design: designNode, arkui: null }
   }
   activeDiff.value = null
 }
@@ -907,7 +907,7 @@ function onArkuiNodeClick(nodeId) {
     selectedPair.value = pair
   } else {
     const arkuiNode = node || result.value?.allArkuiNodes?.find(n => n.id === nodeId)
-    if (arkuiNode) selectedPair.value = { matchType: 'unmatched-dev', design: null, arkui: arkuiNode }
+    if (arkuiNode) selectedPair.value = { matchDetail: { type: 'unmatched-dev' }, design: null, arkui: arkuiNode }
   }
   activeDiff.value = null
 }

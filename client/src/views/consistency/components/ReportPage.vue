@@ -68,12 +68,9 @@
           <el-tag
             size="small"
             effect="plain"
-            :type="matchTypePass(selectedPair.matchType) ? 'primary' : 'info'"
-            :class="{ 'tag-unmatched': !matchTypePass(selectedPair.matchType) }"
+            :type="confidenceTagType(selectedPair.confidence)"
           >
-            {{ matchTypePass(selectedPair.matchType)
-              ? matchTypePass(selectedPair.matchType) + ': ' + selectedPair.matchType
-              : selectedPair.matchType }}
+            {{ selectedPair.matchDetail?.pass ? selectedPair.matchDetail.pass + ': ' : '' }}{{ selectedPair.matchDetail?.type }}
           </el-tag>
           <el-tag
             v-if="selectedPair.confidence"
@@ -82,6 +79,7 @@
             :type="confidenceTagType(selectedPair.confidence)"
           >{{ confidenceText(selectedPair.confidence) }}</el-tag>
         </div>
+        <div v-if="selectedPair.matchDetail?.desc" class="node-bar-desc">{{ selectedPair.matchDetail.desc }}</div>
       </div>
     </div>
   </transition>
@@ -230,7 +228,7 @@ import OctoLoading from './common/OctoLoading.vue'
 import ImagePanel from './ImagePanel.vue'
 import DevUploadCard from './DevUploadCard.vue'
 import DesignUploadCard from './DesignUploadCard.vue'
-import { validationBg, confidenceText, confidenceTagType, matchTypePass } from '../../utils/tools.ts'
+import { validationBg, confidenceText, confidenceTagType } from '../../utils/tools.ts'
 
 const props = defineProps({
   result:               { type: Object,  required: true },

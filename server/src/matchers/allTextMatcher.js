@@ -401,7 +401,7 @@ export function matchAllTextNodes(designNodes, arkuiNodes, options = {}) {
     const hm = hmMap.get(hmId)
     const de = deMap.get(deId)
     if (!hm || !de) continue
-    const pair = makePair(de, hm, 'text-content', {
+    const pair = makePair(de, hm, 'text-锚点', {
       confidence: 'high',
       topologyScore: score,
       isAnchor: true,

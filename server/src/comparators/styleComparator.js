@@ -48,7 +48,8 @@ const SOFT_IGNORE_BACKGROUND_TYPES = new Set([
  * @returns {StyleDiff[]}
  */
 export function compareStyles(pair, opts = {}) {
-  const { design: dn, arkui: an, matchType } = pair
+  const { design: dn, arkui: an, matchDetail } = pair
+  const matchType = matchDetail?.type
   const platform = opts.platform || 'hmPhone'
   const diffs = []
   const ds = dn.style || {}

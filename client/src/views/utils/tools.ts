@@ -283,36 +283,10 @@ export function toWebColorDisplay(text: string, platform: string): string {
   return text.replace(/#([0-9A-Fa-f]{8})\b/g, (_, h) => `#${h.slice(2)}${h.slice(0, 2)}`)
 }
 
-// 匹配置信度 → Element Plus Tag 的 type 属性（高=绿/中=橙/低=红）
+// 匹配置信度 → Element Plus Tag 的 type 属性（高=绿/中=黄/低=灰）
 export function confidenceTagType(c: string): string {
   if (c === 'high')   return 'success'
   if (c === 'medium') return 'warning'
-  if (c === 'low')    return 'danger'
+  if (c === 'low')    return 'info'
   return 'info'
-}
-
-// matchType 字符串 → 对应的 Pass 阶段标签，用于 Debugger 节点信息条展示
-const MATCH_TYPE_PASS: Record<string, string> = {
-  'text-content':              'Pass 1',
-  'dynamic-text-slot':         'Pass 2',
-  'dynamic-number-slot':       'Pass 2',
-  'text-row-slot':             'Pass 2',
-  'text-role':                 'Pass 2.5',
-  'anchor-topology':           'Pass 3',
-  'anchor-topology-包含':      'Pass 3.1.1',
-  'anchor-topology-方向':      'Pass 3.1.2',
-  'anchor-topology-自由':      'Pass 3.2',
-  'list-index':                'Pass 3.5',
-  'region-text-optimal':       'Pass 4',
-  'region-text-global-rescue': 'Pass 4',
-  'text-position':             'Pass 5',
-  'container-iou':             'Pass 5',
-  'numeric-slot':              'Pass 5b',
-  'container-geometry':        'Pass 6',
-  'spatial-bracket':           'Pass 6.5',
-  'rescue-iou':                'Pass 7',
-}
-
-export function matchTypePass(matchType: string): string | null {
-  return MATCH_TYPE_PASS[matchType] ?? null
 }
