@@ -10,12 +10,11 @@
 
     <!-- 中间主区 -->
     <main class="center-panel up-board ai-main-wrap">
-      <!-- AI 侧边面板（在布局流中推挤画布，仅 debugger 模式） -->
-      <AiChatDrawer v-if="debugMode" :open="aiChatOpen" @close="aiChatOpen = false" />
+      <!-- AI 侧边面板（在布局流中推挤画布） -->
+      <AiChatDrawer :open="aiChatOpen" @close="aiChatOpen = false" />
 
-      <!-- 触发按钮（悬浮，随面板展开同步移动，仅 debugger 模式） -->
+      <!-- 触发按钮（悬浮，随面板展开同步移动） -->
       <button
-        v-if="debugMode"
         class="ai-sidebar-toggle"
         :class="{ 'ai-sidebar-toggle--open': aiChatOpen }"
         title="AI 检视助手"

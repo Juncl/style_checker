@@ -50,7 +50,6 @@
           <template v-else>
             <span class="deliverable-item-name" :title="item.name">{{ item.name }}</span>
             <span
-              v-if="allowEdit"
               class="deliverable-action-btn deliverable-edit-trigger"
               @click.stop="onEditClick(item)"
             >

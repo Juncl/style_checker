@@ -16,10 +16,6 @@ export const MATCH_TYPE_PASS = {
   'text-con-列表': { pass: 'Pass 3.5',   desc: '同行同类横向列表，rawType 相同，按 x 升序锁定' },
   'text-区域优选': { pass: 'Pass 4',     desc: '区域内剩余文本最优二分匹配，score ≥ 0.58 接受' },
   'text-区域兜底': { pass: 'Pass 4',     desc: '跨区域剩余文本全局兜底，score ≥ 0.60 接受' },
-  'text-位置':     { pass: 'Pass 5.1',   desc: '文本位置回退：中心点位置 + 样式综合评分，score > 0.35 接受' },
-  'text-数字位置': { pass: 'Pass 5.2',   desc: '数字文本位置/样式一致，数值可不同，styleScore ≥ 0.70' },
   'con-交叠':      { pass: 'Pass 5.3',   desc: '容器节点 IoU 匹配，无装饰 > 0.60，有装饰 > 0.40' },
   'con-视觉':      { pass: 'Pass 6',     desc: '视觉节点（图标/图片/形状）IoU > 0.55' },
-  'con-夹持':      { pass: 'Pass 6.5',   desc: '被左右已匹配节点夹住，尺寸吻合（minRatio ≥ 0.5）' },
-  'text-con-兜底': { pass: 'Pass 7',     desc: '低置信度 IoU 兜底，任意兼容类型 IoU > 0.25' },
 }

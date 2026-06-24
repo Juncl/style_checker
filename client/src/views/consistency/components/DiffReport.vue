@@ -236,8 +236,11 @@ watch(() => props.diffs, (diffs) => {
   notIssueKeys.value = next
 }, { immediate: true })
 
+const isHighOrMedium = d => d.confidence === 'high' || d.confidence === 'medium'
 const visibleDiffs = computed(() =>
-  matchMode.value === 'fuzzy' ? props.diffs : props.diffs.filter(d => d.confidence !== 'low')
+  matchMode.value === 'fuzzy'
+    ? props.diffs.filter(d => !isHighOrMedium(d))
+    : props.diffs.filter(d => isHighOrMedium(d))
 )
 const IGNORED_ISSUE_PROPS = new Set(['textAlign'])
 const issueGroups = computed(() =>

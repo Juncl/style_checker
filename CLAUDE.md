@@ -324,111 +324,37 @@ export const ADMIN_BASE_URL = '/mock'         // 当前：外网 mock
 
 ---
 
-## 🟡 工作流规则：15 个 case 匹配结果对比优化
+## 🟢 工作流规则：全量 case 匹配结果快照
 
-**触发**：当用户发出"**跑一下所有 15 个 case 的匹配结果**"这类指令时，AI **不要直接跑**，先按以下流程逐步与用户确认：
+**触发**：当用户发出"**跑一下所有 15 个 case 的匹配结果**"、"**跑全量 case**" 等指令时，AI 处理流程：
 
-1. **先问用户**：是否需要和 `matchNewTemp` 基线做对比优化？
-   - 否 → 按用户的实际意图处理（例如只想看当前结果）
-   - 是 → 进入下面流程
+### 操作步骤
 
-2. **跑脚本到带时间后缀的新目录**（保留 `matchNewTemp` 基线不动）：
+1. **确认 server 已运行**（端口 3012），未运行则提示用户手动启动
+2. **运行脚本**：
    ```bash
-   cd server
-   SUFFIX=$(date +%m-%d-%H-%M)
-   SNAPSHOT_DIR=matchNewTemp-$SUFFIX COMPARE_BASE=matchNewTemp node scripts/snapshotPairs.js
+   cd server && node scripts/snapshotPairs.js
    ```
-   - 在 `test/matchNewTemp-MM-DD-HH-MM/`（与 `matchNewTemp` 同级，时间后缀=月-日-时-分）下生成 `hmPhone/` 文件夹
-   - 15 个 case 结果存入该文件夹，并**自动生成 `hmPhone/summary.json`**：逐 case 列出准确率/召回率/多余对相对 `matchNewTemp` 的增减（delta），以及与验证集的剩余差距（配错 + 漏匹配）
+3. **脚本自动完成**：
+   - 跑全量 15 个 case
+   - 写入 `test/matchNewTemp-<月-日-时-分>/` 目录（带时间戳，不覆盖基线）
+   - 自动与 `test/matchNewTemp` 基线对比生成 `summary.json`、`pass-stats.json`
+   - **自动生成完整 `summary.md`**（五段结构：汇总表格 → 出错最多的 Pass → 正确匹配的 Pass 分布 → 优化建议 → 问题明细）
+4. **将 `summary.md` 内容展示给用户**，等待用户看完
+5. **询问用户**：是否覆盖 `matchNewTemp` 基线？
+   - 是 → `cp -R test/matchNewTemp-*/hmPhone/* test/matchNewTemp/hmPhone/`（AI 可执行）
+   - 否 → 保持现状，新目录留作记录
 
-3. **生成 `summary.md` 并展示给用户**：
+### 环境变量
 
-   脚本跑完后，AI 读取新目录下的 15 个 case json 和对应验证集，在新目录根部（与 `hmPhone/` 同级）写入 `summary.md`，内容分四部分，顺序为 ① 汇总表格 → ② 出错最多的 Pass → ③ 优化建议 → ④ 问题明细：
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `SNAPSHOT_DIR` | `matchNewTemp-<月-日-时-分>` | 输出目录名 |
+| `COMPARE_BASE` | `matchNewTemp` | 对比基线目录，设空跳过对比 |
+| `PLATFORM` | `hmPhone` | 平台 |
+| `SERVER` | `http://localhost:3012` | server 地址 |
 
-   第1行为标题行，第2行必须包含数据生成时间（从 case json 中的 `generatedAt` 字段取，格式为 `yyyy-MM-dd HH:mm:ss`），第3行为空行，第4行为快照目录 & 对比基线信息：
-
-   ```markdown
-   # 全量 Case 匹配结果汇总（case1~15）
-
-   > 生成时间：2026-06-24 10:30:00
-
-   > 快照目录：matchNewTemp-06-24-10-30  |  对比基线：matchNewTemp（仅 case1~12 有 delta）
-   ```
-
-   **① 汇总表格**（每行一个 case）：
-
-   | case | Pairs总数 | 验证集总数 | 正确数 | 配错数 | 缺失数 | 多余数 | 准确率 | 召回率 | Δ准确率 | Δ召回率 |
-   |---|---|---|---|---|---|---|---|---|---|---|
-   | case1 | … | … | … | … | … | … | …% | …% | +N% | +N% |
-   | … | | | | | | | | | | |
-   | **合计** | **…** | **…** | **…** | **…** | **…** | **…** | **…%** | **…%** | — | — |
-   | 指标情况 | — | — | — | — | — | — | …% | …% | +N% | +N% |
-
-   Δ列统一用百分比格式（如 `+11.04%`），无基线的新增 case 填 `新增`，delta=0 填 `0`。合计行的准确率/召回率与指标情况行一致（取算数平均）。指标情况行的 Δ值为有基线 case 的平均 delta。
-
-   指标情况行下方另起一行，用普通文字（非引用块）描述总量变化：`正确数 ±N，配错数 ±N，缺失数 ±N，多余数 ±N`。
-
-   **② 出错最多的 Pass**：
-
-   统计配错分布和多余对分布，均按 matchType 分组从高到低排列：
-
-   ```markdown
-   ### 配错分布（按 matchType）
-
-   | matchType | 配错次数 | 涉及 case |
-   |---|---|---|
-   | anchor-topology-方向 | N | case1, case7 … |
-
-   ### 多余对分布（按 matchType）
-
-   | matchType | 多余次数 | 涉及 case |
-   |---|---|---|
-   | anchor-topology-方向 | N | case1, case7 … |
-   ```
-
-   **③ 优化建议**：
-
-   根据数据，分析主要问题根因，给出 2~4 条具体的优化方向，格式如下：
-
-   ```
-   1. **[问题描述]**：[根因分析] → [建议改进方向]
-   2. …
-   ```
-
-   **④ 问题明细**（准确的配对不列出）：
-
-   对每个 case 按以下结构列出三类问题对，每对标注 matchType（缺失对无 matchType）。配错/缺失/多余为 0 对时整块省略：
-
-   ```
-   ### case1
-
-   **配错（N对）**
-   | arkuiId | 实际 designId | 期望 designId | matchType |
-   |---|---|---|---|
-   | 2094 | 14:2212 | 14:2220 | anchor-topology |
-
-   **缺失（N对）**
-   | arkuiId | 期望 designId |
-   |---|---|
-   | 1718 | 60:315 |
-
-   **多余（N对）**
-   | arkuiId | 实际 designId | matchType |
-   |---|---|---|
-   | 3001 | 14:9999 | text-exact |
-   ```
-
-   - 配错：pairs 里有该 arkuiId，但 designId 与验证集不符
-   - 缺失：验证集里有该 arkuiId，但 pairs 里没有匹配到（无 matchType）
-   - 多余：pairs 里有，但该 arkuiId 不在验证集中
-
-   生成完毕后，将 summary.md 内容直接展示给用户，等用户看完。
-
-4. **再问用户**：是否保留此次优化？
-   - 保留 → 用新目录这套覆盖 `matchNewTemp`（`cp` 文件操作，AI 可执行，**不涉及 git**）
-   - 不保留 → `matchNewTemp` 保持不变，新目录留作记录或由用户自行删除
-
-> ⚠️ 前提：server 必须已在 3012 端口运行；AI 跑脚本前先验连通，不通则让用户手动启动（AI 不代启）。
+> ⚠️ AI 不再手动读取 case JSON、验证集、生成 summary.md。所有数据指标由脚本统一产出。优化建议部分脚本提供数据驱动的初步分析，AI 可根据需要补充解读。
 
 ---
 
@@ -721,7 +647,7 @@ case/
 
 ## 多 Pass 节点匹配（`nodeMatcher.js`）
 
-按优先级从高到低依次尝试，每轮匹配成功后标记 `matchedDesignIds` 和 `usedArkui`（**注意：Pass 5.3容器IoU/Pass 6/Pass 6.5/Pass 7 不标记 usedArkui**，允许后续生成重复候选，由 `selectOneToOnePairs` 最终裁决）：
+按优先级从高到低依次尝试，每轮匹配成功后标记 `matchedDesignIds` 和 `usedArkui`（**注意：Pass 5.3容器IoU/Pass 6 不标记 usedArkui**，允许后续生成重复候选，由 `selectOneToOnePairs` 最终裁决）：
 
 | Pass | matchType | 名称 | 说明 |
 |---|---|---|---|
@@ -734,12 +660,8 @@ case/
 | 3 | `text-con-包含` / `text-con-方向x` / `text-con-方向y` / `text-con-自由` | 强锚点周边拓扑 | 以强锚点为参照，分三轮：①包含容器、②左右最近邻（方向x）/上下守门带（方向y）（Gale-Shapley 稳定匹配）；第二轮放宽方向自由配对（score ≥ 0.55） |
 | 3.5 | `text-con-列表` | 同行同类 list 顺序 | 两侧同行且 rawType 严格相同的横向列表（≥2个），按 x 升序锁定；不依赖 IoU，防溢出节点抢配 |
 | 4 | `text-区域优选` / `text-区域兜底` | 区域内文本全局最优 | 对拓扑/list 后剩余未匹配文本做区域内最优二分匹配；全局兜底阈值 0.60 |
-| 5.1 | `text-位置` | 文本位置回退 | 中心点位置 + 语义内容 + 字号/字重/字色综合评分，score > 0.35 接受 |
-| 5.2 | `text-数字位置` | 数字槽位 | mock 整数与实际整数位置/样式一致（styleScore ≥ 0.70），数值可不同 |
 | 5.3 | `con-交叠` | 容器 IoU | `type=container` 节点 IoU > 0.60（无装饰）或 > 0.40（有装饰） |
 | 6 | `con-视觉` | 视觉容器几何 | `isRenderableNonTextNode` 节点 IoU > 0.55 |
-| 6.5 | `con-夹持` | 空间担保 | 被同行左右两对已匹配节点夹住、尺寸吻合（minRatio ≥ 0.5）的 container 节点 |
-| 7 | `text-con-兜底` | Rescue 兜底 | 任意兼容类型 IoU > 0.25，confidence=low |
 
 `selectOneToOnePairs` 最终按 `confidence → matchType优先级 → topologyScore → iou` 排序，保证一对一。
 

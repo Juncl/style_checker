@@ -2,21 +2,17 @@ import {
   makePair,
   matchRegionTextOptimal,
   bestTextRoleMatch,
-  bestTextPositionMatch,
   bestIoUMatch,
 } from './matchStrategies.js'
 import { matchByAnchorTopology } from './anchorTopology.js'
 import { matchAllTextNodes } from './allTextMatcher.js'
-import { yDistance, xDistance, computeIoU, sizeRatio } from '../utils/matchGeometry.js'
+import { computeIoU } from '../utils/matchGeometry.js'
 import {
   textStyleSimilarity,
   hasUsableText,
   isStrongTitleSlotMatch,
   textSemanticSimilarity,
-  passesTextSemanticGate,
   normalizeText,
-  textFieldType,
-  numericTextCompatible,
 } from '../utils/textSemantics.js'
 import {
   isComparableOutputNode,
@@ -103,7 +99,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     usedArkui,
     matchedDesignIds,
     regionContext,
-    { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight }
+    { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight, anchors: strongAnchors }
   )
   for (const pair of rowSlotPairs) {
     pairs.push(pair)
@@ -140,17 +136,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     }
   }
 
-  // ── Pass 3.5: 同行同类 list 顺序匹配 ─────────────────────────────────────
-  // 在 anchor-topology 之前运行：用强锚点（topologyAnchors）作为上/下邻居验证，
-  // 按 x 升序对齐横向列表，confidence=medium，不锁节点，交由 selectOneToOnePairs 最终裁决。
-  // Pass 3（high）产生的配对可覆盖本 Pass 的 medium 配对。
-  {
-    const listPairs = matchByListIndex(designNodes, arkuiNodes, topologyAnchors, { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight })
-    for (const pair of listPairs) {
-      pairs.push(pair)
-    }
-  }
-
   // ── Pass 3: 强锚点周边拓扑匹配（用局部相对位置匹配 mock 文本、图标、形状）──────
   if (topologyAnchors.length > 0) {
     const diagHm = Math.hypot(canvasWidthVp ?? 376, canvasHeightVp ?? 809)
@@ -172,8 +157,19 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     }
   }
 
+  // ── Pass 3.5: 同行同类 list 顺序匹配 ─────────────────────────────────────
+  // 在 Pass 3（拓扑匹配）之后运行，按序号顺序执行。
+  // 用强锚点（topologyAnchors）作为上/下邻居验证，按 x 升序对齐横向列表。
+  // confidence=medium，不锁节点，交由 selectOneToOnePairs 最终裁决。
+  {
+    const listPairs = matchByListIndex(designNodes, arkuiNodes, topologyAnchors, { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight })
+    for (const pair of listPairs) {
+      pairs.push(pair)
+    }
+  }
+
   // ── Pass 4: 区域内文本节点全局最优匹配 ────────────────────────────────────
-  // 在 list(Pass 3.5)/拓扑(Pass 3)都跑完后，仅对剩余未匹配文本做区域内全局最优收尾。
+  // 在拓扑(Pass 3)/list(Pass 3.5)都跑完后，仅对剩余未匹配文本做区域内全局最优收尾。
   // 注意：此处晚于 Pass 3，topologyAnchors 已被消费完，下面这句 push 不再供锚。
   const regionTextPairs = matchRegionTextOptimal(
     designNodes,
@@ -187,56 +183,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     usedArkui.add(pair.arkui.id)
     matchedDesignIds.add(pair.design.id)
     if (isTrustedTopologyAnchor(pair, null, pair.topologyScore)) topologyAnchors.push(pair)
-  }
-
-  // ── Pass 5.1: 文本节点位置回退匹配（处理 mock 数据与真实数据不一致）─────────────
-  for (const dn of designNodes) {
-    if (matchedDesignIds.has(dn.id) || dn.type !== 'text' || !hasUsableText(dn)) continue
-    const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
-      n.type === 'text' && hasUsableText(n) && !usedArkui.has(n.id)
-    )
-    const best = bestTextPositionMatch(dn.normRect, candidates, dn, regionContext)
-    if (best && best.score > 0.35) {
-      pairs.push(makePair(dn, best.node, 'text-位置', {
-        confidence: 'medium',
-      }))
-      usedArkui.add(best.node.id)
-      matchedDesignIds.add(dn.id)
-    }
-  }
-
-  // ── Pass 5.2: 数字槽位匹配（mock 整数与实际整数数值不同，但位置与样式一致）────
-  for (const dn of designNodes) {
-    if (matchedDesignIds.has(dn.id) || dn.type !== 'text') continue
-    if (textFieldType(normalizeText(dn.textContent)) !== 'number') continue
-
-    const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
-      n.type === 'text' &&
-      !usedArkui.has(n.id) &&
-      hasUsableText(n) &&
-      textFieldType(normalizeText(n.textContent)) === 'number'
-    )
-
-    let best = null
-    let bestScore = -Infinity
-    for (const an of candidates) {
-      const dy = yDistance(dn.normRect, an.normRect)
-      const dx = xDistance(dn.normRect, an.normRect)
-      if (dy > 0.08 || dx > 0.20) continue
-      const styleScore = textStyleSimilarity(dn, an)
-      if (styleScore < 0.70) continue
-      const score = (1 - dy / 0.08) * 0.55 + (1 - dx / 0.20) * 0.25 + styleScore * 0.20
-      if (score > bestScore) { bestScore = score; best = an }
-    }
-
-    if (best && bestScore > 0.40) {
-      pairs.push(makePair(dn, best, 'text-数字位置', {
-        confidence: 'medium',
-        topologyScore: bestScore,
-      }))
-      usedArkui.add(best.id)
-      matchedDesignIds.add(dn.id)
-    }
   }
 
   // ── Pass 5.3: 几何 IoU 匹配容器节点 ────────────────────────────────────────
@@ -270,117 +216,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
       pairs.push(makePair(dn, best.node, 'con-视觉', {
         iou: best.iou,
         confidence: 'medium',
-      }))
-    }
-  }
-
-  // ── Pass 6.5: 空间担保匹配 ─────────────────────────────────────────────────
-  // 当已匹配对从左右两侧夹住候选节点（两侧方向一致），且尺寸吻合时，确认该匹配。
-  // 适用于因画布宽度差异导致 IoU=0 但位置关系明确的小型容器/图标节点。
-  {
-    const previewPairs = selectOneToOnePairs(pairs.filter(isAcceptablePair))
-    const previewUsedDesign = new Set(previewPairs.map(p => p.design.id))
-    const previewUsedArkui  = new Set(previewPairs.map(p => p.arkui.id))
-
-    const bracketCandidates = []
-
-    for (const dn of designNodes) {
-      if (previewUsedDesign.has(dn.id)) continue
-      if (dn.type !== 'container') continue
-
-      const dnCX = dn.normRect.x + dn.normRect.w / 2
-      const dnCY = dn.normRect.y + dn.normRect.h / 2
-
-      const sameRowPairs = previewPairs.filter(p => {
-        const pDCY = p.design.normRect.y + p.design.normRect.h / 2
-        const pACY = p.arkui.normRect.y  + p.arkui.normRect.h  / 2
-        return Math.abs(pDCY - dnCY) < 0.08 && Math.abs(pACY - dnCY) < 0.08
-      })
-
-      const leftBrackets = sameRowPairs.filter(p =>
-        p.design.normRect.x + p.design.normRect.w <= dnCX
-      )
-      const rightBrackets = sameRowPairs.filter(p =>
-        p.design.normRect.x >= dnCX
-      )
-      if (leftBrackets.length === 0 || rightBrackets.length === 0) continue
-
-      const bestLeft = leftBrackets.reduce((best, p) =>
-        (dnCX - (p.design.normRect.x + p.design.normRect.w)) <
-        (dnCX - (best.design.normRect.x + best.design.normRect.w)) ? p : best
-      )
-      const bestRight = rightBrackets.reduce((best, p) =>
-        (p.design.normRect.x - dnCX) < (best.design.normRect.x - dnCX) ? p : best
-      )
-
-      // 左右两个担保对本身必须在同一行（design 侧互相对齐，arkui 侧互相对齐）
-      const blDCY = bestLeft.design.normRect.y  + bestLeft.design.normRect.h  / 2
-      const brDCY = bestRight.design.normRect.y + bestRight.design.normRect.h / 2
-      const blACY = bestLeft.arkui.normRect.y   + bestLeft.arkui.normRect.h   / 2
-      const brACY = bestRight.arkui.normRect.y  + bestRight.arkui.normRect.h  / 2
-      if (Math.abs(blDCY - brDCY) > 0.06) continue
-      if (Math.abs(blACY - brACY) > 0.06) continue
-
-      for (const an of arkuiNodes) {
-        if (previewUsedArkui.has(an.id)) continue
-        if (an.type !== 'container') continue
-        if (Math.min(sizeRatio(dn.normRect.w, an.normRect.w), sizeRatio(dn.normRect.h, an.normRect.h)) < 0.5) continue
-
-        const anCX = an.normRect.x + an.normRect.w / 2
-        const anCY = an.normRect.y + an.normRect.h / 2
-
-        // 候选节点本身 y 轴不能相差太远
-        if (Math.abs(anCY - dnCY) > 0.05) continue
-
-        // 两个担保对的 arkui 侧也必须与 an 同行
-        const leftArkuiCY  = bestLeft.arkui.normRect.y  + bestLeft.arkui.normRect.h  / 2
-        const rightArkuiCY = bestRight.arkui.normRect.y + bestRight.arkui.normRect.h / 2
-        if (Math.abs(anCY - leftArkuiCY)  > 0.08) continue
-        if (Math.abs(anCY - rightArkuiCY) > 0.08) continue
-
-        // 开发侧也必须被同一担保对的 ArkUI 节点从左右夹住
-        if (bestLeft.arkui.normRect.x + bestLeft.arkui.normRect.w > anCX) continue
-        if (bestRight.arkui.normRect.x < anCX) continue
-
-        const score = sizeRatio(dn.normRect.w, an.normRect.w) * 0.5 +
-                      sizeRatio(dn.normRect.h, an.normRect.h) * 0.5
-        bracketCandidates.push({
-          dn, an,
-          confidence: lowerConfidence(bestLeft.confidence, bestRight.confidence),
-          score,
-        })
-      }
-    }
-
-    bracketCandidates.sort((a, b) => b.score - a.score)
-    const usedBracketDesign = new Set()
-    const usedBracketArkui  = new Set()
-    for (const { dn, an, confidence, score } of bracketCandidates) {
-      if (usedBracketDesign.has(dn.id) || usedBracketArkui.has(an.id)) continue
-      pairs.push(makePair(dn, an, 'con-夹持', { confidence, topologyScore: score }))
-      usedArkui.add(an.id)
-      matchedDesignIds.add(dn.id)
-      usedBracketDesign.add(dn.id)
-      usedBracketArkui.add(an.id)
-    }
-  }
-
-  // ── Pass 7: Rescue Pass，保留低置信度标签，供前端和评分识别 ────────────────
-  for (const dn of designNodes) {
-    if (matchedDesignIds.has(dn.id)) continue
-    const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
-      isCompatibleType(dn, n) &&
-      (!(dn.type === 'text' && n.type === 'text') ||
-        passesTextSemanticGate(dn.textContent, n.textContent, textSemanticSimilarity(dn.textContent, n.textContent))) &&
-      (!(dn.type === 'text' && n.type === 'text') ||
-        !isWeakVisibleTextNode(dn) && !isWeakVisibleTextNode(n) ||
-        isWeakRescueTextAllowed(dn, n))
-    )
-    const best = bestIoUMatch(dn.normRect, candidates, dn, regionContext)
-    if (best && best.iou > 0.25) {
-      pairs.push(makePair(dn, best.node, 'text-con-兜底', {
-        iou: best.iou,
-        confidence: 'low',
       }))
     }
   }
@@ -429,23 +264,6 @@ function isTrustedTopologyAnchor(pair, dist, score) {
   return dist == null || dist < 0.12
 }
 
-function isWeakVisibleTextNode(node) {
-  const visibility = node?.pixelVisibility || {}
-  return (visibility.visiblePixelRatio ?? 1) < 0.10 && (visibility.textStrokeScore ?? 0) < 0.08
-}
-
-function isWeakRescueTextAllowed(dn, an) {
-  const semantic = textSemanticSimilarity(dn.textContent, an.textContent)
-  const typeA = textFieldType(normalizeText(dn.textContent))
-  const typeB = textFieldType(normalizeText(an.textContent))
-  if (typeA !== typeB) return false
-  if (typeA !== 'label') {
-    if (typeA === 'number') return numericTextCompatible(dn.textContent, an.textContent)
-    return normalizeText(dn.textContent) === normalizeText(an.textContent)
-  }
-  return semantic >= 0.55
-}
-
 function selectOneToOnePairs(pairs) {
   const selected = []
   const usedDesign = new Set()
@@ -487,11 +305,6 @@ function backgroundMatchPriority(pair) {
   return hasBackgroundColor(pair.design) === hasBackgroundColor(pair.arkui) ? 1 : 0
 }
 
-function lowerConfidence(a, b) {
-  const rank = { high: 2, medium: 1, low: 0 }
-  return rank[a] <= rank[b] ? a : b
-}
-
 function matchTypePriority(matchType) {
   if (['text-con-包含', 'text-con-方向x', 'text-con-方向y', 'text-con-自由'].includes(matchType)) return 24
   const order = {
@@ -500,14 +313,10 @@ function matchTypePriority(matchType) {
     'text-角色': 30,
     'text-时间槽': 22,
     'text-同行': 21,
-    'text-位置': 20,
-    'text-数字位置': 19,
     'text-con-列表': 18.5,
     'con-交叠': 18,
-    'con-夹持': 16,
     'con-视觉': 14,
     'text-区域兜底': 8,
-    'text-con-兜底': 2,
   }
   return order[matchType] ?? 0
 }

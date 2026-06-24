@@ -1,7 +1,9 @@
 import { centerY, rectCenter, sizeRatio, xDistance } from '../utils/matchGeometry.js'
 import { makePair } from './matchStrategies.js'
+import { gaussianCurveParabola } from './allTextMatcher.js'
 import { candidatePool, regionAffinity } from './regionContext.js'
 import {
+  colorDistance,
   hasUsableText,
   isAmbiguousShortNumberText,
   isNearSameLineSlot,
@@ -19,6 +21,7 @@ const SLOT_TYPES = new Set(['time', 'weekday'])
 // 同侧行聚类阈值用固定 vp 常量（本质是行高量级的绝对物理距离）。
 const ROW_CLUSTER_TOL = 14   // textRows 同行聚类容差（绝对 vp，≈0.018×809）
 const LINE_Y_TOL      = 28   // readingOrder 同行判定容差（绝对 vp，≈0.035×809）
+const ROW_MATCH_THRESHOLD = 0.80  // 行对入选阈值（正确行对实测 ≥0.90，错误行对 ≤0.71）
 
 function dims(opts = {}) {
   return {
@@ -106,18 +109,15 @@ export function matchAlignedTextRows(designNodes, arkuiNodes, usedArkui, matched
   const designRows = textRows(designNodes, matchedDesignIds, localMatchedDesign, d.designH)
   const arkuiRows = textRows(arkuiNodes, usedArkui, localUsedArkui, d.H)
 
-  for (const dRow of designRows) {
-    const availableArkuiRows = arkuiRows
-      .map(row => ({ ...row, nodes: row.nodes.filter(n => !localUsedArkui.has(n.id)) }))
-      .filter(row => row.nodes.length >= 2)
-    const aRow = bestRow(dRow, availableArkuiRows, d.H)
-    if (!aRow) continue
+  const rowPairs = maxWeightRowMatch(designRows, arkuiRows, opts.anchors || [], d.H, d.designH)
+
+  for (const { dRow, aRow } of rowPairs) {
     const matches = orderedSlotAssignment(dRow.nodes, aRow.nodes, regionContext, d)
     for (const match of matches) {
       if (match.score < 0.50) continue
       result.push(makePair(match.design, match.arkui, 'text-同行', {
         iou: 0,
-        confidence: match.score > 0.76 ? 'medium' : 'low',
+        confidence: match.score >= 0.9 ? 'high' : match.score > 0.76 ? 'medium' : 'low',
         topologyScore: match.score,
       }))
       localMatchedDesign.add(match.design.id)
@@ -126,6 +126,50 @@ export function matchAlignedTextRows(designNodes, arkuiNodes, usedArkui, matched
   }
 
   return result
+}
+
+// bitmask DP 全局最优行配对（状态：di × usedA_mask），复杂度 O(m·2^n)，行数通常 ≤ 8 完全可行
+function maxWeightRowMatch(designRows, arkuiRows, anchors, H, designH) {
+  const m = designRows.length
+  const n = arkuiRows.length
+  if (!m || !n) return []
+
+  const scores = designRows.map(dr => arkuiRows.map(ar => rowScore(dr, ar, anchors, H, designH)))
+  const memo = new Map()
+
+  function solve(di, usedA) {
+    if (di >= m) return 0
+    const key = `${di}:${usedA}`
+    if (memo.has(key)) return memo.get(key)
+    let best = solve(di + 1, usedA)  // dRow[di] 不匹配
+    for (let ai = 0; ai < n; ai++) {
+      if (usedA & (1 << ai)) continue
+      const s = scores[di][ai]
+      if (s < ROW_MATCH_THRESHOLD) continue
+      const val = s + solve(di + 1, usedA | (1 << ai))
+      if (val > best) best = val
+    }
+    memo.set(key, best)
+    return best
+  }
+
+  function traceback(di, usedA) {
+    if (di >= m) return []
+    let best = solve(di + 1, usedA)
+    let bestAi = -1
+    for (let ai = 0; ai < n; ai++) {
+      if (usedA & (1 << ai)) continue
+      const s = scores[di][ai]
+      if (s < ROW_MATCH_THRESHOLD) continue
+      const val = s + solve(di + 1, usedA | (1 << ai))
+      if (val > best) { best = val; bestAi = ai }
+    }
+    if (bestAi === -1) return traceback(di + 1, usedA)
+    return [{ dRow: designRows[di], aRow: arkuiRows[bestAi] }, ...traceback(di + 1, usedA | (1 << bestAi))]
+  }
+
+  solve(0, 0)
+  return traceback(0, 0)
 }
 
 function slotCandidates(nodes, slotType, usedIds, localUsedIds) {
@@ -147,7 +191,6 @@ function textRows(nodes, usedIds, localUsedIds, canvasH) {
     .filter(n =>
       n.type === 'text' &&
       hasUsableText(n) &&
-      isSlotVisibleEnough(n) &&
       isRowSlotText(n) &&
       !usedIds.has(n.id) &&
       !localUsedIds.has(n.id)
@@ -171,28 +214,73 @@ function textRows(nodes, usedIds, localUsedIds, canvasH) {
     .filter(row => row.nodes.length >= 2)
 }
 
-function bestRow(dRow, arkuiRows, H) {
-  let best = null
-  let bestScore = 0
-  const yMax = 0.08 * H
-  for (const aRow of arkuiRows) {
-    const dy = Math.abs(dRow.y - aRow.y)
-    if (dy > yMax) continue
-    const countScore = Math.min(dRow.nodes.length, aRow.nodes.length) / Math.max(dRow.nodes.length, aRow.nodes.length)
-    const xScore = rowXOverlapScore(dRow.nodes, aRow.nodes)
-    const score = (1 - dy / yMax) * 0.45 + countScore * 0.20 + xScore * 0.35
-    if (score > bestScore) {
-      bestScore = score
-      best = aRow
-    }
+// 只用字号/字重/字色（不含对齐），作为行身份标识
+function rowNodeStyleScore(dn, an) {
+  const ds = dn.style || {}
+  const as = an.style || {}
+  let score = 0, weight = 0
+  if (ds.fontSize != null && as.fontSize != null) {
+    weight += 0.40; score += Math.max(0, 1 - Math.abs(ds.fontSize - as.fontSize) / 6) * 0.40
   }
-  return bestScore >= 0.52 ? best : null
+  if (ds.fontWeight != null && as.fontWeight != null) {
+    weight += 0.25; score += Math.max(0, 1 - Math.abs(ds.fontWeight - as.fontWeight) / 400) * 0.25
+  }
+  if (ds.fontColor && as.fontColor) {
+    weight += 0.35; score += Math.max(0, 1 - colorDistance(ds.fontColor, as.fontColor) / 180) * 0.35
+  }
+  return weight > 0 ? score / weight : 0.75
+}
+
+// 找开发侧 y 最近的 Pass1 强锚点对（只取最近 1 个，不分上下）
+function nearestAnchor(yRef, anchors) {
+  let best = null, bestD = Infinity
+  for (const a of anchors) {
+    if (!a.arkui?.rect || !a.design?.rect) continue
+    const dd = Math.abs(a.arkui.rect.y - yRef)
+    if (dd < bestD) { bestD = dd; best = a }
+  }
+  return best
+}
+
+// 行对得分 = yScore × 0.6 + 首节点样式分 × 0.4
+//   yScore = 锚点相对差分(yScore1) × 0.6 + 绝对 rect.y 差分(yScore2) × 0.4
+//   两个 diff 都走 抛物线-高斯曲线：中间值 (0.18·H, 0.5)，截断 0.5·H
+function rowScore(dRow, aRow, anchors, H, designH) {
+  const aFirst = aRow.nodes[0]
+  const dFirst = dRow.nodes[0]
+  const point = { x: 0.18 * H, y: 0.5 }
+  const diffmax = 0.5 * H
+
+  // yScore2：绝对 rect.y 差，正向(距顶) / 反向(距底) 取较优
+  const diffTop = Math.abs(aFirst.rect.y - dFirst.rect.y)
+  const diffBot = Math.abs(
+    (H - aFirst.rect.y - aFirst.rect.h) - (designH - dFirst.rect.y - dFirst.rect.h)
+  )
+  const diff2 = Math.min(diffTop, diffBot)
+  const yScore2 = gaussianCurveParabola(0, diff2, point, diffmax)
+
+  // yScore1：相对最近锚点的偏移差；无锚点则退化为仅用 yScore2
+  let yScore
+  const anchor = nearestAnchor(aFirst.rect.y, anchors)
+  if (anchor) {
+    const deltaDev = aFirst.rect.y - anchor.arkui.rect.y
+    const deltaDesign = dFirst.rect.y - anchor.design.rect.y
+    if (deltaDev * deltaDesign < 0) return 0  // 偏移方向相反 → 一票否决
+    const diff1 = Math.abs(deltaDev - deltaDesign)
+    const yScore1 = gaussianCurveParabola(0, diff1, point, diffmax)
+    yScore = yScore1 * 0.6 + yScore2 * 0.4
+  } else {
+    yScore = yScore2
+  }
+
+  const styleScore = rowNodeStyleScore(dFirst, aFirst)  // 仅首节点
+  return yScore * 0.6 + styleScore * 0.4
 }
 
 function isRowSlotText(node) {
   const text = String(node.textContent || '').trim()
-  if (SLOT_TYPES.has(textFieldType(text.toLowerCase()))) return true
-  return /^[一-鿿]{2,4}$/.test(text)
+  const len = text.length
+  return len >= 2 && len <= 8
 }
 
 function isSlotVisibleEnough(node) {
@@ -202,16 +290,6 @@ function isSlotVisibleEnough(node) {
   const visibleRatio = visibility.visiblePixelRatio ?? 0
   const strokeScore = visibility.textStrokeScore ?? 0
   return visibleRatio >= 0.12 || strokeScore >= 0.09
-}
-
-function rowXOverlapScore(aNodes, bNodes) {
-  const ax1 = Math.min(...aNodes.map(n => n.rect.x))
-  const ax2 = Math.max(...aNodes.map(n => n.rect.x + n.rect.w))
-  const bx1 = Math.min(...bNodes.map(n => n.rect.x))
-  const bx2 = Math.max(...bNodes.map(n => n.rect.x + n.rect.w))
-  const overlap = Math.max(0, Math.min(ax2, bx2) - Math.max(ax1, bx1))
-  const span = Math.max(ax2, bx2) - Math.min(ax1, bx1)
-  return span ? overlap / span : 0
 }
 
 function orderedSlotAssignment(designTexts, arkuiTexts, regionContext, d) {
@@ -295,16 +373,24 @@ function slotScore(dn, an, designOrder, arkuiOrder, dCount, aCount, regionContex
   const yScore = Math.max(0, 1 - dy / yMax)
   const regionScore = regionAffinity(dn, an, regionContext)
   const lineScore = sameLineGroupScore(dn, an, d.W)
-  const semanticScore = 0.72
+  const ds = dn.style || {}
+  const as = an.style || {}
+  const fontSizeScore = ds.fontSize != null && as.fontSize != null
+    ? Math.max(0, 1 - Math.abs(ds.fontSize - as.fontSize) / 6) : 0.75
+  const fontColorScore = ds.fontColor && as.fontColor
+    ? Math.max(0, 1 - colorDistance(ds.fontColor, as.fontColor) / 180) : 0.75
+  const fontWeightScore = ds.fontWeight != null && as.fontWeight != null
+    ? Math.max(0, 1 - Math.abs(ds.fontWeight - as.fontWeight) / 400) : 0.75
 
-  return xScore * 0.24 +
-    yScore * 0.18 +
-    orderScore * 0.24 +
-    style * 0.16 +
-    hRatio * 0.10 +
-    regionScore * 0.04 +
-    lineScore * 0.04 +
-    semanticScore * 0.04
+  return xScore * 0.20 +
+    yScore * 0.14 +
+    orderScore * 0.20 +
+    fontSizeScore * 0.14 +
+    fontColorScore * 0.12 +
+    fontWeightScore * 0.10 +
+    hRatio * 0.06 +
+    regionScore * 0.02 +
+    lineScore * 0.02
 }
 
 function orderMap(nodes) {

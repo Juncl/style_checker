@@ -41,7 +41,7 @@ export function isAcceptablePair(pair) {
   if (matchType !== 'text-con-列表' && isStructuralContainer(design)) return false
 
   const weakMatch = ['text-con-包含', 'text-con-方向x', 'text-con-方向y', 'text-con-自由'].includes(matchType) ||
-    ['text-con-兜底', 'con-交叠', 'con-视觉'].includes(matchType)
+    ['con-交叠', 'con-视觉'].includes(matchType)
   if (!weakMatch) return true
 
   const wRatio = sizeRatio(design.normRect.w, arkui.normRect.w)

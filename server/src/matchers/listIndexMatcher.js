@@ -46,7 +46,16 @@ function firstNodeScore(dn, an, anchor, diag) {
   // 宽高比
   const arD = d.w / d.h, arA = a.w / a.h
   const aspect = Math.min(arD, arA) / Math.max(arD, arA)
-  return absPos * 0.15 + relAnchor * 0.45 + area * 0.20 + aspect * 0.20
+  // 方位监督：锚点 → 首节点的方向向量，两侧余弦相似度（方向相反得 0）
+  const ad = anchor.design.rect, aa = anchor.arkui.rect
+  const dDirX = (d.x + d.w / 2) - (ad.x + ad.w / 2)
+  const dDirY = (d.y + d.h / 2) - (ad.y + ad.h / 2)
+  const aDirX = (a.x + a.w / 2) - (aa.x + aa.w / 2)
+  const aDirY = (a.y + a.h / 2) - (aa.y + aa.h / 2)
+  const lenD = Math.hypot(dDirX, dDirY), lenA = Math.hypot(aDirX, aDirY)
+  const cosine = lenD > 0 && lenA > 0 ? (dDirX * aDirX + dDirY * aDirY) / (lenD * lenA) : 0
+  const dirScore = Math.max(0, cosine)
+  return absPos * 0.10 + relAnchor * 0.40 + area * 0.20 + aspect * 0.15 + dirScore * 0.15
 }
 
 export function matchByListIndex(designNodes, arkuiNodes, anchors, opts = {}) {
@@ -152,13 +161,61 @@ function identifyLists(nodes, tolW, tolH) {
           if (prevEnd > sorted[i].rect.x + tolW) { overlapped = true; break }
         }
         if (overlapped) continue
-        lists.push({
-          rawType,
-          items: sorted,
-          top:    Math.min(...sorted.map(g => g.rect.y)),
-          bottom: Math.max(...sorted.map(g => g.rect.y + g.rect.h)),
-          cy:     average(sorted.map(g => g.rect.y + g.rect.h / 2)),
+
+        // 同行所有节点（含文本/不同类容器），排除当前候选节点自身，用于检测间隙障碍
+        const sortedIds = new Set(sorted.map(n => n.id))
+        const halfH = row.h * 0.5
+        const rowNeighbors = nodes.filter(m => {
+          if (sortedIds.has(m.id)) return false
+          const mCy = m.rect.y + m.rect.h / 2
+          return mCy >= row.cy - halfH && mCy <= row.cy + halfH
         })
+
+        // 按连续性拆分：满足以下任一条件则在此截断
+        const segments = []
+        let seg = [sorted[0]]
+        let segBaseGap = null  // 当前段的基准间隙（以第一对为准）
+        for (let i = 1; i < sorted.length; i++) {
+          const prev = sorted[i - 1]
+          const curr = sorted[i]
+          const gapStart = prev.rect.x + prev.rect.w
+          const gapEnd   = curr.rect.x
+          const gap      = gapEnd - gapStart
+          const nodeW    = (prev.rect.w + curr.rect.w) / 2
+
+          // 条件1：间隙超过节点本身宽度
+          const gapTooLarge = gap > nodeW
+
+          // 条件2：间隙内有其他节点（中心点在间隙内），豁免完全包含两者的公共祖先容器
+          const hasBlocker = !gapTooLarge && gap > tolW && rowNeighbors.some(m => {
+            if (m.rect.x <= prev.rect.x && m.rect.x + m.rect.w >= curr.rect.x + curr.rect.w) return false
+            const mCx = m.rect.x + m.rect.w / 2
+            return mCx > gapStart && mCx < gapEnd
+          })
+
+          // 条件3：间隙与当前段基准间隙差超过 2（单位同坐标系 vp/dp）
+          const gapInconsistent = segBaseGap !== null && Math.abs(gap - segBaseGap) > 2
+
+          if (gapTooLarge || hasBlocker || gapInconsistent) {
+            if (seg.length >= MIN_LIST_SIZE) segments.push(seg)
+            seg = [curr]
+            segBaseGap = null
+          } else {
+            if (segBaseGap === null) segBaseGap = gap
+            seg.push(curr)
+          }
+        }
+        if (seg.length >= MIN_LIST_SIZE) segments.push(seg)
+
+        for (const segment of segments) {
+          lists.push({
+            rawType,
+            items: segment,
+            top:    Math.min(...segment.map(g => g.rect.y)),
+            bottom: Math.max(...segment.map(g => g.rect.y + g.rect.h)),
+            cy:     average(segment.map(g => g.rect.y + g.rect.h / 2)),
+          })
+        }
       }
     }
   }
