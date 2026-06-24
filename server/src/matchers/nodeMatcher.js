@@ -57,8 +57,11 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   const usedArkui = new Set()
   const pairs = []
   const matchedDesignIds = new Set()
-  const strongAnchors = []
-  const topologyAnchors = []
+  // 锚点池：按 matchType 分桶累积，供后续 Pass 按白名单消费
+  const strongAnchors = {}
+  // 取锚点：传白名单则只取这些桶，不传则取当前全部桶；不存在的桶返回 []
+  const collectAnchors = (whitelist) =>
+    (whitelist ?? Object.keys(strongAnchors)).flatMap(k => strongAnchors[k] ?? [])
   const designRegions = segmentRegions(designNodes, 'design')
   const arkuiRegions = segmentRegions(arkuiNodes, 'arkui')
   let regionContext = null
@@ -71,12 +74,11 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     pairs.push(pair)
     usedArkui.add(pair.arkui.id)
     matchedDesignIds.add(pair.design.id)
-    // 可信文本即强锚点，同时驱动区域切割（strongAnchors）和拓扑匹配（topologyAnchors）
-    strongAnchors.push(pair)
-    topologyAnchors.push(pair)
+    // 可信文本即强锚点，进 text-锚点 桶
+    ;(strongAnchors['text-锚点'] ??= []).push(pair)
   }
 
-  regionContext = buildRegionContext(designRegions, arkuiRegions, strongAnchors)
+  regionContext = buildRegionContext(designRegions, arkuiRegions, collectAnchors())
 
   // ── Pass 2.1/2.2: 动态数字/时间星期槽位匹配（mock 与真实数据不同，但序列位置一致）──
   const dynamicSlotPairs = matchDynamicTextSlots(
@@ -91,6 +93,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     pairs.push(pair)
     usedArkui.add(pair.arkui.id)
     matchedDesignIds.add(pair.design.id)
+    if (pair.confidence === 'high') (strongAnchors[pair.matchDetail.type] ??= []).push(pair)
   }
 
   const rowSlotPairs = matchAlignedTextRows(
@@ -99,18 +102,18 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     usedArkui,
     matchedDesignIds,
     regionContext,
-    { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight, anchors: strongAnchors }
+    { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight, anchors: collectAnchors() }
   )
   for (const pair of rowSlotPairs) {
     pairs.push(pair)
     usedArkui.add(pair.arkui.id)
     matchedDesignIds.add(pair.design.id)
-    if (pair.topologyScore >= 0.86) topologyAnchors.push(pair)
+    if (pair.topologyScore >= 0.9) (strongAnchors['text-同行'] ??= []).push(pair)
   }
 
   // ── Pass 2.4: 长文本位置-样式兜底（字数 > 12，锚点方向一票否决）──────────────
   const longTextPairs = matchLongTextFallback(
-    designNodes, arkuiNodes, usedArkui, matchedDesignIds, topologyAnchors,
+    designNodes, arkuiNodes, usedArkui, matchedDesignIds, collectAnchors(),
     { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight }
   )
   for (const pair of longTextPairs) {
@@ -132,19 +135,20 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
       pairs.push(rolePair)
       usedArkui.add(best.node.id)
       matchedDesignIds.add(dn.id)
-      topologyAnchors.push(rolePair)
+      ;(strongAnchors['text-角色'] ??= []).push(rolePair)
     }
   }
 
   // ── Pass 3: 强锚点周边拓扑匹配（用局部相对位置匹配 mock 文本、图标、形状）──────
-  if (topologyAnchors.length > 0) {
+  const pass3Anchors = collectAnchors()
+  if (pass3Anchors.length > 0) {
     const diagHm = Math.hypot(canvasWidthVp ?? 376, canvasHeightVp ?? 809)
     const diagDe = Math.hypot(canvasWidth ?? 360, canvasHeight ?? 947)
     const diagonal = (diagHm + diagDe) / 2
     const topologyPairs = matchByAnchorTopology(
       designNodes,
       arkuiNodes,
-      topologyAnchors,
+      pass3Anchors,
       usedArkui,
       matchedDesignIds,
       regionContext,
@@ -154,6 +158,8 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
       pairs.push(pair)
       usedArkui.add(pair.arkui.id)
       matchedDesignIds.add(pair.design.id)
+      // 高置信产出回灌锚点池，供 Pass 3.5 消费
+      if (pair.confidence === 'high') (strongAnchors[pair.matchDetail.type] ??= []).push(pair)
     }
   }
 
@@ -162,15 +168,13 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   // 用强锚点（topologyAnchors）作为上/下邻居验证，按 x 升序对齐横向列表。
   // confidence=medium，不锁节点，交由 selectOneToOnePairs 最终裁决。
   {
-    const listPairs = matchByListIndex(designNodes, arkuiNodes, topologyAnchors, { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight })
+    const listPairs = matchByListIndex(designNodes, arkuiNodes, collectAnchors(), { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight })
     for (const pair of listPairs) {
       pairs.push(pair)
     }
   }
 
   // ── Pass 4: 区域内文本节点全局最优匹配 ────────────────────────────────────
-  // 在拓扑(Pass 3)/list(Pass 3.5)都跑完后，仅对剩余未匹配文本做区域内全局最优收尾。
-  // 注意：此处晚于 Pass 3，topologyAnchors 已被消费完，下面这句 push 不再供锚。
   const regionTextPairs = matchRegionTextOptimal(
     designNodes,
     arkuiNodes,
@@ -182,7 +186,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     pairs.push(pair)
     usedArkui.add(pair.arkui.id)
     matchedDesignIds.add(pair.design.id)
-    if (isTrustedTopologyAnchor(pair, null, pair.topologyScore)) topologyAnchors.push(pair)
   }
 
   // ── Pass 5.3: 几何 IoU 匹配容器节点 ────────────────────────────────────────
@@ -196,10 +199,12 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     const best = bestIoUMatch(dn.normRect, candidates, dn, regionContext)
     const threshold = hasVisualDecoration(dn) ? 0.40 : 0.60
     if (best && best.iou > threshold) {
-      pairs.push(makePair(dn, best.node, 'con-交叠', {
+      const p = makePair(dn, best.node, 'con-交叠', {
         iou: best.iou,
         confidence: hasVisualDecoration(dn) ? 'high' : 'medium',
-      }))
+      })
+      pairs.push(p)
+      if (p.confidence === 'high') (strongAnchors[p.matchDetail.type] ??= []).push(p)
     }
   }
 
