@@ -85,9 +85,10 @@ function textSimilar(c1, c2) {
   if (!t1 || !t2) return 0
   if (t1 === t2) return 1
 
-  // 数字归一化后的编辑距离
-  const t1n = t1.replace(/\d+/g, '0')
-  const t2n = t2.replace(/\d+/g, '0')
+  // 数字归一化后的编辑距离（含小数：整段数字串连同小数点一起归一为单个 '0'，
+  // 使 "6元/月" / "15元/月" / "4.8元/月" 归一后均为 "0元/月"，内容维度等价）
+  const t1n = t1.replace(/\d+(\.\d+)?/g, '0')
+  const t2n = t2.replace(/\d+(\.\d+)?/g, '0')
   if (t1n === t2n) return 1
 
   const editScore = levenshteinSimilarity(t1n, t2n)
