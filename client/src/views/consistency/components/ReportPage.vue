@@ -240,7 +240,7 @@
         <!-- 操作按钮行 -->
         <div class="node-compare-actions">
           <button class="node-compare-btn node-compare-btn--primary" @click.stop="runCompare">对比</button>
-          <button v-if="!isBoxSelectMode" class="node-compare-btn node-compare-btn--ghost" @click.stop="$emit('add-diff', { arkuiId: localArkuiId, designId: localDesignId })">新增差异</button>
+          <button v-if="!isBatchMode" class="node-compare-btn node-compare-btn--ghost" @click.stop="$emit('add-diff', { arkuiId: localArkuiId, designId: localDesignId })">新增差异</button>
         </div>
         <!-- diff 报告 -->
         <div v-if="localCompareDiffs !== null" class="node-compare-result">
@@ -342,14 +342,30 @@ const localCompareDiffs  = ref(null)   // null=未执行，[]+=已执行
 const localArkuiNodeList  = ref([])    // 开发侧框选节点列表
 const localDesignNodeList = ref([])    // 设计侧框选节点列表
 
-const isBoxSelectMode = computed(() =>
-  localArkuiNodeList.value.length > 0 && localDesignNodeList.value.length > 0
+// 每侧当前选中的节点列表（框选优先；没有框选则用单击 id 拼成单元素数组）
+const currentDevNodes = computed(() => {
+  if (localArkuiNodeList.value.length > 0) return localArkuiNodeList.value
+  if (localArkuiId.value) {
+    const n = props.allArkuiNodes?.find(n => n.id === localArkuiId.value)
+    return n ? [n] : []
+  }
+  return []
+})
+const currentDesignNodes = computed(() => {
+  if (localDesignNodeList.value.length > 0) return localDesignNodeList.value
+  if (localDesignId.value) {
+    const n = (props.result?.allDesignNodes ?? props.designNodes)?.find(n => n.id === localDesignId.value)
+    return n ? [n] : []
+  }
+  return []
+})
+
+// 任意一边 >= 2 → 批量模式（后台对比）；两边各 1 → 单节点模式（前端对比）
+const isBatchMode = computed(() =>
+  currentDevNodes.value.length > 1 || currentDesignNodes.value.length > 1
 )
 const showComparePanel = computed(() =>
-  devSwitchOn.value && (
-    (localArkuiId.value && localDesignId.value) ||
-    isBoxSelectMode.value
-  )
+  devSwitchOn.value && currentDevNodes.value.length > 0 && currentDesignNodes.value.length > 0
 )
 
 const localArkuiNode  = computed(() =>
@@ -400,18 +416,14 @@ function onDesignBgClick() {
 }
 
 function runCompare() {
-  if (isBoxSelectMode.value) {
+  if (isBatchMode.value) {
     runBoxCompare()
     return
   }
-  const allDev    = props.allArkuiNodes
-  const allDesign = props.result?.allDesignNodes ?? props.designNodes
-  const devNode    = allDev?.find(n => n.id === localArkuiId.value)
-  const designNode = allDesign?.find(n => n.id === localDesignId.value)
-  if (!devNode || !designNode) {
-    localCompareDiffs.value = []
-    return
-  }
+  // 单节点前端对比（两边各 1 个）
+  const devNode    = currentDevNodes.value[0]
+  const designNode = currentDesignNodes.value[0]
+  if (!devNode || !designNode) { localCompareDiffs.value = []; return }
   localCompareDiffs.value = compareNodeStyles(designNode, devNode)
 }
 
