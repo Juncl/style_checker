@@ -1,6 +1,6 @@
 <template>
   <div class="img-panel" ref="panelRef">
-    <div class="img-wrapper" ref="wrapperRef" @click.self="emit('bg-click')">
+    <div class="img-wrapper" ref="wrapperRef" @click.self="emit('bg-click')" @mousedown="onBoxStart">
       <div class="zoom-clip" ref="zoomClipRef">
         <div class="zoom-layer" ref="zoomLayerRef">
           <img :src="src" ref="imgRef" :alt="label" @load="onImgLoad" />
@@ -97,9 +97,10 @@ const props = defineProps({
   debugPairMap:  { type: Object,  default: () => ({}) },
   hoverHighlightPairs: { type: Array, default: () => [] },
   platform:            { type: String, default: 'hmPhone' },
+  boxSelectMode:       { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['node-click', 'bg-click', 'node-hover', 'zoom'])
+const emit = defineEmits(['node-click', 'bg-click', 'node-hover', 'zoom', 'box-select'])
 
 const panelRef     = ref(null)
 const labelRef     = ref(null)
@@ -121,6 +122,12 @@ const zoomScale = ref(1)
 // fitW/fitH = 图片 contain 贴合 wrapper 的尺寸（缩放倍数 1 时的渲染尺寸）
 // wrapW/wrapH = wrapper(≈img-panel) 可用尺寸，即 zoom-clip 视口能放大到的上限
 let fitW = 0, fitH = 0, wrapW = 0, wrapH = 0
+
+// 框选状态
+const boxDrag    = ref(null)        // { startPx, startPy, startCX, startCY }
+const boxRect    = ref(null)        // { x, y, w, h } 当前框（画布坐标）
+const boxHitIds  = ref(new Set())   // 当前框内命中的节点 id
+let   suppressClick = false         // 框选完成后阻止下一次 click 事件
 
 // 本地同步记录当前选中 id，用于双击下钻
 // 不能直接用 props.selectedId：dblclick 触发时 Vue 响应式更新尚未完成
@@ -155,6 +162,8 @@ onUnmounted(() => {
   ro?.disconnect()
   window.removeEventListener('pointermove', onInspectorDrag)
   window.removeEventListener('pointerup', endInspectorDrag)
+  window.removeEventListener('mousemove', onBoxMove)
+  window.removeEventListener('mouseup',   onBoxEnd)
   canvasRef.value?.removeEventListener('wheel', onCanvasWheel)
   zoomClipRef.value?.removeEventListener('scroll', onClipScroll)
   if (zoomRafId) cancelAnimationFrame(zoomRafId)
@@ -278,7 +287,12 @@ function isHiddenTextNode(node) {
 // ── 交互事件 ────────────────────────────────────────────────────────────────
 
 function onCanvasClick(e) {
+  if (suppressClick) { suppressClick = false; return }
   if (e.detail >= 2) return  // 双击序列中的第二次 click，交给 dblclick 处理
+  if (props.boxSelectMode && boxHitIds.value.size > 0) {
+    boxHitIds.value = new Set()   // 单击清空框选高亮
+    draw()
+  }
   const coords = getCanvasCoords(e)
   if (!coords) return
   const hit = findHitNode(coords.px, coords.py)
@@ -306,6 +320,7 @@ function onCanvasDblClick(e) {
 }
 
 function onMouseMove(e) {
+  if (boxDrag.value) return   // 框选中，跳过 hover
   const coords = getCanvasCoords(e)
   if (!coords) return
   const hit = findHitNode(coords.px, coords.py)
@@ -325,6 +340,73 @@ function onMouseLeave() {
     emit('node-hover', null)
     draw()
   }
+}
+
+// ── 框选 ─────────────────────────────────────────────────────────────────────
+
+function rectsIntersect(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x &&
+         a.y < b.y + b.h && a.y + a.h > b.y
+}
+
+function onBoxStart(e) {
+  if (!props.boxSelectMode || e.button !== 0) return
+  const coords = getCanvasCoords(e)
+  if (!coords) return
+  e.preventDefault()
+  boxDrag.value   = { startPx: coords.px, startPy: coords.py, startCX: e.clientX, startCY: e.clientY }
+  boxRect.value   = null
+  boxHitIds.value = new Set()   // 重新框选清空上次高亮
+  suppressClick   = false
+  if (canvasRef.value) canvasRef.value.style.cursor = 'crosshair'
+  window.addEventListener('mousemove', onBoxMove)
+  window.addEventListener('mouseup',   onBoxEnd)
+}
+
+function onBoxMove(e) {
+  if (!boxDrag.value) return
+  // 超出 img-wrapper 边界 → 自动停止
+  const wr = wrapperRef.value?.getBoundingClientRect()
+  if (wr && (e.clientX < wr.left || e.clientX > wr.right || e.clientY < wr.top || e.clientY > wr.bottom)) {
+    finishBox()
+    return
+  }
+  const coords = getCanvasCoords(e)
+  if (!coords) return
+  const dx = e.clientX - boxDrag.value.startCX
+  const dy = e.clientY - boxDrag.value.startCY
+  if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return   // 抖动容差，不开始绘框
+  suppressClick = true
+  const x = Math.min(boxDrag.value.startPx, coords.px)
+  const y = Math.min(boxDrag.value.startPy, coords.py)
+  const w = Math.abs(coords.px - boxDrag.value.startPx)
+  const h = Math.abs(coords.py - boxDrag.value.startPy)
+  boxRect.value = { x, y, w, h }
+  const sel = { x, y, w, h }
+  const hits = props.nodes.filter(n =>
+    n.visible !== false && !n.visualOccluded && n.rect && rectsIntersect(sel, n.rect)
+  )
+  boxHitIds.value = new Set(hits.map(n => n.id))
+  draw()
+}
+
+function onBoxEnd() {
+  finishBox()
+}
+
+function finishBox() {
+  window.removeEventListener('mousemove', onBoxMove)
+  window.removeEventListener('mouseup',   onBoxEnd)
+  if (!boxDrag.value) return
+  if (suppressClick && boxHitIds.value.size > 0) {
+    const selectedNodes = props.nodes.filter(n => boxHitIds.value.has(n.id))
+    emit('box-select', selectedNodes)
+  }
+  boxDrag.value = null
+  boxRect.value = null
+  // boxHitIds 保留，高亮维持到下次单击或重新框选
+  if (canvasRef.value) canvasRef.value.style.cursor = ''
+  draw()
 }
 
 // 缩放节流：一帧内的多次滚轮/双指捏合事件累积成一次渲染，避免事件风暴压垮画布重绘
@@ -519,6 +601,26 @@ function draw() {
     for (const mark of props.hoverHighlightPairs) {
       drawHoverSpacingMark(ctx, mark, sx, sy)
     }
+  }
+
+  // 框选命中节点高亮（红色实线，无背景）
+  if (boxHitIds.value.size > 0) {
+    for (const n of props.nodes) {
+      if (boxHitIds.value.has(n.id) && n.rect) {
+        drawNodeRect(ctx, n.rect, sx, sy, 'rgba(0,0,0,0)', '#E02128', 1.5, [])
+      }
+    }
+  }
+  // 框选矩形（蓝色虚线框）
+  if (boxRect.value) {
+    const r = boxRect.value
+    ctx.strokeStyle = '#0067D1'
+    ctx.lineWidth = 1
+    ctx.setLineDash([5, 3])
+    ctx.fillStyle = 'rgba(0,103,209,0.06)'
+    ctx.fillRect(r.x * sx, r.y * sy, r.w * sx, r.h * sy)
+    ctx.strokeRect(r.x * sx, r.y * sy, r.w * sx, r.h * sy)
+    ctx.setLineDash([])
   }
 
   ctx.restore()

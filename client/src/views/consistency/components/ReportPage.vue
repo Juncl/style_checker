@@ -88,6 +88,17 @@
   <div class="up-columns">
     <!-- 开发侧 -->
     <section class="up-col up-col--dev">
+      <!-- 悬浮开关（右上角，仅 debugger 模式） -->
+      <div v-if="debugMode" class="dev-float-switch" @click.stop>
+        <button
+          class="octo-toggle"
+          :class="{ 'octo-toggle--on': devSwitchOn }"
+          @click="toggleDevSwitch"
+        >
+          <span class="octo-toggle-thumb"></span>
+        </button>
+      </div>
+
       <div
         :class="['up-stage', devReuploading && !devPreview && !devPreviewLoading ? '' : 'up-stage--report']"
         @click="devReuploading ? undefined : $emit('clear-pair')"
@@ -135,18 +146,20 @@
           :canvas-w="result.canvas.arkui.w"
           :canvas-h="result.canvas.arkui.h"
           :nodes="arkuiNodes"
-          :selected-id="selectedPair?.arkui?.id || null"
-          :inspector-node="selectedPair?.arkui || null"
-          :style-diffs="selectedArkuiDiffs"
+          :selected-id="devSwitchOn ? localArkuiId : (selectedPair?.arkui?.id || null)"
+          :inspector-node="devSwitchOn ? localArkuiNode : (selectedPair?.arkui || null)"
+          :style-diffs="devSwitchOn ? [] : selectedArkuiDiffs"
           :external-hovered-id="hoveredArkuiCrossId"
           :debug-mode="debugMode"
           :debug-pipeline-visible="debugPipelineOn"
           :debug-visible="debugOverlayOn"
           :debug-pair-map="debugPairMap"
 
-          @node-click="$emit('arkui-node-click', $event)"
+          :box-select-mode="devSwitchOn"
+          @node-click="onDevNodeClick"
           @node-hover="onArkuiHover"
-          @bg-click="$emit('clear-pair')"
+          @bg-click="onDevBgClick"
+          @box-select="onDevBoxSelect"
           @zoom="onDevPanelZoom"
         />
       </div>
@@ -201,9 +214,9 @@
           :canvas-w="result.canvas.design.w"
           :canvas-h="result.canvas.design.h"
           :nodes="designNodes"
-          :selected-id="selectedPair?.design?.id || null"
-          :inspector-node="selectedPair?.design || null"
-          :style-diffs="selectedDesignDiffs"
+          :selected-id="devSwitchOn ? localDesignId : (selectedPair?.design?.id || null)"
+          :inspector-node="devSwitchOn ? localDesignNode : (selectedPair?.design || null)"
+          :style-diffs="devSwitchOn ? [] : selectedDesignDiffs"
           :locked-ids="lockedNodeIds"
           :external-hovered-id="hoveredDesignCrossId"
           :debug-mode="debugMode"
@@ -211,13 +224,48 @@
           :debug-visible="debugOverlayOn"
           :debug-pair-map="debugPairMap"
 
-          @node-click="$emit('design-node-click', $event)"
+          :box-select-mode="devSwitchOn"
+          @node-click="onDesignNodeClickLocal"
           @node-hover="onDesignHover"
-          @bg-click="$emit('clear-pair')"
+          @bg-click="onDesignBgClick"
+          @box-select="onDesignBoxSelect"
           @zoom="onDesignPanelZoom"
         />
       </div>
     </section>
+
+    <!-- 节点对比悬浮面板（两侧各选中一个节点后出现） -->
+    <transition name="fade">
+      <div v-if="devSwitchOn && localArkuiId && localDesignId" class="node-compare-panel">
+        <!-- 操作按钮行 -->
+        <div class="node-compare-actions">
+          <button class="node-compare-btn node-compare-btn--primary" @click.stop="runCompare">对比</button>
+          <button class="node-compare-btn node-compare-btn--ghost" @click.stop="$emit('add-diff', { arkuiId: localArkuiId, designId: localDesignId })">新增差异</button>
+        </div>
+        <!-- diff 报告 -->
+        <div v-if="localCompareDiffs !== null" class="node-compare-result">
+          <div v-if="localCompareDiffs.length === 0" class="node-compare-empty">
+            ✓ 样式一致，未发现差异
+          </div>
+          <template v-else>
+            <div class="node-compare-diff-header">
+              <span>类型</span>
+              <span>开发</span>
+              <span>设计</span>
+            </div>
+            <div
+              v-for="d in localCompareDiffs"
+              :key="d.property"
+              class="node-compare-diff-row"
+            >
+              <span class="diff-label">{{ d.label }}</span>
+              <span class="diff-dev" :title="d.devValue">{{ d.devValue }}</span>
+              <span class="diff-design" :title="d.designValue">{{ d.designValue }}</span>
+            </div>
+          </template>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -229,6 +277,7 @@ import ImagePanel from './ImagePanel.vue'
 import DevUploadCard from './DevUploadCard.vue'
 import DesignUploadCard from './DesignUploadCard.vue'
 import { validationBg, confidenceText, confidenceTagType } from '../../utils/tools.ts'
+import { compareNodeStyles } from '../match/compareNodes.ts'
 
 const props = defineProps({
   result:               { type: Object,  required: true },
@@ -275,12 +324,81 @@ const emit = defineEmits([
   'select-case',
   'arkui-hover',
   'design-hover',
+  'dev-switch-change',
+  'compare-nodes',
+  'add-diff',
 ])
 
 
 const devPanelRef    = ref(null)
 const designPanelRef = ref(null)
 const debugMappingExpanded = ref(false)
+
+const devSwitchOn        = ref(false)
+const localArkuiId       = ref(null)
+const localDesignId      = ref(null)
+const localCompareDiffs  = ref(null)   // null=未执行，[]+=已执行
+const localArkuiNodeList  = ref([])    // 开发侧框选节点列表
+const localDesignNodeList = ref([])    // 设计侧框选节点列表
+
+const localArkuiNode  = computed(() =>
+  devSwitchOn.value && localArkuiId.value
+    ? (props.allArkuiNodes?.find(n => n.id === localArkuiId.value) ?? null)
+    : null
+)
+const localDesignNode = computed(() =>
+  devSwitchOn.value && localDesignId.value
+    ? ((props.result?.allDesignNodes ?? props.designNodes)?.find(n => n.id === localDesignId.value) ?? null)
+    : null
+)
+
+function toggleDevSwitch() {
+  devSwitchOn.value = !devSwitchOn.value
+  if (!devSwitchOn.value) {
+    localArkuiId.value       = null
+    localDesignId.value      = null
+    localCompareDiffs.value  = null
+    localArkuiNodeList.value  = []
+    localDesignNodeList.value = []
+  }
+  emit('dev-switch-change', devSwitchOn.value)
+}
+
+function onDevBoxSelect(nodes) {
+  localArkuiNodeList.value = nodes
+}
+function onDesignBoxSelect(nodes) {
+  localDesignNodeList.value = nodes
+}
+
+function onDevNodeClick(id) {
+  if (devSwitchOn.value) { localArkuiId.value = id; localCompareDiffs.value = null }
+  else emit('arkui-node-click', id)
+}
+function onDesignNodeClickLocal(id) {
+  if (devSwitchOn.value) { localDesignId.value = id; localCompareDiffs.value = null }
+  else emit('design-node-click', id)
+}
+function onDevBgClick() {
+  if (devSwitchOn.value) { localArkuiId.value = null; localCompareDiffs.value = null }
+  else emit('clear-pair')
+}
+function onDesignBgClick() {
+  if (devSwitchOn.value) { localDesignId.value = null; localCompareDiffs.value = null }
+  else emit('clear-pair')
+}
+
+function runCompare() {
+  const allDev    = props.allArkuiNodes
+  const allDesign = props.result?.allDesignNodes ?? props.designNodes
+  const devNode    = allDev?.find(n => n.id === localArkuiId.value)
+  const designNode = allDesign?.find(n => n.id === localDesignId.value)
+  if (!devNode || !designNode) {
+    localCompareDiffs.value = []
+    return
+  }
+  localCompareDiffs.value = compareNodeStyles(designNode, devNode)
+}
 
 function onDevPanelZoom({ factor, normX, normY }) {
   designPanelRef.value?.applyZoom(factor, normX, normY)
@@ -376,6 +494,168 @@ function startDrag(e, which) {
 </script>
 
 <style scoped>
+.up-columns {
+  position: relative;
+}
+
+.up-col--dev {
+  position: relative;
+}
+
+.node-compare-panel {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(6px);
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.16);
+  min-width: 320px;
+  max-width: 420px;
+  overflow: hidden;
+}
+
+.node-compare-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.node-compare-btn {
+  height: 32px;
+  padding: 4px 16px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 150ms ease;
+}
+
+.node-compare-btn--primary {
+  background: #0067D1;
+  color: #ffffff;
+}
+.node-compare-btn--primary:hover {
+  background: #0058B3;
+}
+
+.node-compare-btn--ghost {
+  background: #ffffff;
+  color: #191919;
+  border: 1px solid #D1D5DC;
+}
+.node-compare-btn--ghost:hover {
+  background: #F5F5F5;
+}
+
+.node-compare-result {
+  border-top: 1px solid #EAECF0;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.node-compare-empty {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: #52C41A;
+}
+
+.node-compare-diff-header {
+  display: grid;
+  grid-template-columns: 56px 1fr 1fr;
+  gap: 6px;
+  padding: 4px 14px;
+  font-size: 11px;
+  color: #AAAAAA;
+  background: #FAFAFA;
+  border-bottom: 1px solid #EAECF0;
+}
+
+.node-compare-diff-row {
+  display: grid;
+  grid-template-columns: 56px 1fr 1fr;
+  gap: 6px;
+  align-items: baseline;
+  padding: 5px 14px;
+  font-size: 12px;
+  line-height: 1.4;
+  border-left: 3px solid #0067D1;
+  background: rgba(0, 103, 209, 0.04);
+}
+
+.diff-label {
+  color: #777;
+  font-size: 11px;
+}
+
+.diff-design {
+  color: var(--report-design-color);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-dev {
+  color: var(--report-dev-color);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dev-float-switch {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.90);
+  backdrop-filter: blur(6px);
+  padding: 4px 6px;
+  border-radius: 9999px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+}
+
+.octo-toggle {
+  width: 38px;
+  height: 20px;
+  border-radius: 9999px;
+  border: none;
+  background: #D1D5DC;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  transition: background 200ms ease;
+  outline: none;
+}
+
+.octo-toggle--on {
+  background: #0067D1;
+}
+
+.octo-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.20);
+  transition: transform 200ms ease;
+}
+
+.octo-toggle--on .octo-toggle-thumb {
+  transform: translateX(18px);
+}
+
 .phone-content--center {
   align-items: center;
   justify-content: center;

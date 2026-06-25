@@ -40,7 +40,7 @@ export function isAcceptablePair(pair) {
   // 比 isStructuralContainer 的视觉装饰检查更严格，故跳过此过滤。
   if (matchType !== 'text-con-列表' && isStructuralContainer(design)) return false
 
-  const weakMatch = ['text-con-包含', 'text-con-方向x', 'text-con-方向y', 'text-con-自由'].includes(matchType) ||
+  const weakMatch = ['text-con-包含', 'text-con-方向x', 'text-con-方向y'].includes(matchType) ||
     ['con-交叠', 'con-视觉'].includes(matchType)
   if (!weakMatch) return true
 

@@ -5,6 +5,8 @@ import {
   bestIoUMatch,
 } from './matchStrategies.js'
 import { matchByAnchorTopology } from './anchorTopology.js'
+import { makeAnchorCheck } from './anchorCheck.js'
+import { matchByAnchorContain } from './anchorContainMatcher.js'
 import { matchAllTextNodes } from './allTextMatcher.js'
 import { computeIoU } from '../utils/matchGeometry.js'
 import {
@@ -78,6 +80,33 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     ;(strongAnchors['text-锚点'] ??= []).push(pair)
   }
 
+  // ── Pass 1.5: 包含容器匹配（用 Pass 1 强锚点找包住锚点的视觉祖先容器）──────
+  const pass15Anchors = collectAnchors()
+  if (pass15Anchors.length > 0) {
+    const diagHm15 = Math.hypot(canvasWidthVp ?? 376, canvasHeightVp ?? 809)
+    const diagDe15 = Math.hypot(canvasWidth ?? 360, canvasHeight ?? 947)
+    const fallback15 = Math.max(diagDe15, diagHm15)
+    const ctx15 = {
+      maxDiag: Math.max(diagDe15, diagHm15),
+      rootRectH: Math.max(canvasHeightVp ?? 809, canvasHeight ?? 947),
+      diag: (diagDe15 + diagHm15) / 2,
+      rootW: ((canvasWidthVp ?? 376) + (canvasWidth ?? 360)) / 2 || fallback15,
+      rootMaxH: Math.max(canvasHeightVp ?? 809, canvasHeight ?? 947),
+    }
+    const containPairs = matchByAnchorContain(
+      pass15Anchors,
+      arkuiNodes.filter(n => !usedArkui.has(n.id)),
+      designNodes.filter(n => !matchedDesignIds.has(n.id)),
+      ctx15
+    )
+    for (const pair of containPairs) {
+      pairs.push(pair)
+      usedArkui.add(pair.arkui.id)
+      matchedDesignIds.add(pair.design.id)
+      if (pair.confidence === 'high') (strongAnchors[pair.matchDetail.type] ??= []).push(pair)
+    }
+  }
+
   regionContext = buildRegionContext(designRegions, arkuiRegions, collectAnchors())
 
   // ── Pass 2.1/2.2: 动态数字/时间星期槽位匹配（mock 与真实数据不同，但序列位置一致）──
@@ -144,7 +173,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   if (pass3Anchors.length > 0) {
     const diagHm = Math.hypot(canvasWidthVp ?? 376, canvasHeightVp ?? 809)
     const diagDe = Math.hypot(canvasWidth ?? 360, canvasHeight ?? 947)
-    const diagonal = (diagHm + diagDe) / 2
     const topologyPairs = matchByAnchorTopology(
       designNodes,
       arkuiNodes,
@@ -152,7 +180,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
       usedArkui,
       matchedDesignIds,
       regionContext,
-      { diagonal, diagDe, diagHm, canvasHeightVp: canvasHeightVp ?? 809, canvasHeight: canvasHeight ?? 947, canvasWidthVp: canvasWidthVp ?? 376, canvasWidth: canvasWidth ?? 360 }
+      { diagDe, diagHm, canvasHeightVp: canvasHeightVp ?? 809, canvasHeight: canvasHeight ?? 947, canvasWidthVp: canvasWidthVp ?? 376, canvasWidth: canvasWidth ?? 360 }
     )
     for (const pair of topologyPairs) {
       pairs.push(pair)
@@ -189,13 +217,16 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   }
 
   // ── Pass 5.3: 几何 IoU 匹配容器节点 ────────────────────────────────────────
+  const anchors53 = collectAnchors().filter(p => p.matchDetail?.type !== 'text-con-方向x' && p.matchDetail?.type !== 'text-con-方向y')
+  const anchorCheck53 = makeAnchorCheck(anchors53, anchors53)
   for (const dn of designNodes) {
     if (matchedDesignIds.has(dn.id)) continue
     if (dn.type !== 'container') continue
 
-    const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
-      n.type === 'container'
-    )
+    const candidates = candidatePool(dn, arkuiNodes, regionContext, n => {
+      if (n.type !== 'container') return false
+      return anchorCheck53(n, dn)
+    })
     const best = bestIoUMatch(dn.normRect, candidates, dn, regionContext)
     const threshold = hasVisualDecoration(dn) ? 0.40 : 0.60
     if (best && best.iou > threshold) {
@@ -311,7 +342,7 @@ function backgroundMatchPriority(pair) {
 }
 
 function matchTypePriority(matchType) {
-  if (['text-con-包含', 'text-con-方向x', 'text-con-方向y', 'text-con-自由'].includes(matchType)) return 24
+  if (['text-con-包含', 'text-con-方向x', 'text-con-方向y'].includes(matchType)) return 24
   const order = {
     'text-锚点': 40,
     'text-区域优选': 34,

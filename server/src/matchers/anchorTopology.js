@@ -8,87 +8,26 @@
  *   - 锚点都是文本叶子，只可能「被包含」，所以包含关系 = 锚点的视觉祖先
  *   - 只处理两类几何关系：与锚点【脱离】(正左右上下) 和【包含】(祖先)；
  *     与锚点相交但非包含的节点一律不碰
- *   - 分两轮：第一轮严格方向 + 序匹配 + 三维守门(AND)；
- *            第二轮放宽方向(含斜向) + 三维加权取最优
+ *   - 严格方向 + 序匹配 + 三维守门(AND) 的竞争式稳定匹配（Gale-Shapley）
  *
  * 三维评分（统一复用 Pass1 的抛物线-高斯曲线 gaussianCurveParabola）：
  *   位置：posDiff = |欧氏(an中心,a_hm中心) − 欧氏(dn中心,a_de中心)|
  *         point.x = 0.2·maxDiag，拦截线 = 水平 1.5·maxAnchorW / 垂直 0.25·rootRectH
  *   面积：gaussianCurveParabola(area_an, area_dn, {x:1.3·minArea, y:0.5}, 3·minArea)
  *   宽高比：gaussianCurveParabola(rate_an, rate_dn, {x:0.86·minRate, y:0.5}, 2·minRate)
- *   第一轮三维都 >0 才通过(AND)；第二轮同样 AND 门控，过后按加权 0.5/0.25/0.25 取最优
+ *   三维都 >0 才通过(AND)
  */
 import { gaussianCurveParabola } from './allTextMatcher.js'
 import { makePair } from './matchStrategies.js'
 import { isCompatibleType, hasVisualDecoration } from '../utils/nodeVisibility.js'
 import { computeIoU } from '../utils/matchGeometry.js'
-
-const EPS = 0.5            // rect 包含 / 分离判定容差（dp/vp）
-const ROUND2_MIN = 0.55   // 第二轮锁定的总分下限
+import { EPS, center, relation, makeAnchorCheck } from './anchorCheck.js'
 
 // ── 几何小工具（纯 rect）────────────────────────────────────────────────────────
-const center = r => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 })
 const areaOf = r => r.w * r.h
 const aspectOf = r => (r.h > 0 ? r.w / r.h : 0)
 const euclid = (p, q) => Math.hypot(p.x - q.x, p.y - q.y)
-const round4 = n => parseFloat(n.toFixed(4))
-
-// outer 是否包住 inner（带容差）
-function rectContains(outer, inner) {
-  return outer.x <= inner.x + EPS &&
-         outer.y <= inner.y + EPS &&
-         outer.x + outer.w >= inner.x + inner.w - EPS &&
-         outer.y + outer.h >= inner.y + inner.h - EPS
-}
-// 两 rect 本体是否分离（不相交）
-function rectsDisjoint(a, b) {
-  return a.x + a.w <= b.x + EPS || b.x + b.w <= a.x + EPS ||
-         a.y + a.h <= b.y + EPS || b.y + b.h <= a.y + EPS
-}
-// 投影是否有交叠
-const xOverlap = (a, b) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > EPS
-const yOverlap = (a, b) => Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > EPS
-// 纯 y 方向：outer 整体在 inner 正上方 / 正下方（本体脱离，不要求横向覆盖）
-const isAbove = (outer, inner) => outer.y + outer.h <= inner.y + EPS
-const isBelow = (outer, inner) => outer.y >= inner.y + inner.h - EPS
-
-/**
- * 判定 nodeRect 相对 anchorRect 的几何关系：
- *   'contain'  node 包住 anchor（视觉祖先方向）
- *   'left/right/up/down'  本体脱离 + 落在锚点的同行带 / 同列带
- *   'diagonal' 本体脱离但斜对角（第一轮丢弃、第二轮可用）
- *   null       相交但非包含 → pass3 不碰
- */
-function relation(nodeRect, anchorRect) {
-  if (rectContains(nodeRect, anchorRect)) return 'contain'
-  if (!rectsDisjoint(nodeRect, anchorRect)) return null
-  const nc = center(nodeRect), ac = center(anchorRect)
-  if (yOverlap(nodeRect, anchorRect)) return nc.x < ac.x ? 'left' : 'right'
-  if (xOverlap(nodeRect, anchorRect)) return nc.y < ac.y ? 'up' : 'down'
-  return 'diagonal'
-}
-
-// ── 锚点一致性校验工厂（Pass 3.1.2 同款，供 Pass 3.5 等复用）─────────────────────
-// 以一组强锚点为参照，构造两个「否决式」校验器，过滤与锚点拓扑矛盾的候选对 (an, dn)。
-const OPPOSITE = { up: 'down', down: 'up', left: 'right', right: 'left' }
-export function makeAnchorConsistencyCheckers(anchorSet) {
-  // 包含一致性：an 落在某锚点容器内 ⟺ dn 落在其设计侧对端内（嵌套要求所有层一致）
-  const containConsistent = (an, dn) => anchorSet.every(s => {
-    if (s.arkui.id === an.id || s.design.id === dn.id) return true
-    return rectContains(s.arkui.rect, an.rect) === rectContains(s.design.rect, dn.rect)
-  })
-  // 方向一致性：an 与锚点「脱离」（上/下/左/右/斜向）时方位不得与 dn 矛盾 ——
-  // 卡两类明确矛盾：脱离 vs 相交(rd===null) 与 反向(上↔下/左↔右)；放行同向/斜向/包含。
-  const directionConsistent = (an, dn) => anchorSet.every(s => {
-    if (s.arkui.id === an.id || s.design.id === dn.id) return true
-    const ra = relation(an.rect, s.arkui.rect)
-    if (ra === null || ra === 'contain') return true
-    const rd = relation(dn.rect, s.design.rect)
-    if (rd === null) return false
-    return rd !== OPPOSITE[ra]
-  })
-  return { containConsistent, directionConsistent }
-}
+export const round4 = n => parseFloat(n.toFixed(4))
 
 // 方向桶内排序键：左右按 x 间距、上下按 y 间距
 function dirDist(rect, anchorRect, dir) {
@@ -128,7 +67,7 @@ function scoreAspect(an, dn) {
 }
 
 // 返回 { pass, score }：pass = 三维都 >0（AND 门控）；score = 0.5/0.25/0.25 加权
-function tripleScore(an, dn, aHm, aDe, dir, ctx) {
+export function tripleScore(an, dn, aHm, aDe, dir, ctx) {
   const ps = scorePosition(an, dn, aHm, aDe, dir, ctx)
   const as = scoreArea(an, dn)
   const rs = scoreAspect(an, dn)
@@ -196,7 +135,7 @@ function verticalTriple(an, dn, aHm, aDe, ctx) {
 
 // ── 主入口 ─────────────────────────────────────────────────────────────────────
 export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArkui, matchedDesignIds, regionContext, options = {}) {
-  const { diagDe = 1, diagHm = 1, canvasHeight, canvasHeightVp, canvasWidth, canvasWidthVp } = options
+  const { diagDe = 1, diagHm = 1, canvasHeight, canvasHeightVp, canvasWidth, canvasWidthVp, priorContainPairs = [] } = options
   const fallback = Math.max(diagDe, diagHm)
   const ctx = {
     maxDiag: Math.max(diagDe, diagHm),
@@ -211,9 +150,9 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
   const availArkui = arkuiNodes.filter(n => !usedArkui.has(n.id))
   const availDesign = designNodes.filter(n => !matchedDesignIds.has(n.id))
 
-  const result = []
-  const lockedArkui = new Set()
-  const lockedDesign = new Set()
+  const result = [...priorContainPairs]
+  const lockedArkui = new Set(priorContainPairs.map(p => p.arkui.id))
+  const lockedDesign = new Set(priorContainPairs.map(p => p.design.id))
 
   // 取某锚点某方向上、离锚点最近的 1 个节点（可带候选过滤）
   const nearestInDir = (nodes, anchorRect, dir, filter) => {
@@ -227,45 +166,13 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
     return best
   }
 
-  // 双向包含一致性：容器 an/dn 对每个 pass1 锚点的「包 / 不包」必须两侧完全一致
-  // （an 包某锚点 ⟺ dn 也包该锚点对端；an 不包 ⟺ dn 也不包）
-  const consistentWithAnchors = (an, dn) => anchors.every(s => {
-    if (s.arkui.id === an.id || s.design.id === dn.id) return true
-    return rectContains(an.rect, s.arkui.rect) === rectContains(dn.rect, s.design.rect)
-  })
-
-  // ── 第一轮 ① 包含匹配：锚点视觉祖先容器先跑先锁定（包含=拓扑关系，比方向更可信）──
-  const round1Contain = []
-  for (const anchor of anchors) {
-    const aHm = anchor.arkui, aDe = anchor.design
-    const arkuiAnc = availArkui.filter(n => hasVisualDecoration(n) && relation(n.rect, aHm.rect) === 'contain')
-    const designAnc = availDesign.filter(n => hasVisualDecoration(n) && relation(n.rect, aDe.rect) === 'contain')
-    for (const an of arkuiAnc) {
-      let best = null
-      for (const dn of designAnc) {
-        if (!isCompatibleType(dn, an)) continue
-        if (!consistentWithAnchors(an, dn)) continue // 双向包含一致性：包了一起包、没包一起不包
-        const t = tripleScore(an, dn, aHm, aDe, 'contain', ctx)
-        if (t.pass && (!best || t.score > best.score)) best = { dn, score: t.score }
-      }
-      if (best) round1Contain.push({ an, dn: best.dn, score: best.score })
-    }
-  }
-  round1Contain.sort((a, b) => b.score - a.score)
-  for (const { an, dn, score } of round1Contain) {
-    if (lockedArkui.has(an.id) || lockedDesign.has(dn.id)) continue
-    lockedArkui.add(an.id); lockedDesign.add(dn.id)
-    result.push(makePair(dn, an, 'text-con-包含', { confidence: 'high', topologyScore: round4(score), iou: computeIoU(dn.normRect, an.normRect) }))
-  }
-
-  // 包含强锚点组 = 原文本锚点 + 刚锁定的包含容器配对；约束左右/上下候选
+  // 包含强锚点组 = 原文本锚点 + 外部传入的 3.1.1 包含配对；约束左右/上下候选
   const strongC = [...anchors, ...result]
-  // 包含一致性以 strongC 为参照、方向一致性以原 pass1 文本锚点为参照（见 makeAnchorConsistencyCheckers）
+  // 包含一致性以 strongC 为参照、方向一致性以原 pass1 文本锚点为参照
   // （方向矛盾示例：1819上↔64272相交、1828斜脱离↔64270相交 被卡；「上↔斜上」这类布局微差放行，不误杀）
-  const { containConsistent } = makeAnchorConsistencyCheckers(strongC)
-  const { directionConsistent } = makeAnchorConsistencyCheckers(anchors)
+  const anchorCheck = makeAnchorCheck(strongC, anchors)
 
-  // ── 第一轮 ②③ 左右最近邻 / 上下守门带：先各自算候选排行，再竞争式稳定匹配 ──
+  // ── ②③ 左右最近邻 / 上下守门带：先各自算候选排行，再竞争式稳定匹配 ──
   // 每个 an 收集候选 dn：(an,dn) 取最优途径（水平优先，再分数），过包含一致性 + 三维守门 AND
   const candMap = new Map() // anId → Map<dnId, { dn, horizontal, score }>
   const betterNom = (a, b) => a.horizontal !== b.horizontal ? a.horizontal : a.score > b.score
@@ -282,7 +189,7 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
     for (const dir of ['left', 'right']) {
       const an = nearestInDir(availArkui, aHm.rect, dir, n => !lockedArkui.has(n.id))
       if (!an) continue
-      const dn = nearestInDir(availDesign, aDe.rect, dir, d => !lockedDesign.has(d.id) && isCompatibleType(d, an) && containConsistent(an, d) && directionConsistent(an, d))
+      const dn = nearestInDir(availDesign, aDe.rect, dir, d => !lockedDesign.has(d.id) && isCompatibleType(d, an) && anchorCheck(an, d))
       if (!dn) continue
       const t = tripleScore(an, dn, aHm, aDe, dir, ctx)
       if (t.pass) addNom(an, dn, true, t.score)
@@ -304,8 +211,7 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
         if (verticalRelation(dn.rect, aDe.rect) !== dir) continue
         // 守门：边缘间距差超过待匹配节点高度 → 放弃，丢后续流程
         if (Math.abs(edgeGap(dn.rect, aDe.rect, dir) - gapHm) > an.rect.h) continue
-        if (!containConsistent(an, dn)) continue
-        if (!directionConsistent(an, dn)) continue
+        if (!anchorCheck(an, dn)) continue
         const t = verticalTriple(an, dn, aHm, aDe, ctx)
         if (t.pass) addNom(an, dn, false, t.score)
       }
@@ -346,47 +252,6 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
     }))
   }
 
-  // ── 第二轮：扩展强锚点组(原锚点 + 第一轮配对) + 包含一致性过滤 + 三维加权取最优 ──
-  const strong = [...anchors, ...result]
-  const round2 = []
-  for (const an of availArkui) {
-    if (lockedArkui.has(an.id)) continue
-    let best = null
-    for (const dn of availDesign) {
-      if (lockedDesign.has(dn.id) || !isCompatibleType(dn, an)) continue
-      // 包含一致性：an 与 dn 相对每个强锚点的「包 / 被包」关系必须完全对齐（不包含也须两侧都不包含）
-      if (!strong.every(s => {
-        if (s.arkui.id === an.id || s.design.id === dn.id) return true
-        // 正向：强锚点包 an ⟺ 其设计侧对端包 dn
-        if (rectContains(s.arkui.rect, an.rect) !== rectContains(s.design.rect, dn.rect)) return false
-        // 反向：an 包强锚点 ⟺ dn 包其设计侧对端映射
-        if (rectContains(an.rect, s.arkui.rect) !== rectContains(dn.rect, s.design.rect)) return false
-        // 上下夹持（纯 y 上下关系，不要求横向覆盖）：强锚点在 an 正上/正下 ⟺ 对端在 dn 正上/正下
-        if (isAbove(s.arkui.rect, an.rect) !== isAbove(s.design.rect, dn.rect)) return false
-        if (isBelow(s.arkui.rect, an.rect) !== isBelow(s.design.rect, dn.rect)) return false
-        return true
-      })) continue
-      for (const anchor of strong) {
-        const dirHm = relation(an.rect, anchor.arkui.rect)
-        if (dirHm === null) continue // 相交非包含，不作位置参照
-        if (relation(dn.rect, anchor.design.rect) === null) continue
-        const t = tripleScore(an, dn, anchor.arkui, anchor.design, dirHm, ctx)
-        if (t.pass && t.score >= ROUND2_MIN && (!best || t.score > best.score)) best = { dn, score: t.score }
-      }
-    }
-    if (best) round2.push({ an, dn: best.dn, score: best.score })
-  }
-
-  round2.sort((a, b) => b.score - a.score)
-  for (const { an, dn, score } of round2) {
-    if (lockedArkui.has(an.id) || lockedDesign.has(dn.id)) continue
-    lockedArkui.add(an.id); lockedDesign.add(dn.id)
-    result.push(makePair(dn, an, 'text-con-自由', {
-      confidence: score > 0.72 ? 'medium' : 'low',
-      topologyScore: round4(score),
-      iou: computeIoU(dn.normRect, an.normRect),
-    }))
-  }
-
-  return result
+  // 只返回本函数新增的配对，priorContainPairs 已由调用方处理
+  return result.slice(priorContainPairs.length)
 }

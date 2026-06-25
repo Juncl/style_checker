@@ -12,7 +12,6 @@ export const MATCH_TYPE_PASS = {
   'text-con-包含': { pass: 'Pass 3.1.1', desc: '锚点拓扑：节点包住锚点（视觉祖先），双向包含一致性验证' },
   'text-con-方向x':{ pass: 'Pass 3.1.2', desc: '锚点拓扑：锚点左右最近邻，Gale-Shapley 稳定匹配' },
   'text-con-方向y':{ pass: 'Pass 3.1.2', desc: '锚点拓扑：锚点上下守门带，边缘间距守门 + 六维评分' },
-  'text-con-自由': { pass: 'Pass 3.2',   desc: '锚点拓扑：放宽方向，扩展强锚点组后三维加权取最优' },
   'text-con-列表': { pass: 'Pass 3.5',   desc: '同行同类横向列表，rawType 相同，按 x 升序锁定' },
   'text-区域优选': { pass: 'Pass 4',     desc: '区域内剩余文本最优二分匹配，score ≥ 0.58 接受' },
   'text-区域兜底': { pass: 'Pass 4',     desc: '跨区域剩余文本全局兜底，score ≥ 0.60 接受' },

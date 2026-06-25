@@ -18,7 +18,7 @@
  * 🔴 全程使用绝对坐标 rect（vp/dp），不碰 normRect（见 CLAUDE.md 坐标系统硬性规则）。
  */
 import { makePair } from './matchStrategies.js'
-import { makeAnchorConsistencyCheckers } from './anchorTopology.js'
+import { makeAnchorCheck } from './anchorCheck.js'
 
 const ROW_TOL_RATIO        = 0.005  // 同行容差比例（沿用原归一化标定，按画布边换算成绝对 vp/dp）
 const FIRST_NODE_SCORE_MIN = 0.60   // 首节点综合判定分阈值（替代 IoU）
@@ -69,8 +69,8 @@ export function matchByListIndex(designNodes, arkuiNodes, anchors, opts = {}) {
   if (designLists.length === 0 || arkuiLists.length === 0) return []
   const diag = Math.hypot(W, Hv)
 
-  // Pass 3.1.2 同款一致性校验：以强锚点为参照，过滤与锚点拓扑矛盾的 list 配对
-  const { containConsistent, directionConsistent } = makeAnchorConsistencyCheckers(anchors)
+  // 以强锚点为参照，过滤与锚点拓扑矛盾的 list 配对
+  const anchorCheck = makeAnchorCheck(anchors, anchors)
 
   const newPairs = []
   const consumedDesign = new Set()
@@ -111,7 +111,7 @@ export function matchByListIndex(designNodes, arkuiNodes, anchors, opts = {}) {
       let consistent = true
       for (let i = 0; i < N; i++) {
         const an = La.items[i], dn = Ld.items[i]
-        if (!containConsistent(an, dn) || !directionConsistent(an, dn)) { consistent = false; break }
+        if (!anchorCheck(an, dn)) { consistent = false; break }
       }
       if (!consistent) continue
 

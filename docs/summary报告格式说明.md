@@ -68,7 +68,7 @@
 
 ```
 text-锚点 → text-数字槽 → text-时间槽 → text-同行 → text-长文 → text-角色
-→ text-con-列表 → text-con-包含 → text-con-方向x → text-con-方向y → text-con-自由
+→ text-con-列表 → text-con-包含 → text-con-方向x → text-con-方向y
 → text-区域优选 → text-区域兜底 → text-位置 → con-交叠 → con-视觉 → con-夹持
 → text-con-兜底
 ```

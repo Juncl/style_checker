@@ -227,14 +227,14 @@ if (COMPARE_BASE) {
 // ── Pass 执行顺序（与 nodeMatcher.js 一致）───────────────────────────────────
 const PASS_ORDER = [
   'text-锚点', 'text-数字槽', 'text-时间槽', 'text-同行', 'text-长文', 'text-角色',
-  'text-con-包含', 'text-con-方向x', 'text-con-方向y', 'text-con-自由', 'text-con-列表',
+  'text-con-包含', 'text-con-方向x', 'text-con-方向y', 'text-con-列表',
   'text-区域优选', 'text-区域兜底',
   'con-交叠', 'con-视觉',
 ]
 const PASS_NUMBER = {
   'text-锚点': 'Pass 1', 'text-数字槽': 'Pass 2.1', 'text-时间槽': 'Pass 2.2',
   'text-同行': 'Pass 2.3', 'text-长文': 'Pass 2.4', 'text-角色': 'Pass 2.5',
-  'text-con-包含': 'Pass 3.1.1', 'text-con-方向x': 'Pass 3.1.2', 'text-con-方向y': 'Pass 3.1.2', 'text-con-自由': 'Pass 3.2',
+  'text-con-包含': 'Pass 3.1.1', 'text-con-方向x': 'Pass 3.1.2', 'text-con-方向y': 'Pass 3.1.2',
   'text-con-列表': 'Pass 3.5',
   'text-区域优选': 'Pass 4', 'text-区域兜底': 'Pass 4',
   'con-交叠': 'Pass 5.3', 'con-视觉': 'Pass 6',
