@@ -234,13 +234,13 @@
       </div>
     </section>
 
-    <!-- 节点对比悬浮面板（两侧各选中一个节点后出现） -->
+    <!-- 节点对比悬浮面板（单选或框选两侧都有节点时出现） -->
     <transition name="fade">
-      <div v-if="devSwitchOn && localArkuiId && localDesignId" class="node-compare-panel">
+      <div v-if="showComparePanel" class="node-compare-panel">
         <!-- 操作按钮行 -->
         <div class="node-compare-actions">
           <button class="node-compare-btn node-compare-btn--primary" @click.stop="runCompare">对比</button>
-          <button class="node-compare-btn node-compare-btn--ghost" @click.stop="$emit('add-diff', { arkuiId: localArkuiId, designId: localDesignId })">新增差异</button>
+          <button v-if="!isBoxSelectMode" class="node-compare-btn node-compare-btn--ghost" @click.stop="$emit('add-diff', { arkuiId: localArkuiId, designId: localDesignId })">新增差异</button>
         </div>
         <!-- diff 报告 -->
         <div v-if="localCompareDiffs !== null" class="node-compare-result">
@@ -271,6 +271,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { Crop } from '@element-plus/icons-vue'
 import OctoLoading from './common/OctoLoading.vue'
 import ImagePanel from './ImagePanel.vue'
@@ -341,6 +342,16 @@ const localCompareDiffs  = ref(null)   // null=未执行，[]+=已执行
 const localArkuiNodeList  = ref([])    // 开发侧框选节点列表
 const localDesignNodeList = ref([])    // 设计侧框选节点列表
 
+const isBoxSelectMode = computed(() =>
+  localArkuiNodeList.value.length > 0 && localDesignNodeList.value.length > 0
+)
+const showComparePanel = computed(() =>
+  devSwitchOn.value && (
+    (localArkuiId.value && localDesignId.value) ||
+    isBoxSelectMode.value
+  )
+)
+
 const localArkuiNode  = computed(() =>
   devSwitchOn.value && localArkuiId.value
     ? (props.allArkuiNodes?.find(n => n.id === localArkuiId.value) ?? null)
@@ -389,6 +400,10 @@ function onDesignBgClick() {
 }
 
 function runCompare() {
+  if (isBoxSelectMode.value) {
+    runBoxCompare()
+    return
+  }
   const allDev    = props.allArkuiNodes
   const allDesign = props.result?.allDesignNodes ?? props.designNodes
   const devNode    = allDev?.find(n => n.id === localArkuiId.value)
@@ -398,6 +413,11 @@ function runCompare() {
     return
   }
   localCompareDiffs.value = compareNodeStyles(designNode, devNode)
+}
+
+function runBoxCompare() {
+  // TODO: 调用后台批量对比接口
+  ElMessage({ message: '算法准备中...', type: 'info' })
 }
 
 function onDevPanelZoom({ factor, normX, normY }) {
