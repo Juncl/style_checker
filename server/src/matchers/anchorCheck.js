@@ -7,7 +7,7 @@
  *   EPS              — rect 判定容差，所有几何计算共享同一值
  *   center           — rect 中心点
  *   rectContains     — 二元包含判定（带 EPS 容差）
- *   nodeAnchorRelation — 节点与锚点的三态关系（contain / cross / disjoint）
+ *   nodeAnchorRelation — 节点与锚点的四态关系（contain / contain_by / cross / disjoint）
  *   relation         — 节点相对锚点的方向（contain / left / right / up / down / diagonal / null）
  *   makeAnchorCheck  — 锚点一致性校验工厂，返回 (an, dn) => boolean
  */
@@ -39,7 +39,7 @@ function rectsDisjoint(a, b) {
 const xOverlap = (a, b) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > EPS
 const yOverlap = (a, b) => Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > EPS
 
-// ── 三态包含关系 ───────────────────────────────────────────────────────────────
+// ── 四态包含关系 ───────────────────────────────────────────────────────────────
 
 /**
  * 节点与锚点的四态包含关系。
@@ -95,8 +95,8 @@ const OPPOSITE = { up: 'down', down: 'up', left: 'right', right: 'left' }
  * 生成一个锚点一致性校验函数 (an, dn) => boolean。
  * 校验候选对 (an, dn) 是否与已知锚点集合在几何上自洽，分两道门：
  *
- *   ① 三态包含一致（containSet）
- *      对每个参照锚点 s，an 与 s.arkui 的三态关系 必须等于 dn 与 s.design 的三态关系。
+ *   ① 四态包含一致（containSet）
+ *      对每个参照锚点 s，an 与 s.arkui 的四态关系 必须等于 dn 与 s.design 的四态关系。
  *      用 nodeAnchorRelation（交叠比例）而非 rectContains，是为了容忍
  *      「一侧恰好边缘压线」的 cross 情况，不被 contain/disjoint 的二元判定误卡。
  *
@@ -105,13 +105,13 @@ const OPPOSITE = { up: 'down', down: 'up', left: 'right', right: 'left' }
  *      则 dn 与 s.design 不得呈正相反的方向（如 an 在锚点左边，dn 不得在锚点右边）。
  *      放行：同向、斜向、包含关系——这些布局微差属正常，不应误杀。
  *
- * @param {Array} containSet  三态包含一致性参照锚点组（通常包含容器配对 + 文本锚点）
+ * @param {Array} containSet  四态包含一致性参照锚点组（通常包含容器配对 + 文本锚点）
  * @param {Array} dirSet      方向一致性参照锚点组（通常只用 pass1 文本强锚点）
  * @returns {(an, dn) => boolean}
  */
 export function makeAnchorCheck(containSet, dirSet) {
   return (an, dn) => {
-    // 门①：三态包含一致
+    // 门①：四态包含一致
     for (const s of containSet) {
       if (s.arkui.id === an.id || s.design.id === dn.id) continue
       if (nodeAnchorRelation(an.rect, s.arkui.rect) !== nodeAnchorRelation(dn.rect, s.design.rect)) return false

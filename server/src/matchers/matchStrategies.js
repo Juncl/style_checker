@@ -88,7 +88,7 @@ export function makePair(design, arkui, matchType, extra = {}) {
   }
 }
 
-export function matchRegionTextOptimal(designNodes, arkuiNodes, usedArkui, matchedDesignIds, regionContext) {
+export function matchRegionTextOptimal(designNodes, arkuiNodes, usedArkui, matchedDesignIds, regionContext, anchorCheck) {
   if (!regionContext?.regionPairs?.length) return []
 
   const result = []
@@ -116,6 +116,7 @@ export function matchRegionTextOptimal(designNodes, arkuiNodes, usedArkui, match
     const matches = maxWeightTextMatching(designTexts, arkuiTexts, regionPair.score)
     for (const match of matches) {
       if (match.score < 0.58) continue
+      if (anchorCheck && !anchorCheck(match.arkui, match.design)) continue
       result.push(makePair(match.design, match.arkui, 'text-区域优选', {
         iou: computeIoU(match.design.normRect, match.arkui.normRect),
         confidence: match.score > 0.74 ? 'medium' : 'low',

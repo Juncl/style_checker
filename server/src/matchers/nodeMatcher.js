@@ -203,12 +203,17 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   }
 
   // ── Pass 4: 区域内文本节点全局最优匹配 ────────────────────────────────────
+  const pass4Anchors = collectAnchors().filter(p =>
+    p.matchDetail?.type !== 'text-con-方向x' && p.matchDetail?.type !== 'text-con-方向y'
+  )
+  const anchorCheck4 = makeAnchorCheck(pass4Anchors, collectAnchors(['text-锚点']))
   const regionTextPairs = matchRegionTextOptimal(
     designNodes,
     arkuiNodes,
     usedArkui,
     matchedDesignIds,
-    regionContext
+    regionContext,
+    anchorCheck4
   )
   for (const pair of regionTextPairs) {
     pairs.push(pair)
