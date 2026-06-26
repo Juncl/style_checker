@@ -34,7 +34,6 @@ import {
 import { comparePaths } from '../utils/pathOrder.js'
 import { isCanvasRoot } from '../utils/deduplicateRootNodes.js'
 import { matchAlignedTextRows, matchDynamicTextSlots } from './dynamicTextSlots.js'
-import { matchLongTextFallback } from './longTextFallback.js'
 import { matchByListIndex } from './listIndexMatcher.js'
 
 
@@ -109,7 +108,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
 
   regionContext = buildRegionContext(designRegions, arkuiRegions, collectAnchors())
 
-  // ── Pass 2.1/2.2: 动态数字/时间星期槽位匹配（mock 与真实数据不同，但序列位置一致）──
+  // ── Pass 2.2: 动态时间星期槽位匹配（mock 与真实数据不同，但序列位置一致）──
   const dynamicSlotPairs = matchDynamicTextSlots(
     designNodes,
     arkuiNodes,
@@ -138,15 +137,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     usedArkui.add(pair.arkui.id)
     matchedDesignIds.add(pair.design.id)
     if (pair.topologyScore >= 0.9) (strongAnchors['text-同行'] ??= []).push(pair)
-  }
-
-  // ── Pass 2.4: 长文本位置-样式兜底（字数 > 12，锚点方向一票否决）──────────────
-  const longTextPairs = matchLongTextFallback(
-    designNodes, arkuiNodes, usedArkui, matchedDesignIds, collectAnchors(),
-    { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight }
-  )
-  for (const pair of longTextPairs) {
-    pairs.push(pair)
   }
 
   // ── Pass 2.5: 文本语义角色匹配（动态标题/副标题内容不同，但组件槽位一致）────

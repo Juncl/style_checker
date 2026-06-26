@@ -1,4 +1,5 @@
 import { makePair } from './matchStrategies.js'
+import { dropGridOutlierAnchors } from './gridAnchorFilter.js'
 import { normalizeText, textSemanticSimilarity, parseArgb, extractMainTone } from '../utils/textSemantics.js'
 
 /**
@@ -298,6 +299,177 @@ function filterAnchorsByOrientation(pairs) {
   return { kept: [...kept, ...skipped], dropped }
 }
 
+// ─── 文本对齐关系识别（hm/de 两侧通用）────────────────────────────────────────
+
+/**
+ * 识别文本节点的同行/左对齐/右对齐分组，并组合 grid 矩阵
+ * - 同行：底边(y+h) OR 垂直中线(y+h/2) 差 ≤ TOL，两次分桶后合并含重叠节点的组
+ * - 左对齐：x 差 ≤ TOL
+ * - 右对齐：x+w 差 ≤ TOL
+ * 每类只保留 ≥2 个节点且含至少一个锚点的组。
+ * @param {UnifiedNode[]} textNodes  文本节点列表
+ * @param {Set<string>}   anchorIds  锚点节点 id 集合（用于过滤）
+ * @returns {{ sameRow, leftAligned, rightAligned, grids }}
+ */
+function detectTextAlignment(textNodes, anchorIds) {
+  const TOL = 1.5
+  const hasAnchor = grp => grp.some(n => anchorIds.has(n.id))
+
+  function bucket(nodes, keyFn) {
+    const sorted = [...nodes].sort((a, b) => keyFn(a) - keyFn(b))
+    const groups = []
+    for (const n of sorted) {
+      const last = groups[groups.length - 1]
+      if (last && keyFn(n) - keyFn(last[last.length - 1]) <= TOL) {
+        last.push(n)
+      } else {
+        groups.push([n])
+      }
+    }
+    return groups.filter(g => g.length >= 2)
+  }
+
+  // 同行：底边对齐 OR 中线对齐，两次分桶后合并含重叠节点的组
+  const byBottom = bucket(textNodes, n => n.rect.y + n.rect.h)
+  const byMid    = bucket(textNodes, n => n.rect.y + n.rect.h / 2)
+  const sameRow  = []
+  for (const grp of [...byBottom, ...byMid]) {
+    const ids = new Set(grp.map(n => n.id))
+    const idx = sameRow.findIndex(m => m.some(n => ids.has(n.id)))
+    if (idx >= 0) {
+      for (const n of grp) {
+        if (!sameRow[idx].some(e => e.id === n.id)) sameRow[idx].push(n)
+      }
+    } else {
+      sameRow.push([...grp])
+    }
+  }
+
+  const res = {
+    sameRow:       sameRow.filter(hasAnchor),
+    leftAligned:   bucket(textNodes, n => n.rect.x).filter(hasAnchor),
+    rightAligned:  bucket(textNodes, n => n.rect.x + n.rect.w).filter(hasAnchor),
+    centerAligned: bucket(textNodes, n => n.rect.x + n.rect.w / 2).filter(hasAnchor),
+  }
+
+  // ── Grid 合并：行组 × 列组 有共同节点时归入同一连通分量 ──────────────────
+  // 编号：0..nRows-1 = 行组，nRows..nRows+nCols-1 = 列组
+  // 列对齐三类：左对齐(x) / 右对齐(x+w) / 水平中心对齐(x+w/2)
+  const allCols = [
+    ...res.leftAligned.map(g => ({ g, type: 'left' })),
+    ...res.rightAligned.map(g => ({ g, type: 'right' })),
+    ...res.centerAligned.map(g => ({ g, type: 'center' })),
+  ]
+  const nRows = res.sameRow.length
+  const nCols = allCols.length
+  const uf = Array.from({ length: nRows + nCols }, (_, i) => i)
+  const find = x => { while (uf[x] !== x) { uf[x] = uf[uf[x]]; x = uf[x] } return x }
+  const union = (a, b) => { uf[find(a)] = find(b) }
+
+  for (let ri = 0; ri < nRows; ri++) {
+    const rowIds = new Set(res.sameRow[ri].map(n => n.id))
+    for (let ci = 0; ci < nCols; ci++) {
+      if (allCols[ci].g.some(n => rowIds.has(n.id))) union(ri, nRows + ci)
+    }
+  }
+
+  const compMap = new Map()
+  for (let i = 0; i < nRows + nCols; i++) {
+    const root = find(i)
+    if (!compMap.has(root)) compMap.set(root, { rows: [], leftCols: [], rightCols: [], centerCols: [] })
+    const comp = compMap.get(root)
+    if (i < nRows) {
+      comp.rows.push(res.sameRow[i])
+    } else {
+      const { g, type } = allCols[i - nRows]
+      if (type === 'left')        comp.leftCols.push(g)
+      else if (type === 'right')  comp.rightCols.push(g)
+      else                        comp.centerCols.push(g)
+    }
+  }
+
+  // 至少 2 行 + 1 列才算 grid，每个 grid 组装成 (node|null)[][] 矩阵（行×列，缺位填 null）
+  res.grids = []
+  for (const comp of compMap.values()) {
+    if (comp.rows.length < 2 || comp.leftCols.length + comp.rightCols.length + comp.centerCols.length < 1) continue
+
+    // 列去重：left/right/center 三类列中有共同节点的列组合并为一列（避免同一节点在矩阵里重复出现）
+    const rawCols = [...comp.leftCols, ...comp.rightCols, ...comp.centerCols]
+    const colUf = Array.from({ length: rawCols.length }, (_, i) => i)
+    const cFind = x => { while (colUf[x] !== x) { colUf[x] = colUf[colUf[x]]; x = colUf[x] } return x }
+    for (let ci = 0; ci < rawCols.length; ci++) {
+      const ids = new Set(rawCols[ci].map(n => n.id))
+      for (let cj = ci + 1; cj < rawCols.length; cj++) {
+        if (rawCols[cj].some(n => ids.has(n.id))) colUf[cFind(ci)] = cFind(cj)
+      }
+    }
+    const colMergeMap = new Map()
+    for (let ci = 0; ci < rawCols.length; ci++) {
+      const root = cFind(ci)
+      if (!colMergeMap.has(root)) colMergeMap.set(root, new Map())
+      for (const n of rawCols[ci]) colMergeMap.get(root).set(n.id, n)
+    }
+    // 每个合并列按平均 x 排序
+    const gridCols = [...colMergeMap.values()]
+      .map(m => [...m.values()])
+      .sort((a, b) => {
+        const ax = a.reduce((s, n) => s + n.rect.x, 0) / a.length
+        const bx = b.reduce((s, n) => s + n.rect.x, 0) / b.length
+        return ax - bx
+      })
+
+    // 行按代表 y 坐标升序排列
+    const gridRows = [...comp.rows].sort((a, b) => {
+      const ay = a.reduce((s, n) => s + n.rect.y, 0) / a.length
+      const by = b.reduce((s, n) => s + n.rect.y, 0) / b.length
+      return ay - by
+    })
+
+    // 构建矩阵：matrix[rowIdx][colIdx] = node | null
+    const matrix = gridRows.map(row => {
+      const rowIds = new Set(row.map(n => n.id))
+      return gridCols.map(col => col.find(n => rowIds.has(n.id)) ?? null)
+    })
+
+    // 列合并：滑动窗口从左到右，某列只有 1 个节点且右侧对应行为 null，则并入右列并删除当前列
+    let ci = 0
+    while (ci < matrix[0].length - 1) {
+      const colNodes = matrix.map(row => row[ci])
+      const nonNullCount = colNodes.filter(n => n !== null).length
+      if (nonNullCount === 1) {
+        const ri = colNodes.findIndex(n => n !== null)
+        if (matrix[ri][ci + 1] === null) {
+          matrix[ri][ci + 1] = matrix[ri][ci]
+          for (const row of matrix) row.splice(ci, 1)
+          continue  // 删列后 ci 不动，继续检查新的当前列
+        }
+      }
+      ci++
+    }
+
+    // 矩阵须含至少 1 个锚点，否则丢弃
+    if (matrix.some(row => row.some(cell => cell !== null && anchorIds.has(cell.id)))) {
+      res.grids.push(matrix)
+    }
+  }
+
+  return res
+}
+
+function buildTextAlignGroups(hmTextNodes, deTextNodes, pairs) {
+  const hmAnchorIds = new Set(pairs.map(p => p.arkui.id))
+  const deAnchorIds = new Set(pairs.map(p => p.design.id))
+
+  const res = {
+    hm: detectTextAlignment(hmTextNodes, hmAnchorIds),
+    de: detectTextAlignment(deTextNodes, deAnchorIds),
+  }
+
+  
+
+  return res;
+}
+
 // ─── 主流程 ────────────────────────────────────────────────────────────────────
 
 /**
@@ -411,6 +583,9 @@ export function matchAllTextNodes(designNodes, arkuiNodes, options = {}) {
     pairs.push(pair)
   }
 
+  // 文本对齐关系：hm/de 两侧各自构建同行/左对齐/右对齐/grids
+  const { hm: hmTextAlignGroups, de: deTextAlignGroups } = buildTextAlignGroups(hmTextNodes, deTextNodes, pairs)
+
   // 锚点方位共识过滤：踢掉与过半锚点方位矛盾的离群锚点，避免带偏后续拓扑
   const { kept, dropped } = filterAnchorsByOrientation(pairs)
   if (dropped.length) {
@@ -420,5 +595,12 @@ export function matchAllTextNodes(designNodes, arkuiNodes, options = {}) {
     }
   }
 
-  return { pairs: kept, textHmMapPix, textHmMapPixCredible, textHmMapPixDetail }
+  // grid 结构投票：剔除 grid 行列结构里与多数矛盾的离群锚点
+  // （主要干掉 Pass 1 在「内容归一后等价」的同列动态文本上的错位锚点）
+  const gridDropped = dropGridOutlierAnchors(hmTextAlignGroups, deTextAlignGroups, kept)
+  const droppedKey = new Set(gridDropped.map(p => `${p.arkui.id}|${p.design.id}`))
+  for (const p of gridDropped) delete textHmMapPixCredible[p.arkui.id]
+  const finalPairs = kept.filter(p => !droppedKey.has(`${p.arkui.id}|${p.design.id}`))
+
+  return { pairs: finalPairs, textHmMapPix, textHmMapPixCredible, textHmMapPixDetail, hmTextAlignGroups, deTextAlignGroups }
 }

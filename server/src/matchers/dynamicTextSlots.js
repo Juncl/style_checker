@@ -5,9 +5,6 @@ import { candidatePool, regionAffinity } from './regionContext.js'
 import {
   colorDistance,
   hasUsableText,
-  isAmbiguousShortNumberText,
-  isNearSameLineSlot,
-  normalizeText,
   textFieldType,
   textStyleSimilarity,
 } from '../utils/textSemantics.js'
@@ -37,20 +34,6 @@ export function matchDynamicTextSlots(designNodes, arkuiNodes, usedArkui, matche
   const localUsedArkui = new Set()
   const localMatchedDesign = new Set()
 
-  const numberPairs = matchDynamicNumberSlots(
-    designNodes,
-    arkuiNodes,
-    usedArkui,
-    matchedDesignIds,
-    regionContext,
-    d
-  )
-  for (const pair of numberPairs) {
-    result.push(pair)
-    localMatchedDesign.add(pair.design.id)
-    localUsedArkui.add(pair.arkui.id)
-  }
-
   for (const slotType of SLOT_TYPES) {
     const designTexts = slotCandidates(designNodes, slotType, matchedDesignIds, localMatchedDesign)
     const arkuiTexts = slotCandidates(arkuiNodes, slotType, usedArkui, localUsedArkui)
@@ -67,35 +50,6 @@ export function matchDynamicTextSlots(designNodes, arkuiNodes, usedArkui, matche
       localMatchedDesign.add(match.design.id)
       localUsedArkui.add(match.arkui.id)
     }
-  }
-
-  return result
-}
-
-function matchDynamicNumberSlots(designNodes, arkuiNodes, usedArkui, matchedDesignIds, regionContext, d) {
-  const result = []
-  const localUsedArkui = new Set()
-  const localMatchedDesign = new Set()
-  const designNumbers = slotCandidates(designNodes, 'number', matchedDesignIds, localMatchedDesign)
-  if (!designNumbers.length) return result
-
-  for (const dn of designNumbers) {
-    const candidates = candidatePool(dn, arkuiNodes, regionContext, n =>
-      n.type === 'text' &&
-      hasUsableText(n) &&
-      !usedArkui.has(n.id) &&
-      !localUsedArkui.has(n.id) &&
-      textFieldType(String(n.textContent || '').trim().toLowerCase()) === 'number'
-    )
-    const best = bestNumericSlotMatch(dn, candidates, regionContext, d)
-    if (!best || best.score < 0.70) continue
-    result.push(makePair(dn, best.node, 'text-数字槽', {
-      iou: 0,
-      confidence: best.score > 0.82 ? 'medium' : 'low',
-      topologyScore: best.score,
-    }))
-    localMatchedDesign.add(dn.id)
-    localUsedArkui.add(best.node.id)
   }
 
   return result
@@ -354,18 +308,9 @@ function slotScore(dn, an, designOrder, arkuiOrder, dCount, aCount, regionContex
   const dy = Math.abs(centerY(dn.rect) - centerY(an.rect))
   if (dx > xMax || dy > yMax) return 0
 
-  const ta = normalizeText(dn.textContent)
-  const tb = normalizeText(an.textContent)
-  const typeA = textFieldType(ta)
-  const typeB = textFieldType(tb)
-  const numericSlot = typeA === 'number' && typeB === 'number'
-
   const style = textStyleSimilarity(dn, an)
   const hRatio = sizeRatio(dn.rect.h, an.rect.h)
   if (style < 0.55 || hRatio < 0.45) return 0
-  // TODO(normRect): isNearSameLineSlot 为跨 Pass 共享工具，仍用 normRect（阈值 0.10/0.045 归一化）
-  if (numericSlot && (isAmbiguousShortNumberText(ta) || isAmbiguousShortNumberText(tb)) &&
-    !isNearSameLineSlot(dn, an, 0.10, 0.045)) return 0
 
   const orderDelta = Math.abs((designOrder.get(dn.id) || 0) - (arkuiOrder.get(an.id) || 0))
   const orderScore = 1 - Math.min(1, orderDelta / Math.max(dCount, aCount, 1))
@@ -408,43 +353,3 @@ function sameLineGroupScore(dn, an, W) {
   return xDistance(dn.rect, an.rect) < 0.18 * W ? 1 : 0
 }
 
-function bestNumericSlotMatch(targetNode, candidates, regionContext, d) {
-  let best = null
-  let bestScore = 0
-  for (const node of candidates) {
-    const score = numericSlotScore(targetNode, node, regionContext, d)
-    if (score > bestScore) {
-      bestScore = score
-      best = node
-    }
-  }
-  return best ? { node: best, score: bestScore } : null
-}
-
-function numericSlotScore(dn, an, regionContext, d) {
-  const xMax = 0.20 * d.W
-  const yMax = 0.16 * d.H
-  const dc = rectCenter(dn.rect)
-  const ac = rectCenter(an.rect)
-  const dx = Math.abs(dc.x - ac.x)
-  const dy = Math.abs(centerY(dn.rect) - centerY(an.rect))
-  if (dx > xMax || dy > yMax) return 0
-
-  const style = textStyleSimilarity(dn, an)
-  const hRatio = sizeRatio(dn.rect.h, an.rect.h)
-  if (style < 0.60 || hRatio < 0.50) return 0
-  // TODO(normRect): isNearSameLineSlot 为跨 Pass 共享工具，仍用 normRect（阈值 0.10/0.045 归一化）
-  if ((isAmbiguousShortNumberText(dn.textContent) || isAmbiguousShortNumberText(an.textContent)) &&
-    !isNearSameLineSlot(dn, an, 0.10, 0.045)) return 0
-
-  const xScore = Math.max(0, 1 - dx / xMax)
-  const yScore = Math.max(0, 1 - dy / yMax)
-  const regionScore = regionAffinity(dn, an, regionContext)
-  const lineScore = xDistance(dn.rect, an.rect) < 0.18 * d.W ? 1 : 0
-  return xScore * 0.34 +
-    yScore * 0.24 +
-    style * 0.22 +
-    hRatio * 0.10 +
-    regionScore * 0.06 +
-    lineScore * 0.04
-}

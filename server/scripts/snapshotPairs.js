@@ -44,6 +44,7 @@ const label = n => {
 
 const round4 = x => Math.round(x * 10000) / 10000
 const fmt = d => (d == null ? 'n/a' : (d > 0 ? '+' : '') + d)
+const cell = (val, delta) => delta == null || delta === 0 ? String(val) : `${val} (${fmt(delta)})`
 
 // 对照验证集（arkui.id -> 期望 design.id）计算指标
 //   correct  命中且正确（TP）；wrong 配错；miss 漏匹配；redundant 多余对（arkui 不在验证集）
@@ -166,6 +167,7 @@ if (COMPARE_BASE) {
 
   let n = 0, sumP = 0, sumR = 0, nBase = 0, sumPDelta = 0, sumRDelta = 0
   let totCorrect = 0, totWrong = 0, totRedundant = 0, totMiss = 0, totCorrectBase = 0
+  let microBasePairs = 0, microBaseVal = 0, microCurPairs = 0, microCurCorrect = 0
 
   for (const c of cases) {
     const cur = collected[c]
@@ -189,8 +191,19 @@ if (COMPARE_BASE) {
     }
     n++; sumP += cur.precision; sumR += cur.recall
     totCorrect += cur.correct; totWrong += cur.wrong; totRedundant += cur.redundant; totMiss += cur.miss
-    if (base) { nBase++; sumPDelta += cur.precision - base.precision; sumRDelta += cur.recall - base.recall; totCorrectBase += base.correct }
+    if (base) {
+      nBase++; sumPDelta += cur.precision - base.precision; sumRDelta += cur.recall - base.recall; totCorrectBase += base.correct
+      microBasePairs += base.correct + base.wrong + base.redundant
+      microBaseVal += base.validationTotal
+      microCurPairs += cur.correct + cur.wrong + cur.redundant
+      microCurCorrect += cur.correct
+    }
   }
+
+  const totalPrecision = round4(totCorrect / (totCorrect + totWrong + totRedundant))
+  const totalRecall = round4(totCorrect / (totCorrect + totMiss + totWrong))
+  const totalPrecisionDelta = nBase ? round4(microCurCorrect / microCurPairs - totCorrectBase / microBasePairs) : null
+  const totalRecallDelta = nBase ? round4(microCurCorrect / microBaseVal - totCorrectBase / microBaseVal) : null
 
   overall = {
     cases: n,
@@ -198,6 +211,10 @@ if (COMPARE_BASE) {
     avgPrecisionDelta: nBase ? round4(sumPDelta / nBase) : null,
     avgRecall: round4(sumR / n),
     avgRecallDelta: nBase ? round4(sumRDelta / nBase) : null,
+    totalPrecision,
+    totalRecall,
+    totalPrecisionDelta,
+    totalRecallDelta,
     totalCorrect: totCorrect,
     totalCorrectDelta: totCorrect - totCorrectBase,
     totalWrong: totWrong,
@@ -220,21 +237,22 @@ if (COMPARE_BASE) {
   )
 
   console.log(`\nsummary.json 已生成（对比基线 ${COMPARE_BASE}）：`)
-  console.log(`  平均准确率 ${overall.avgPrecision} (${fmt(overall.avgPrecisionDelta)})   平均召回率 ${overall.avgRecall} (${fmt(overall.avgRecallDelta)})`)
+  console.log(`  总体准确率 ${overall.totalPrecision} (${fmt(overall.totalPrecisionDelta)})   总体召回率 ${overall.totalRecall} (${fmt(overall.totalRecallDelta)})`)
   console.log(`  正确对总数 ${overall.totalCorrect} (${fmt(overall.totalCorrectDelta)})   与验证集差距(配错+漏) ${overall.totalGapToValidation}   多余对总数 ${overall.totalRedundant}`)
 }
 
 // ── Pass 执行顺序（与 nodeMatcher.js 一致）───────────────────────────────────
 const PASS_ORDER = [
-  'text-锚点', 'text-数字槽', 'text-时间槽', 'text-同行', 'text-长文', 'text-角色',
-  'text-con-包含', 'text-con-方向x', 'text-con-方向y', 'text-con-列表',
+  'text-锚点', 'text-con-包含',
+  'text-时间槽', 'text-同行', 'text-角色',
+  'text-con-方向x', 'text-con-方向y', 'text-con-列表',
   'text-区域优选', 'text-区域兜底',
   'con-交叠', 'con-视觉',
 ]
 const PASS_NUMBER = {
-  'text-锚点': 'Pass 1', 'text-数字槽': 'Pass 2.1', 'text-时间槽': 'Pass 2.2',
-  'text-同行': 'Pass 2.3', 'text-长文': 'Pass 2.4', 'text-角色': 'Pass 2.5',
-  'text-con-包含': 'Pass 3.1.1', 'text-con-方向x': 'Pass 3.1.2', 'text-con-方向y': 'Pass 3.1.2',
+  'text-锚点': 'Pass 1', 'text-con-包含': 'Pass 1.5',
+  'text-时间槽': 'Pass 2.2', 'text-同行': 'Pass 2.3', 'text-角色': 'Pass 2.5',
+  'text-con-方向x': 'Pass 3', 'text-con-方向y': 'Pass 3',
   'text-con-列表': 'Pass 3.5',
   'text-区域优选': 'Pass 4', 'text-区域兜底': 'Pass 4',
   'con-交叠': 'Pass 5.3', 'con-视觉': 'Pass 6',
@@ -288,7 +306,8 @@ const writeSummaryMd = () => {
 
   const lines = []
   lines.push('# 全量 Case 匹配结果汇总（case1~15）', '')
-  lines.push(`> 生成时间：${new Date().toISOString().replace('T', ' ').slice(0, 19)}`, '')
+  const nowLocal = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`
+  lines.push(`> 生成时间：${nowLocal}`, '')
   lines.push(`> 快照目录：${SNAPSHOT_DIR}  |  对比基线：${COMPARE_BASE || '（无）'}`, '')
   lines.push('')
 
@@ -299,10 +318,9 @@ const writeSummaryMd = () => {
   for (const c of mdCases) {
     const m = collected[c]
     const sc = summaryCases?.[c]
-    lines.push(`| ${c} | ${m.correct + m.wrong + m.redundant} | ${m.validationTotal} | ${m.correct} | ${m.wrong} | ${m.miss} | ${m.redundant} | ${pct(m.correct, m.correct + m.wrong + m.redundant)} | ${pct(m.correct, m.validationTotal)} | ${sc ? deltaPct(m.precision, sc.precision - (sc.precisionDelta ?? 0)) : '—'} | ${sc ? deltaPct(m.recall, sc.recall - (sc.recallDelta ?? 0)) : '—'} |`)
+    lines.push(`| ${c} | ${m.correct + m.wrong + m.redundant} | ${m.validationTotal} | ${cell(m.correct, sc?.correctDelta)} | ${cell(m.wrong, sc?.wrongDelta)} | ${cell(m.miss, sc?.missDelta)} | ${cell(m.redundant, sc?.redundantDelta)} | ${pct(m.correct, m.correct + m.wrong + m.redundant)} | ${pct(m.correct, m.validationTotal)} | ${sc ? deltaPct(m.precision, sc.precision - (sc.precisionDelta ?? 0)) : '—'} | ${sc ? deltaPct(m.recall, sc.recall - (sc.recallDelta ?? 0)) : '—'} |`)
   }
-  lines.push(`| **合计** | **${totalPairs}** | **${totalVal}** | **${totalCorrect}** | **${totalWrong}** | **${totalVal - totalCorrect}** | **${totalRedundant}** | **${pct(totalCorrect, totalPairs)}** | **${pct(totalCorrect, totalVal)}** | — | — |`)
-  // 累计 delta 总量
+  // 累计 delta 总量（放在合计行前，供合计行使用）
   let dCorrect = 0, dWrong = 0, dMiss = 0, dRedundant = 0, hasBase = false
   if (summaryCases) {
     for (const c of mdCases) {
@@ -316,8 +334,10 @@ const writeSummaryMd = () => {
       }
     }
   }
+  const totalMiss = totalVal - totalCorrect
+  lines.push(`| **合计** | **${totalPairs}** | **${totalVal}** | **${cell(totalCorrect, hasBase ? dCorrect : null)}** | **${cell(totalWrong, hasBase ? dWrong : null)}** | **${cell(totalMiss, hasBase ? dMiss : null)}** | **${cell(totalRedundant, hasBase ? dRedundant : null)}** | — | — | — | — |`)
   if (hasBase) {
-    lines.push(`| **指标情况** | — | — | — | — | — | — | **${pct(totalCorrect, totalPairs)}** | **${pct(totalCorrect, totalVal)}** | **${deltaPct(overall.avgPrecision, overall.avgPrecision - overall.avgPrecisionDelta)}** | **${deltaPct(overall.avgRecall, overall.avgRecall - overall.avgRecallDelta)}** |`)
+    lines.push(`| **指标情况** | — | — | — | — | — | — | **${(overall.totalPrecision * 100).toFixed(2) + '%'}** | **${(overall.totalRecall * 100).toFixed(2) + '%'}** | **${deltaPct(overall.totalPrecision, overall.totalPrecision - overall.totalPrecisionDelta)}** | **${deltaPct(overall.totalRecall, overall.totalRecall - overall.totalRecallDelta)}** |`)
     lines.push('')
     lines.push(`正确数 ${fmt(dCorrect)}，配错数 ${fmt(dWrong)}，缺失数 ${fmt(dMiss)}，多余数 ${fmt(dRedundant)}`)
   }
@@ -348,13 +368,13 @@ const writeSummaryMd = () => {
 
   // ── ③ 正确匹配的 Pass 分布 ──
   lines.push('### ③ 正确匹配的 Pass 分布（按 Pass 执行顺序）', '')
-  lines.push('| Pass | matchType | 正确数 | 总对数 | 配错数 | 多余数 | 涉及case数 | 准确率 |')
+  lines.push('| Pass | matchType | 总对数 | 正确数 | 配错数 | 多余数 | 涉及case数 | 准确率 |')
   lines.push('|---|---|---|---|---|---|---|---|')
   for (const p of passStatsArr) {
     const mark = p.correct === 0 ? '**0**' : String(p.correct)
-    lines.push(`| ${p.passNumber} | ${p.matchType} | ${mark} | ${p.total} | ${p.wrong} | ${p.redundant} | ${p.caseCount} | ${pct(p.correct, p.total)} |`)
+    lines.push(`| ${p.passNumber} | ${p.matchType} | ${p.total} | ${mark} | ${p.wrong} | ${p.redundant} | ${p.caseCount} | ${pct(p.correct, p.total)} |`)
   }
-  lines.push(`| **合计** | | **${totalCorrect}** | **${totalPairs}** | **${totalWrong}** | **${totalRedundant}** | | **${pct(totalCorrect, totalPairs)}** |`)
+  lines.push(`| **合计** | | **${totalPairs}** | **${totalCorrect}** | **${totalWrong}** | **${totalRedundant}** | | **${pct(totalCorrect, totalPairs)}** |`)
   lines.push('')
 
   if (zeroCorrect.length) {

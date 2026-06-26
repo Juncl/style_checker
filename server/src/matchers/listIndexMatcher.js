@@ -107,7 +107,7 @@ export function matchByListIndex(designNodes, arkuiNodes, anchors, opts = {}) {
 
       const N = Math.min(Ld.items.length, La.items.length)
 
-      // 一致性校验（Pass 3.1.2 同款）：逐项以强锚点为参照，包含 / 方向任一矛盾则整组放弃
+      // 一致性校验（Pass 3 同款）：逐项以强锚点为参照，包含 / 方向任一矛盾则整组放弃
       let consistent = true
       for (let i = 0; i < N; i++) {
         const an = La.items[i], dn = Ld.items[i]

@@ -166,7 +166,7 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
     return best
   }
 
-  // 包含强锚点组 = 原文本锚点 + 外部传入的 3.1.1 包含配对；约束左右/上下候选
+  // 包含强锚点组 = 原文本锚点 + 外部传入的 Pass 1.5 包含配对；约束左右/上下候选
   const strongC = [...anchors, ...result]
   // 包含一致性以 strongC 为参照、方向一致性以原 pass1 文本锚点为参照
   // （方向矛盾示例：1819上↔64272相交、1828斜脱离↔64270相交 被卡；「上↔斜上」这类布局微差放行，不误杀）
