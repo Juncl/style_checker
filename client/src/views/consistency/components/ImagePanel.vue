@@ -35,6 +35,14 @@
             {{ isSpacingInspector ? (highlightPair.label || '间距') : (inspectorNode?.textContent || inspectorNode?.name) }}
           </span>
           <span v-if="debugMode && !isSpacingInspector" class="inspector-badge">{{ inspectorNode?.rawType || inspectorNode?.type }}</span>
+          <button
+            v-if="!isSpacingInspector"
+            class="inspector-add-btn"
+            :disabled="showExtraRow"
+            title="添加自定义对比项"
+            @click.stop="showExtraRow = true"
+            @pointerdown.stop
+          >+</button>
         </div>
         <div class="inspector-body">
           <!-- 间距模式 -->
@@ -65,6 +73,17 @@
                 {{ item.val }}
               </span>
             </div>
+            <div v-if="showExtraRow" class="prop-row prop-row--extra" @click.stop>
+              <el-select v-model="extraRowKey" class="extra-select" placeholder="属性">
+                <el-option
+                  v-for="opt in extraRowOptions"
+                  :key="opt.value"
+                  :value="opt.value"
+                  :label="opt.label"
+                />
+              </el-select>
+              <el-input v-model="extraRowValue" class="extra-input" placeholder="期望值" />
+            </div>
           </template>
         </div>
       </div>
@@ -75,6 +94,7 @@
 <script setup>
 import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { toWebColorDisplay } from '../../utils/tools.ts'
+import { TEXT_STYLE_OPTIONS, CONTAINER_STYLE_OPTIONS } from '../../utils/constants'
 import '../../../styles/image-panel.css'
 
 const props = defineProps({
@@ -98,6 +118,7 @@ const props = defineProps({
   hoverHighlightPairs: { type: Array, default: () => [] },
   platform:            { type: String, default: 'hmPhone' },
   boxSelectMode:       { type: Boolean, default: false },
+  compareActive:       { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['node-click', 'bg-click', 'node-hover', 'zoom', 'box-select'])
@@ -231,9 +252,13 @@ watch(() => [props.canvasW, props.canvasH], () => nextTick(draw))
 watch(() => props.debugPipelineVisible,  () => nextTick(draw))
 watch(() => props.debugVisible,          () => nextTick(draw))
 watch(() => props.externalHoveredId,     () => nextTick(draw))
+watch(() => props.compareActive,         () => nextTick(draw))
 watch(() => props.debugPairMap,  () => nextTick(draw), { deep: true })
 watch(() => props.inspectorNode?.id, () => {
   inspectorDragPos.value = null
+  showExtraRow.value  = false
+  extraRowKey.value   = ''
+  extraRowValue.value = ''
   nextTick(updateInspectorPos)
 })
 
@@ -287,8 +312,26 @@ function isHiddenTextNode(node) {
 // ── 交互事件 ────────────────────────────────────────────────────────────────
 
 function onCanvasClick(e) {
-  if (suppressClick) { suppressClick = false; return }
+  if (suppressClick) { suppressClick = false; if (!(e.ctrlKey || e.metaKey)) return }
   if (e.detail >= 2) return  // 双击序列中的第二次 click，交给 dblclick 处理
+
+  // Ctrl/Cmd+点击：select 模式下切换单个节点的命中状态（Mac 用 Cmd，Windows 用 Ctrl）
+  if ((e.ctrlKey || e.metaKey) && props.boxSelectMode) {
+    const coords = getCanvasCoords(e)
+    if (!coords) return
+    const hit = findHitNode(coords.px, coords.py)
+    if (hit) {
+      e.stopPropagation()
+      const next = new Set(boxHitIds.value)
+      if (next.has(hit.id)) next.delete(hit.id)
+      else next.add(hit.id)
+      boxHitIds.value = next
+      draw()
+      emit('box-select', props.nodes.filter(n => boxHitIds.value.has(n.id)))
+    }
+    return
+  }
+
   if (props.boxSelectMode && boxHitIds.value.size > 0) {
     boxHitIds.value = new Set()   // 单击清空框选高亮
     draw()
@@ -351,6 +394,7 @@ function rectsIntersect(a, b) {
 
 function onBoxStart(e) {
   if (!props.boxSelectMode || e.button !== 0) return
+  if (e.ctrlKey || e.metaKey) return  // Ctrl/Cmd+点击交给 click 事件处理，不启动框选
   const coords = getCanvasCoords(e)
   if (!coords) return
   e.preventDefault()
@@ -384,7 +428,9 @@ function onBoxMove(e) {
   boxRect.value = { x, y, w, h }
   const sel = { x, y, w, h }
   const hits = props.nodes.filter(n =>
-    n.visible !== false && !n.visualOccluded && n.rect && rectsIntersect(sel, n.rect)
+    n.visible !== false && !n.visualOccluded && n.rect && rectsIntersect(sel, n.rect) &&
+    !(n.rect.x >= -2 && n.rect.x <= 2 && n.rect.y >= -2 && n.rect.y <= 2 &&
+      n.rect.w >= props.canvasW - 2 && n.rect.h >= props.canvasH - 2)
   )
   boxHitIds.value = new Set(hits.map(n => n.id))
   draw()
@@ -571,8 +617,8 @@ function draw() {
     if (n) drawNodeRect(ctx, n.rect, sx, sy, 'rgba(224,33,40,0.10)', '#E02128', 1, [4, 3])
   }
 
-  // 选中节点（红色实线 + 红色背景，对齐设计稿差异标注 #E02128）
-  if (props.selectedId) {
+  // 选中节点（红色实线 + 红色背景，对比激活时不绘制）
+  if (props.selectedId && !props.compareActive) {
     const n = props.nodes.find(n => n.id === props.selectedId)
     if (n) drawNodeRect(ctx, n.rect, sx, sy, 'rgba(224,33,40,0.20)', '#E02128', 1, [])
   }
@@ -603,16 +649,16 @@ function draw() {
     }
   }
 
-  // 框选命中节点高亮（红色实线，无背景）
-  if (boxHitIds.value.size > 0) {
+  // 框选命中节点高亮（红色实线，无背景；对比激活时不绘制）
+  if (boxHitIds.value.size > 0 && !props.compareActive) {
     for (const n of props.nodes) {
       if (boxHitIds.value.has(n.id) && n.rect) {
         drawNodeRect(ctx, n.rect, sx, sy, 'rgba(0,0,0,0)', '#E02128', 1.5, [])
       }
     }
   }
-  // 框选矩形（蓝色虚线框）
-  if (boxRect.value) {
+  // 框选矩形（蓝色虚线框；对比激活时不绘制）
+  if (boxRect.value && !props.compareActive) {
     const r = boxRect.value
     ctx.strokeStyle = '#0067D1'
     ctx.lineWidth = 1
@@ -621,6 +667,24 @@ function draw() {
     ctx.fillRect(r.x * sx, r.y * sy, r.w * sx, r.h * sy)
     ctx.strokeRect(r.x * sx, r.y * sy, r.w * sx, r.h * sy)
     ctx.setLineDash([])
+  }
+
+  // 对比激活：在选中区外绘制白色遮罩，突出高亮选中区
+  if (props.compareActive) {
+    const hitRects = boxHitIds.value.size > 0
+      ? props.nodes.filter(n => boxHitIds.value.has(n.id) && n.rect).map(n => n.rect)
+      : (localSelectedId.value
+          ? [props.nodes.find(n => n.id === localSelectedId.value)?.rect].filter(Boolean)
+          : [])
+    if (hitRects.length > 0) {
+      const u = unionRects(hitRects)
+      const mX = u.x * sx, mY = u.y * sy, mW = u.w * sx, mH = u.h * sy
+      ctx.fillStyle = 'rgba(255,255,255,0.72)'
+      ctx.fillRect(0, 0, W, mY)                      // 上
+      ctx.fillRect(0, mY + mH, W, H - mY - mH)       // 下
+      ctx.fillRect(0, mY, mX, mH)                     // 左
+      ctx.fillRect(mX + mW, mY, W - mX - mW, mH)     // 右
+    }
   }
 
   ctx.restore()
@@ -1044,6 +1108,15 @@ function diffForStyleKey(key) {
   return props.styleDiffs.find(d => aliases.includes(d.property)) || null
 }
 
+
+// ── 自定义对比行 ─────────────────────────────────────────────────────────────
+const showExtraRow  = ref(false)
+const extraRowKey   = ref('')
+const extraRowValue = ref('')
+
+const extraRowOptions = computed(() =>
+  props.inspectorNode?.type === 'text' ? TEXT_STYLE_OPTIONS : CONTAINER_STYLE_OPTIONS
+)
 
 const STYLE_DIFF_ALIASES = {
   backgroundColor: ['backgroundColor'],

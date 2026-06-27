@@ -92,7 +92,7 @@
       <div v-if="debugMode" class="dev-float-switch" @click.stop>
         <button
           class="octo-toggle"
-          :class="{ 'octo-toggle--on': devSwitchOn }"
+          :class="{ 'octo-toggle--on': nodeCanvasMode === 'select' }"
           @click="toggleDevSwitch"
         >
           <span class="octo-toggle-thumb"></span>
@@ -146,16 +146,17 @@
           :canvas-w="result.canvas.arkui.w"
           :canvas-h="result.canvas.arkui.h"
           :nodes="arkuiNodes"
-          :selected-id="devSwitchOn ? localArkuiId : (selectedPair?.arkui?.id || null)"
-          :inspector-node="devSwitchOn ? localArkuiNode : (selectedPair?.arkui || null)"
-          :style-diffs="devSwitchOn ? [] : selectedArkuiDiffs"
+          :selected-id="nodeCanvasMode === 'select' ? localArkuiId : (selectedPair?.arkui?.id || null)"
+          :inspector-node="nodeCanvasMode === 'select' ? localArkuiNode : (selectedPair?.arkui || null)"
+          :style-diffs="nodeCanvasMode === 'select' ? [] : selectedArkuiDiffs"
           :external-hovered-id="hoveredArkuiCrossId"
           :debug-mode="debugMode"
           :debug-pipeline-visible="debugPipelineOn"
           :debug-visible="debugOverlayOn"
           :debug-pair-map="debugPairMap"
 
-          :box-select-mode="devSwitchOn"
+          :box-select-mode="nodeCanvasMode === 'select'"
+          :compare-active="compareActive"
           @node-click="onDevNodeClick"
           @node-hover="onArkuiHover"
           @bg-click="onDevBgClick"
@@ -214,9 +215,9 @@
           :canvas-w="result.canvas.design.w"
           :canvas-h="result.canvas.design.h"
           :nodes="designNodes"
-          :selected-id="devSwitchOn ? localDesignId : (selectedPair?.design?.id || null)"
-          :inspector-node="devSwitchOn ? localDesignNode : (selectedPair?.design || null)"
-          :style-diffs="devSwitchOn ? [] : selectedDesignDiffs"
+          :selected-id="nodeCanvasMode === 'select' ? localDesignId : (selectedPair?.design?.id || null)"
+          :inspector-node="nodeCanvasMode === 'select' ? localDesignNode : (selectedPair?.design || null)"
+          :style-diffs="nodeCanvasMode === 'select' ? [] : selectedDesignDiffs"
           :locked-ids="lockedNodeIds"
           :external-hovered-id="hoveredDesignCrossId"
           :debug-mode="debugMode"
@@ -224,7 +225,8 @@
           :debug-visible="debugOverlayOn"
           :debug-pair-map="debugPairMap"
 
-          :box-select-mode="devSwitchOn"
+          :box-select-mode="nodeCanvasMode === 'select'"
+          :compare-active="compareActive"
           @node-click="onDesignNodeClickLocal"
           @node-hover="onDesignHover"
           @bg-click="onDesignBgClick"
@@ -234,44 +236,12 @@
       </div>
     </section>
 
-    <!-- 节点对比悬浮面板（单选或框选两侧都有节点时出现） -->
-    <transition name="fade">
-      <div v-if="showComparePanel" class="node-compare-panel">
-        <!-- 操作按钮行 -->
-        <div class="node-compare-actions">
-          <button class="node-compare-btn node-compare-btn--primary" @click.stop="runCompare">对比</button>
-          <button v-if="!isBatchMode" class="node-compare-btn node-compare-btn--ghost" @click.stop="$emit('add-diff', { arkuiId: localArkuiId, designId: localDesignId })">新增差异</button>
-        </div>
-        <!-- diff 报告 -->
-        <div v-if="localCompareDiffs !== null" class="node-compare-result">
-          <div v-if="localCompareDiffs.length === 0" class="node-compare-empty">
-            ✓ 样式一致，未发现差异
-          </div>
-          <template v-else>
-            <div class="node-compare-diff-header">
-              <span>类型</span>
-              <span>开发</span>
-              <span>设计</span>
-            </div>
-            <div
-              v-for="d in localCompareDiffs"
-              :key="d.property"
-              class="node-compare-diff-row"
-            >
-              <span class="diff-label">{{ d.label }}</span>
-              <span class="diff-dev" :title="d.devValue">{{ d.devValue }}</span>
-              <span class="diff-design" :title="d.designValue">{{ d.designValue }}</span>
-            </div>
-          </template>
-        </div>
-      </div>
-    </transition>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { Crop } from '@element-plus/icons-vue'
 import OctoLoading from './common/OctoLoading.vue'
 import ImagePanel from './ImagePanel.vue'
@@ -327,7 +297,7 @@ const emit = defineEmits([
   'design-hover',
   'dev-switch-change',
   'compare-nodes',
-  'add-diff',
+  'temp-diffs',
 ])
 
 
@@ -335,12 +305,13 @@ const devPanelRef    = ref(null)
 const designPanelRef = ref(null)
 const debugMappingExpanded = ref(false)
 
-const devSwitchOn        = ref(false)
+const nodeCanvasMode     = ref('default')   // 'default' | 'select'
 const localArkuiId       = ref(null)
 const localDesignId      = ref(null)
-const localCompareDiffs  = ref(null)   // null=未执行，[]+=已执行
 const localArkuiNodeList  = ref([])    // 开发侧框选节点列表
 const localDesignNodeList = ref([])    // 设计侧框选节点列表
+const pendingDiffs       = ref(null)   // 当前临时对比结果；非 null 即为对比激活状态
+const compareActive      = computed(() => pendingDiffs.value !== null)
 
 // 每侧当前选中的节点列表（框选优先；没有框选则用单击 id 拼成单元素数组）
 const currentDevNodes = computed(() => {
@@ -364,31 +335,38 @@ const currentDesignNodes = computed(() => {
 const isBatchMode = computed(() =>
   currentDevNodes.value.length > 1 || currentDesignNodes.value.length > 1
 )
-const showComparePanel = computed(() =>
-  devSwitchOn.value && currentDevNodes.value.length > 0 && currentDesignNodes.value.length > 0
-)
 
 const localArkuiNode  = computed(() =>
-  devSwitchOn.value && localArkuiId.value
+  nodeCanvasMode.value === 'select' && localArkuiId.value
     ? (props.allArkuiNodes?.find(n => n.id === localArkuiId.value) ?? null)
     : null
 )
 const localDesignNode = computed(() =>
-  devSwitchOn.value && localDesignId.value
+  nodeCanvasMode.value === 'select' && localDesignId.value
     ? ((props.result?.allDesignNodes ?? props.designNodes)?.find(n => n.id === localDesignId.value) ?? null)
     : null
 )
 
+function clearCompare() {
+  pendingDiffs.value = null
+  emit('temp-diffs', null)
+}
+
+// 选择变化时自动清除对比状态，不再由各事件处理函数手动调用
+watch(
+  [localArkuiId, localDesignId, localArkuiNodeList, localDesignNodeList],
+  () => clearCompare()
+)
+
 function toggleDevSwitch() {
-  devSwitchOn.value = !devSwitchOn.value
-  if (!devSwitchOn.value) {
+  nodeCanvasMode.value = nodeCanvasMode.value === 'select' ? 'default' : 'select'
+  if (nodeCanvasMode.value === 'default') {
     localArkuiId.value       = null
     localDesignId.value      = null
-    localCompareDiffs.value  = null
     localArkuiNodeList.value  = []
     localDesignNodeList.value = []
   }
-  emit('dev-switch-change', devSwitchOn.value)
+  emit('dev-switch-change', nodeCanvasMode.value === 'select')
 }
 
 function onDevBoxSelect(nodes) {
@@ -399,19 +377,19 @@ function onDesignBoxSelect(nodes) {
 }
 
 function onDevNodeClick(id) {
-  if (devSwitchOn.value) { localArkuiId.value = id; localCompareDiffs.value = null }
+  if (nodeCanvasMode.value === 'select') localArkuiId.value = id
   else emit('arkui-node-click', id)
 }
 function onDesignNodeClickLocal(id) {
-  if (devSwitchOn.value) { localDesignId.value = id; localCompareDiffs.value = null }
+  if (nodeCanvasMode.value === 'select') localDesignId.value = id
   else emit('design-node-click', id)
 }
 function onDevBgClick() {
-  if (devSwitchOn.value) { localArkuiId.value = null; localCompareDiffs.value = null }
+  if (nodeCanvasMode.value === 'select') localArkuiId.value = null
   else emit('clear-pair')
 }
 function onDesignBgClick() {
-  if (devSwitchOn.value) { localDesignId.value = null; localCompareDiffs.value = null }
+  if (nodeCanvasMode.value === 'select') localDesignId.value = null
   else emit('clear-pair')
 }
 
@@ -420,16 +398,31 @@ function runCompare() {
     runBoxCompare()
     return
   }
-  // 单节点前端对比（两边各 1 个）
   const devNode    = currentDevNodes.value[0]
   const designNode = currentDesignNodes.value[0]
-  if (!devNode || !designNode) { localCompareDiffs.value = []; return }
-  localCompareDiffs.value = compareNodeStyles(designNode, devNode)
+  if (!devNode || !designNode) { return }
+  const raw = compareNodeStyles(designNode, devNode)
+  const diffs = raw.map(d => ({
+    property:     d.property,
+    designValue:  d.designValue,
+    arkuiValue:   d.devValue,
+    confidence:   'high',
+    designNodeId: designNode.id ?? null,
+    arkuiNodeId:  devNode.id    ?? null,
+  }))
+  pendingDiffs.value = diffs
+  emit('temp-diffs', diffs)
 }
 
-function runBoxCompare() {
-  // TODO: 调用后台批量对比接口
-  ElMessage({ message: '算法准备中...', type: 'info' })
+async function runBoxCompare() {
+  const devCount    = currentDevNodes.value.length
+  const designCount = currentDesignNodes.value.length
+  await ElMessageBox.alert(
+    `已选中开发侧 ${devCount} 个节点、设计侧 ${designCount} 个节点，批量对比功能接入中，敬请期待。`,
+    '批量对比',
+    { confirmButtonText: '知道了', type: 'info' }
+  )
+  // TODO: 接口接入后在此调用，拿到 diffs 后 pendingDiffs.value = diffs; emit('temp-diffs', diffs)
 }
 
 function onDevPanelZoom({ factor, normX, normY }) {
@@ -523,6 +516,8 @@ function startDrag(e, which) {
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
 }
+
+defineExpose({ runCompare })
 </script>
 
 <style scoped>
@@ -532,113 +527,6 @@ function startDrag(e, which) {
 
 .up-col--dev {
   position: relative;
-}
-
-.node-compare-panel {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  background: rgba(255, 255, 255, 0.97);
-  backdrop-filter: blur(6px);
-  border-radius: 8px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.16);
-  min-width: 320px;
-  max-width: 420px;
-  overflow: hidden;
-}
-
-.node-compare-actions {
-  display: flex;
-  gap: 8px;
-  padding: 8px 10px;
-}
-
-.node-compare-btn {
-  height: 32px;
-  padding: 4px 16px;
-  border-radius: 4px;
-  border: none;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 150ms ease;
-}
-
-.node-compare-btn--primary {
-  background: #0067D1;
-  color: #ffffff;
-}
-.node-compare-btn--primary:hover {
-  background: #0058B3;
-}
-
-.node-compare-btn--ghost {
-  background: #ffffff;
-  color: #191919;
-  border: 1px solid #D1D5DC;
-}
-.node-compare-btn--ghost:hover {
-  background: #F5F5F5;
-}
-
-.node-compare-result {
-  border-top: 1px solid #EAECF0;
-  max-height: 260px;
-  overflow-y: auto;
-  padding: 4px 0;
-}
-
-.node-compare-empty {
-  padding: 10px 14px;
-  font-size: 12px;
-  color: #52C41A;
-}
-
-.node-compare-diff-header {
-  display: grid;
-  grid-template-columns: 56px 1fr 1fr;
-  gap: 6px;
-  padding: 4px 14px;
-  font-size: 11px;
-  color: #AAAAAA;
-  background: #FAFAFA;
-  border-bottom: 1px solid #EAECF0;
-}
-
-.node-compare-diff-row {
-  display: grid;
-  grid-template-columns: 56px 1fr 1fr;
-  gap: 6px;
-  align-items: baseline;
-  padding: 5px 14px;
-  font-size: 12px;
-  line-height: 1.4;
-  border-left: 3px solid #0067D1;
-  background: rgba(0, 103, 209, 0.04);
-}
-
-.diff-label {
-  color: #777;
-  font-size: 11px;
-}
-
-.diff-design {
-  color: var(--report-design-color);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.diff-dev {
-  color: var(--report-dev-color);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .dev-float-switch {

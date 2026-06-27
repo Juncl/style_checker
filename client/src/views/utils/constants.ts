@@ -23,6 +23,28 @@ export const GUIDE_LINKS = {
   web:      'https://octo.hdesign.huawei.com/helpCenter/projectType/121/495/1242',
 }
 
+export const TEXT_STYLE_OPTIONS = [
+  { value: 'fontSize',      label: '字号' },
+  { value: 'fontWeight',    label: '字重' },
+  { value: 'fontColor',     label: '颜色' },
+  { value: 'fontFamily',    label: '字体' },
+  { value: 'textAlign',     label: '对齐' },
+  { value: 'lineHeight',    label: '行高' },
+  { value: 'letterSpacing', label: '字间距' },
+]
+
+export const CONTAINER_STYLE_OPTIONS = [
+  { value: 'backgroundColor', label: '填充' },
+  { value: 'opacity',         label: '不透明度' },
+  { value: 'borderRadius',    label: '圆角' },
+  { value: 'borderWidth',     label: '描边宽度' },
+  { value: 'borderColor',     label: '描边颜色' },
+  { value: 'padding',         label: '内边距' },
+  { value: 'itemSpacing',     label: '间距' },
+  { value: 'shadow',          label: '阴影' },
+  { value: 'blur',            label: '模糊' },
+]
+
 export const FILE_SLOTS = [
   { key: 'designJson',  label: 'design.json', required: true,  match: (f: File) => /design/i.test(f.name) && f.name.endsWith('.json') },
   { key: 'arkuiJson',   label: 'arkui.json',  required: true,  match: (f: File) => /arkui/i.test(f.name)  && (f.name.endsWith('.json') || f.name.endsWith('.dump')) },

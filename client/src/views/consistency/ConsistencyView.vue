@@ -74,6 +74,7 @@
 
       <ReportPage
         v-if="result"
+        ref="reportPageRef"
         :result="result"
         :arkui-img-src="arkuiImgSrc"
         :design-img-src="designImgSrc"
@@ -115,6 +116,8 @@
         @update:debug-overlay-on="debugOverlayOn = $event"
         @arkui-hover="onArkuiHover"
         @design-hover="onDesignHover"
+        @dev-switch-change="devSwitchActive = $event"
+        @temp-diffs="tempDiffs = $event"
       />
       </div>
     </main>
@@ -149,6 +152,7 @@
         :working-version-id="workingVersionId"
         :close-history-key="closeHistoryKey"
         :platform="currentPlatform"
+        :temp-diffs="tempDiffs"
         @diff-select="onDiffSelect"
         @diff-hover="hoveredDiffPair = $event"
         @design-node-click="onDesignNodeClick"
@@ -182,7 +186,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import OctoLoading from './components/common/OctoLoading.vue'
-import { checkCase, checkUpload, imageUrl, parseDevUpload, parseDesignUpload, convertDumpToJson } from '../../api/index.ts'
+import { checkCase, checkUpload, matchNodes, imageUrl, parseDevUpload, parseDesignUpload, convertDumpToJson } from '../../api/index.ts'
 import { getTeamList, getSonListByTeamId, addConsistencyCheckDeliverable, addConsistencyCheckPage, getResultsByPageId, getPagesByDeliverableId, getConsistencyCheckDeliverables, fetchVersionJson } from '../../api/api.ts'
 import { ADMIN_BASE_URL } from '../../api/adminEnv.ts'
 import {
@@ -220,6 +224,9 @@ const debugPipelineOn = ref(false)
 const debugOverlayOn  = ref(false)
 const aiChatOpen      = ref(false)
 const rerunLoading      = ref(false)
+const reportPageRef     = ref(null)
+const devSwitchActive   = ref(false)
+const tempDiffs         = ref(null)
 const devReuploading    = ref(false)
 const designReuploading = ref(false)
 
@@ -857,22 +864,32 @@ async function submitRerunVersion() {
 }
 
 async function rerunCheck() {
+  if (devSwitchActive.value) {
+    reportPageRef.value?.runCompare()
+    return
+  }
+  if (!result.value) {
+    ElMessage.warning('没有可用的数据，请重新上传')
+    return
+  }
   activeDiff.value    = null
   selectedPair.value  = null
   lockedNodeIds.value = new Set()
   rerunLoading.value  = true
   try {
-    if (uploadFiles.value.designJson && uploadFiles.value.arkuiJson) {
-      result.value = await checkUpload(
-        uploadFiles.value.designJson,
-        uploadFiles.value.arkuiJson,
-        uploadFiles.value.designImage,
-        uploadFiles.value.arkuiImage,
-        currentPlatform.value,
-      )
-    } else {
-      ElMessage.warning('没有可用的数据，请重新上传')
-      return
+    const matchResult = await matchNodes(
+      result.value.allDesignNodes,
+      result.value.allArkuiNodes,
+      result.value.canvas,
+      currentPlatform.value,
+    )
+    result.value = {
+      ...result.value,
+      diffs:                matchResult.diffs,
+      pairs:                matchResult.pairs,
+      unmatchedDesignNodes: matchResult.unmatchedDesignNodes,
+      unmatchedArkuiNodes:  matchResult.unmatchedArkuiNodes,
+      stats:                matchResult.stats,
     }
     devReuploading.value    = false
     designReuploading.value = false

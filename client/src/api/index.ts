@@ -40,6 +40,14 @@ export const checkUpload = (
   }).then(r => r.data)
 }
 
+export const matchNodes = (
+  designNodes: unknown[],
+  arkuiNodes: unknown[],
+  canvas: { design: { w: number; h: number }; arkui: { w: number; h: number } },
+  platform: PlatformKey = DEFAULT_PLATFORM,
+): Promise<unknown> =>
+  http.post('/check/match-nodes', { designNodes, arkuiNodes, canvas, platform }).then(r => r.data)
+
 export const imageUrl = (caseId: string, type: string, platform: PlatformKey = DEFAULT_PLATFORM): string =>
   `${SERVER_BASE_URL}/cases/${caseId}/image/${type}?platform=${encodeURIComponent(platform)}`
 

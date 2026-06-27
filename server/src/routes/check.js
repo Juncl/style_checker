@@ -514,4 +514,108 @@ router.post('/img/checker', async (req, res) => {
   }
 })
 
+// ── 直接匹配 + 比对（跳过解析阶段）─────────────────────────────────────────────
+// POST /api/check/match-nodes
+// body: { designNodes: UnifiedNode[], arkuiNodes: UnifiedNode[], canvas: { design: {w,h}, arkui: {w,h} }, platform? }
+// 前端传来的节点是解析阶段产出，接口补全 normRect 后直接进匹配 + 比对流水线
+router.post('/check/match-nodes', async (req, res) => {
+  try {
+    const { designNodes, arkuiNodes, canvas, platform: platformKey } = req.body
+
+    if (!Array.isArray(designNodes) || !Array.isArray(arkuiNodes)) {
+      return res.status(400).json({ error: '缺少 designNodes 或 arkuiNodes' })
+    }
+    if (!canvas?.design?.w || !canvas?.design?.h || !canvas?.arkui?.w || !canvas?.arkui?.h) {
+      return res.status(400).json({ error: '缺少 canvas 尺寸信息' })
+    }
+
+    const platform = getPlatform(resolvePlatform(platformKey))
+
+    // 补全 normRect（前端传来的节点没有此字段，匹配算法依赖它）
+    const dW = canvas.design.w, dH = canvas.design.h
+    const aW = canvas.arkui.w,  aH = canvas.arkui.h
+    for (const n of designNodes) {
+      if (!n.normRect && n.rect) {
+        n.normRect = { x: n.rect.x / dW, y: n.rect.y / dH, w: n.rect.w / dW, h: n.rect.h / dH }
+      }
+    }
+    for (const n of arkuiNodes) {
+      if (!n.normRect && n.rect) {
+        n.normRect = { x: n.rect.x / aW, y: n.rect.y / aH, w: n.rect.w / aW, h: n.rect.h / aH }
+      }
+    }
+
+    // 匹配
+    const {
+      pairs,
+      unmatchedDesign,
+      unmatchedArkui,
+      comparableDesignCount,
+    } = matchNodes(designNodes, arkuiNodes, {
+      primarySource:  DEFAULT_MATCH_DIRECTION,
+      canvasWidthVp:  aW,
+      canvasHeightVp: aH,
+      canvasWidth:    dW,
+      canvasHeight:   dH,
+      platform:       platform.key,
+    })
+
+    // 比对
+    const rectByPairKey = new Map(
+      pairs.map(p => [`${p.design.id}::${p.arkui.id}`, { designRect: p.design.rect, arkuiRect: p.arkui.rect }])
+    )
+    const hmNodesMap = Object.fromEntries(arkuiNodes.map(n => [n.id, n]))
+    const deNodesMap = Object.fromEntries(designNodes.map(n => [n.id, n]))
+    const rootHmRect = { x: 0, y: 0, w: aW, h: aH }
+    const rootDeRect = { x: 0, y: 0, w: dW, h: dH }
+    const spatialDiffs = compareSpatialRelations(pairs, { hmNodesMap, deNodesMap, rootHmRect, rootDeRect })
+    const diffs = [...compareAll(pairs, { platform: platform.key }), ...spatialDiffs].map(d => ({
+      ...d,
+      ...( rectByPairKey.get(`${d.designNodeId}::${d.arkuiNodeId}`) || {} ),
+    }))
+
+    // 统计
+    const errorCount       = diffs.filter(d => d.severity === 'error').length
+    const warningCount     = diffs.filter(d => d.severity === 'warning').length
+    const matchCoverage    = comparableDesignCount ? pairs.length / comparableDesignCount : 0
+    const lowConfidencePairs = pairs.filter(p => p.confidence === 'low').length
+    const totalNodes       = pairs.length || 1
+    const penalty          = (errorCount * 3 + warningCount * 1) / totalNodes
+    const coveragePenalty  = (1 - matchCoverage) * 25
+    const lowConfidencePenalty = lowConfidencePairs / totalNodes * 10
+    const score = Math.max(0, Math.min(100, Math.round(100 - penalty * 10 - coveragePenalty - lowConfidencePenalty)))
+
+    res.json({
+      diffs,
+      pairs: pairs.map(p => ({
+        matchDetail:    p.matchDetail,
+        iou:            p.iou,
+        confidence:     p.confidence,
+        topologyScore:  p.topologyScore,
+        regionScore:    p.regionScore,
+        designRegionId: p.designRegionId,
+        arkuiRegionId:  p.arkuiRegionId,
+        isAnchor:       p.isAnchor,
+        design: { id: p.design.id, name: p.design.name, type: p.design.type, rawType: p.design.rawType || null, textContent: p.design.textContent || null, rect: p.design.rect, size: p.design.size || null, style: p.design.style, visible: p.design.visible !== false, visualOccluded: !!p.design.visualOccluded, visualOcclusionReason: p.design.visualOcclusionReason || null, pixelVisibility: p.design.pixelVisibility || null },
+        arkui:  { id: p.arkui.id,  name: p.arkui.name,  type: p.arkui.type,  rawType: p.arkui.rawType  || null, textContent: p.arkui.textContent  || null, rect: p.arkui.rect,  style: p.arkui.style,  visible: p.arkui.visible !== false, hiddenFrameworkAncestor: !!p.arkui.hiddenFrameworkAncestor, visualOccluded: !!p.arkui.visualOccluded, visualOcclusionReason: p.arkui.visualOcclusionReason || null, pixelVisibility: p.arkui.pixelVisibility || null, ocrVisibility: p.arkui.ocrVisibility || null },
+      })),
+      unmatchedDesignNodes: unmatchedDesign.map(n => ({ id: n.id, name: n.name, type: n.type, textContent: n.textContent, rect: n.rect })),
+      unmatchedArkuiNodes:  unmatchedArkui.map(n  => ({ id: n.id, name: n.name, type: n.type, textContent: n.textContent, rect: n.rect })),
+      stats: {
+        matchedPairs:    pairs.length,
+        unmatchedDesign: unmatchedDesign.length,
+        unmatchedArkui:  unmatchedArkui.length,
+        matchCoverage:   Number((matchCoverage * 100).toFixed(1)),
+        lowConfidencePairs,
+        errorCount,
+        warningCount,
+        score,
+      },
+    })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 export default router
