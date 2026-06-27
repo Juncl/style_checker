@@ -38,9 +38,9 @@
           <button
             v-if="!isSpacingInspector"
             class="inspector-add-btn"
-            :disabled="showExtraRow"
+            :disabled="showPendingRow"
             title="添加自定义对比项"
-            @click.stop="showExtraRow = true"
+            @click.stop="showPendingRow = true"
             @pointerdown.stop
           >+</button>
         </div>
@@ -73,8 +73,33 @@
                 {{ item.val }}
               </span>
             </div>
-            <div v-if="showExtraRow" class="prop-row prop-row--extra" @click.stop>
-              <el-select v-model="extraRowKey" class="extra-select" placeholder="属性">
+            <!-- 已保存的人工属性行（只读 + 删除按钮） -->
+            <div
+              v-for="row in savedRows"
+              :key="row.key"
+              class="prop-row prop-row--extra prop-row--saved"
+              @click.stop
+            >
+              <el-select :model-value="row.key" class="extra-select" disabled>
+                <el-option
+                  v-for="opt in allStyleOptions"
+                  :key="opt.value"
+                  :value="opt.value"
+                  :label="opt.label"
+                />
+              </el-select>
+              <div class="extra-input-wrap">
+                <el-input :model-value="row.rawValue" class="extra-input extra-input--saved" readonly />
+              </div>
+              <button class="extra-action-btn extra-delete-btn" title="删除" @click.stop="deleteRow(row.key)">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+            <!-- 待确认的新行（编辑中） -->
+            <div v-if="showPendingRow" class="prop-row prop-row--extra" @click.stop>
+              <el-select v-model="pendingKey" class="extra-select" placeholder="属性">
                 <el-option
                   v-for="opt in extraRowOptions"
                   :key="opt.value"
@@ -82,7 +107,26 @@
                   :label="opt.label"
                 />
               </el-select>
-              <el-input v-model="extraRowValue" class="extra-input" placeholder="期望值" />
+              <div class="extra-input-wrap">
+                <el-input
+                  v-model="pendingValue"
+                  class="extra-input"
+                  :class="{ 'extra-input--error': extraError }"
+                  :placeholder="getInputPlaceholder(pendingKey)"
+                />
+                <span v-if="extraError" class="extra-error-tip">{{ extraError }}</span>
+              </div>
+              <button
+                class="extra-action-btn extra-confirm-btn"
+                :class="{ 'extra-confirm-btn--active': canConfirm }"
+                :disabled="!canConfirm"
+                title="保存"
+                @click.stop="confirmExtra"
+              >
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2.5 8.5l4 4 7-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
             </div>
           </template>
         </div>
@@ -95,6 +139,7 @@
 import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { toWebColorDisplay } from '../../utils/tools.ts'
 import { TEXT_STYLE_OPTIONS, CONTAINER_STYLE_OPTIONS } from '../../utils/constants'
+import { validateOverrideInput, getInputPlaceholder, parseOverrideValue } from '../match/overrideValidator'
 import '../../../styles/image-panel.css'
 
 const props = defineProps({
@@ -121,7 +166,7 @@ const props = defineProps({
   compareActive:       { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['node-click', 'bg-click', 'node-hover', 'zoom', 'box-select'])
+const emit = defineEmits(['node-click', 'bg-click', 'node-hover', 'zoom', 'box-select', 'extra-change', 'save-manual-style', 'remove-manual-style'])
 
 const panelRef     = ref(null)
 const labelRef     = ref(null)
@@ -256,9 +301,17 @@ watch(() => props.compareActive,         () => nextTick(draw))
 watch(() => props.debugPairMap,  () => nextTick(draw), { deep: true })
 watch(() => props.inspectorNode?.id, () => {
   inspectorDragPos.value = null
-  showExtraRow.value  = false
-  extraRowKey.value   = ''
-  extraRowValue.value = ''
+  showPendingRow.value = false
+  pendingKey.value     = ''
+  pendingValue.value   = ''
+  emit('extra-change', null)
+
+  // 从节点的 manualStyle 还原已保存行（切换节点后重新展示已有人工值）
+  const ms = props.inspectorNode?.manualStyle
+  savedRows.value = ms && typeof ms === 'object'
+    ? Object.entries(ms).map(([key, val]) => ({ key, rawValue: parsedValToDisplay(key, val) }))
+    : []
+
   nextTick(updateInspectorPos)
 })
 
@@ -1110,13 +1163,81 @@ function diffForStyleKey(key) {
 
 
 // ── 自定义对比行 ─────────────────────────────────────────────────────────────
-const showExtraRow  = ref(false)
-const extraRowKey   = ref('')
-const extraRowValue = ref('')
+const showPendingRow = ref(false)
+const pendingKey     = ref('')
+const pendingValue   = ref('')
+const savedRows      = ref([])   // Array<{ key: string, rawValue: string }>
 
 const extraRowOptions = computed(() =>
   props.inspectorNode?.type === 'text' ? TEXT_STYLE_OPTIONS : CONTAINER_STYLE_OPTIONS
 )
+
+// 保存行展示用：合并所有属性选项（已保存行可能来自任意类型）
+const allStyleOptions = computed(() => [...TEXT_STYLE_OPTIONS, ...CONTAINER_STYLE_OPTIONS])
+
+// 实时校验待确认行
+const extraError = computed(() => {
+  if (!pendingKey.value || !pendingValue.value.trim()) return ''
+  const r = validateOverrideInput(pendingKey.value, pendingValue.value)
+  return r.ok ? '' : (r.error ?? '格式有误')
+})
+
+// 绿勾可点条件
+const canConfirm = computed(() =>
+  !!pendingKey.value && !!pendingValue.value.trim() && !extraError.value
+)
+
+// 待确认行变化 → emit extra-change（供 Path A 点选对比实时使用）
+watch([pendingKey, pendingValue], ([key, val]) => {
+  const nodeId = props.inspectorNode?.id
+  const valid  = nodeId && key && val.trim() && !extraError.value
+  emit('extra-change', valid ? { nodeId, key, value: val.trim() } : null)
+})
+
+// 点击绿勾：保存到 savedRows，通知父组件写入节点树
+function confirmExtra() {
+  if (!canConfirm.value) return
+  const nodeId    = props.inspectorNode?.id
+  const key       = pendingKey.value
+  const rawValue  = pendingValue.value.trim()
+  const parsedVal = parseOverrideValue(key, rawValue)
+
+  // 同 key 已存在则覆盖
+  const idx = savedRows.value.findIndex(r => r.key === key)
+  if (idx >= 0) savedRows.value.splice(idx, 1, { key, rawValue })
+  else          savedRows.value.push({ key, rawValue })
+
+  // 清空待确认行
+  showPendingRow.value = false
+  pendingKey.value     = ''
+  pendingValue.value   = ''
+  emit('extra-change', null)
+
+  emit('save-manual-style', { nodeId, key, parsedValue: parsedVal })
+}
+
+// 点击删除：移出 savedRows，通知父组件删除节点树中对应字段
+function deleteRow(key) {
+  savedRows.value = savedRows.value.filter(r => r.key !== key)
+  emit('remove-manual-style', { nodeId: props.inspectorNode?.id, key })
+}
+
+// 将已解析的 manualStyle 值反向格式化为显示字符串（节点切换时还原已保存行）
+function parsedValToDisplay(key, val) {
+  if (val == null) return ''
+  if (typeof val === 'object') {
+    if (key === 'borderRadius') {
+      const { topLeft: tl = 0, topRight: tr = 0, bottomRight: br = 0, bottomLeft: bl = 0 } = val
+      return tl === tr && tr === br && br === bl ? String(tl) : `${tl}/${tr}/${br}/${bl}`
+    }
+    if (key === 'padding') {
+      const { top = 0, right = 0, bottom = 0, left = 0 } = val
+      return `${top}/${right}/${bottom}/${left}`
+    }
+    return JSON.stringify(val)
+  }
+  return String(val)
+}
 
 const STYLE_DIFF_ALIASES = {
   backgroundColor: ['backgroundColor'],

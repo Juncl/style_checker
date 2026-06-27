@@ -162,6 +162,9 @@
           @bg-click="onDevBgClick"
           @box-select="onDevBoxSelect"
           @zoom="onDevPanelZoom"
+          @extra-change="devExtraOverride = $event"
+          @save-manual-style="e => emit('save-manual-style', { ...e, side: 'dev' })"
+          @remove-manual-style="e => emit('remove-manual-style', { ...e, side: 'dev' })"
         />
       </div>
     </section>
@@ -232,6 +235,9 @@
           @bg-click="onDesignBgClick"
           @box-select="onDesignBoxSelect"
           @zoom="onDesignPanelZoom"
+          @extra-change="designExtraOverride = $event"
+          @save-manual-style="e => emit('save-manual-style', { ...e, side: 'design' })"
+          @remove-manual-style="e => emit('remove-manual-style', { ...e, side: 'design' })"
         />
       </div>
     </section>
@@ -241,7 +247,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Crop } from '@element-plus/icons-vue'
 import OctoLoading from './common/OctoLoading.vue'
 import ImagePanel from './ImagePanel.vue'
@@ -249,6 +255,8 @@ import DevUploadCard from './DevUploadCard.vue'
 import DesignUploadCard from './DesignUploadCard.vue'
 import { validationBg, confidenceText, confidenceTagType } from '../../utils/tools.ts'
 import { compareNodeStyles } from '../match/compareNodes.ts'
+import { normalizeSelection } from '../match/normalizeSelection.ts'
+import { matchNodes } from '../../../api/index.ts'
 
 const props = defineProps({
   result:               { type: Object,  required: true },
@@ -298,6 +306,8 @@ const emit = defineEmits([
   'dev-switch-change',
   'compare-nodes',
   'temp-diffs',
+  'save-manual-style',
+  'remove-manual-style',
 ])
 
 
@@ -312,6 +322,10 @@ const localArkuiNodeList  = ref([])    // 开发侧框选节点列表
 const localDesignNodeList = ref([])    // 设计侧框选节点列表
 const pendingDiffs       = ref(null)   // 当前临时对比结果；非 null 即为对比激活状态
 const compareActive      = computed(() => pendingDiffs.value !== null)
+
+// 两侧 Inspector 自定义对比行的人工覆盖：{ nodeId, key, value } | null
+const devExtraOverride    = ref(null)
+const designExtraOverride = ref(null)
 
 // 每侧当前选中的节点列表（框选优先；没有框选则用单击 id 拼成单元素数组）
 const currentDevNodes = computed(() => {
@@ -401,7 +415,21 @@ function runCompare() {
   const devNode    = currentDevNodes.value[0]
   const designNode = currentDesignNodes.value[0]
   if (!devNode || !designNode) { return }
-  const raw = compareNodeStyles(designNode, devNode)
+
+  // 构建人工覆盖：只有覆盖节点与当前选中节点一致时才带入
+  const overrides = {
+    dev:    devExtraOverride.value?.nodeId    === devNode.id
+              ? { [devExtraOverride.value.key]:    devExtraOverride.value.value    } : {},
+    design: designExtraOverride.value?.nodeId === designNode.id
+              ? { [designExtraOverride.value.key]: designExtraOverride.value.value } : {},
+  }
+
+  if (designNode.type !== devNode.type) {
+    ElMessage.warning('文本节点不能与容器节点对比，请重新选择')
+    return
+  }
+
+  const raw = compareNodeStyles(designNode, devNode, overrides)
   const diffs = raw.map(d => ({
     property:     d.property,
     designValue:  d.designValue,
@@ -409,20 +437,44 @@ function runCompare() {
     confidence:   'high',
     designNodeId: designNode.id ?? null,
     arkuiNodeId:  devNode.id    ?? null,
+    _isManual:    d._isManual ?? false,
   }))
   pendingDiffs.value = diffs
   emit('temp-diffs', diffs)
 }
 
 async function runBoxCompare() {
-  const devCount    = currentDevNodes.value.length
-  const designCount = currentDesignNodes.value.length
-  await ElMessageBox.alert(
-    `已选中开发侧 ${devCount} 个节点、设计侧 ${designCount} 个节点，批量对比功能接入中，敬请期待。`,
-    '批量对比',
-    { confirmButtonText: '知道了', type: 'info' }
-  )
-  // TODO: 接口接入后在此调用，拿到 diffs 后 pendingDiffs.value = diffs; emit('temp-diffs', diffs)
+  const devNodes    = currentDevNodes.value
+  const designNodes = currentDesignNodes.value
+  if (!devNodes.length || !designNodes.length) return
+
+  const devResult    = normalizeSelection(devNodes)
+  const designResult = normalizeSelection(designNodes)
+
+  const newDevNodes    = devResult.items.map(({ node, newRect }) => ({ ...node, rect: newRect }))
+  const newDesignNodes = designResult.items.map(({ node, newRect }) => ({ ...node, rect: newRect }))
+
+  const canvas = {
+    design: { w: designResult.root.w, h: designResult.root.h },
+    arkui:  { w: devResult.root.w,    h: devResult.root.h },
+  }
+
+  try {
+    const result = await matchNodes(newDesignNodes, newDevNodes, canvas, props.currentPlatform)
+    const diffs = (result.diffs ?? []).map(d => ({
+      property:     d.property,
+      designValue:  d.designValue,
+      arkuiValue:   d.arkuiValue,
+      severity:     d.severity,
+      confidence:   'high',
+      designNodeId: d.designNodeId ?? null,
+      arkuiNodeId:  d.arkuiNodeId  ?? null,
+    }))
+    pendingDiffs.value = diffs
+    emit('temp-diffs', diffs)
+  } catch (e) {
+    ElMessage.error(`对比失败：${e.response?.data?.error || e.message}`)
+  }
 }
 
 function onDevPanelZoom({ factor, normX, normY }) {
@@ -517,7 +569,15 @@ function startDrag(e, which) {
   window.addEventListener('mouseup', onUp)
 }
 
-defineExpose({ runCompare })
+/** 供 ConsistencyView 全量重跑前读取当前人工覆盖 */
+function getActiveOverrides() {
+  return {
+    dev:    devExtraOverride.value    ?? null,
+    design: designExtraOverride.value ?? null,
+  }
+}
+
+defineExpose({ runCompare, getActiveOverrides })
 </script>
 
 <style scoped>

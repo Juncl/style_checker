@@ -101,13 +101,84 @@ export function compareStyles(pair, opts = {}) {
 export function compareAll(pairs, opts = {}) {
   const allDiffs = []
   for (const pair of pairs) {
-    const diffs = compareStyles(pair, opts)
+    const normalDiffs = compareStyles(pair, opts)
       .filter(d => d.property === 'blur' || (d.designValue !== '—' && d.arkuiValue !== '—'))
-    for (const d of diffs) {
+
+    const manualDiffs = compareManualStyles(pair)
+
+    // 人工 diff 覆盖同属性的普通 diff
+    const merged = manualDiffs.length
+      ? [...normalDiffs.filter(d => !manualDiffs.some(m => m.property === d.property)), ...manualDiffs]
+      : normalDiffs
+
+    for (const d of merged) {
       allDiffs.push({ ...d, designNodeId: pair.design.id, arkuiNodeId: pair.arkui.id })
     }
   }
   return allDiffs
+}
+
+/**
+ * 对比节点 manualStyle 中人工指定的属性值。
+ * 不受容差、单侧缺失、类型限制等规则约束，必然比对，结果标记 _isManual: true。
+ */
+function compareManualStyles(pair) {
+  const { design: dn, arkui: an } = pair
+  const designManual = dn.manualStyle || {}
+  const arkuiManual  = an.manualStyle || {}
+
+  const allKeys = new Set([...Object.keys(designManual), ...Object.keys(arkuiManual)])
+  if (!allKeys.size) return []
+
+  const ctx = {
+    nodeType:      dn.type,
+    textContent:   dn.textContent,
+    designName:    dn.name,
+    arkuiName:     an.name,
+    matchType:     pair.matchDetail?.type,
+    confidence:    pair.confidence || 'medium',
+    iou:           pair.iou ?? null,
+    topologyScore: pair.topologyScore ?? null,
+    regionScore:   pair.regionScore ?? null,
+  }
+
+  const diffs = []
+  for (const key of allKeys) {
+    const designVal = key in designManual ? designManual[key] : getManualStyleVal(dn.style, key)
+    const arkuiVal  = key in arkuiManual  ? arkuiManual[key]  : getManualStyleVal(an.style,  key)
+
+    const designStr = formatManualVal(key, designVal)
+    const arkuiStr  = formatManualVal(key, arkuiVal)
+
+    if (designStr !== arkuiStr) {
+      diffs.push({ ...makeDiff(ctx, key, designStr, arkuiStr, 'error', `人工: ${key}`), _isManual: true })
+    }
+  }
+
+  return diffs
+}
+
+function getManualStyleVal(style, key) {
+  const s = style || {}
+  if (key === 'borderWidth') return s.border?.width
+  if (key === 'borderColor') return s.border?.color
+  return s[key]
+}
+
+function formatManualVal(key, val) {
+  if (val == null) return '—'
+  if (typeof val === 'object') {
+    if (key === 'borderRadius') {
+      const { topLeft: tl = 0, topRight: tr = 0, bottomRight: br = 0, bottomLeft: bl = 0 } = val
+      return tl === tr && tr === br && br === bl ? String(tl) : `${tl}/${tr}/${br}/${bl}`
+    }
+    if (key === 'padding') {
+      const { top = 0, right = 0, bottom = 0, left = 0 } = val
+      return `T:${top} R:${right} B:${bottom} L:${left}`
+    }
+    return JSON.stringify(val)
+  }
+  return String(val)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

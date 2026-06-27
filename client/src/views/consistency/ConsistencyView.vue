@@ -118,6 +118,8 @@
         @design-hover="onDesignHover"
         @dev-switch-change="devSwitchActive = $event"
         @temp-diffs="tempDiffs = $event"
+        @save-manual-style="onSaveManualStyle"
+        @remove-manual-style="onRemoveManualStyle"
       />
       </div>
     </main>
@@ -197,6 +199,7 @@ import { initApp } from './init/index'
 import { UXLINT_CHECKLIST_EVENT } from './init/detectIframe'
 import { processUxlintCheckList } from './init/processUxlintCheckList'
 import { setUrlParams, removeUrlParams } from '../utils/urlParams'
+import { parseOverrideValue } from './match/overrideValidator'
 import { savePlatform } from './init/restorePlatform'
 import AppLayout from './components/AppLayout.vue'
 import AiChatDrawer from './components/AiChatDrawer.vue'
@@ -863,6 +866,46 @@ async function submitRerunVersion() {
   }
 }
 
+// pairs[].design / pairs[].arkui 替换为 allNodes 里的同一对象引用，
+// 确保两条路径（select 模式 / 普通模式）读写的是同一份数据
+function resolvePairsToNodes(pairs, allDesignNodes, allArkuiNodes) {
+  if (!pairs?.length) return pairs ?? []
+  const deMap = Object.fromEntries((allDesignNodes ?? []).map(n => [n.id, n]))
+  const hmMap = Object.fromEntries((allArkuiNodes  ?? []).map(n => [n.id, n]))
+  return pairs.map(p => ({
+    ...p,
+    design: deMap[p.design?.id] ?? p.design,
+    arkui:  hmMap[p.arkui?.id]  ?? p.arkui,
+  }))
+}
+
+function onSaveManualStyle({ side, nodeId, key, parsedValue }) {
+  const nodes = side === 'design' ? result.value?.allDesignNodes : result.value?.allArkuiNodes
+  const node  = nodes?.find(n => n.id === nodeId)
+  if (!node) return
+  node.manualStyle = { ...(node.manualStyle || {}), [key]: parsedValue }
+}
+
+function onRemoveManualStyle({ side, nodeId, key }) {
+  const nodes = side === 'design' ? result.value?.allDesignNodes : result.value?.allArkuiNodes
+  const node  = nodes?.find(n => n.id === nodeId)
+  if (!node?.manualStyle) return
+  const updated = { ...node.manualStyle }
+  delete updated[key]
+  node.manualStyle = Object.keys(updated).length ? updated : undefined
+}
+
+function applyExtraOverride(nodes, override) {
+  if (!override?.nodeId || !override?.key || override?.value == null) return nodes
+  const idx = nodes.findIndex(n => n.id === override.nodeId)
+  if (idx < 0) return nodes
+  const patched = [...nodes]
+  const parsedVal = parseOverrideValue(override.key, override.value)
+  const existing = patched[idx].manualStyle || {}
+  patched[idx] = { ...patched[idx], manualStyle: { ...existing, [override.key]: parsedVal } }
+  return patched
+}
+
 async function rerunCheck() {
   if (devSwitchActive.value) {
     reportPageRef.value?.runCompare()
@@ -877,16 +920,21 @@ async function rerunCheck() {
   lockedNodeIds.value = new Set()
   rerunLoading.value  = true
   try {
+    // 将人工覆盖的属性值 patch 到对应节点的副本上，再送入重跑
+    const activeOverrides = reportPageRef.value?.getActiveOverrides?.() ?? {}
+    const patchedDesignNodes = applyExtraOverride(result.value.allDesignNodes, activeOverrides.design)
+    const patchedArkuiNodes  = applyExtraOverride(result.value.allArkuiNodes,  activeOverrides.dev)
+
     const matchResult = await matchNodes(
-      result.value.allDesignNodes,
-      result.value.allArkuiNodes,
+      patchedDesignNodes,
+      patchedArkuiNodes,
       result.value.canvas,
       currentPlatform.value,
     )
     result.value = {
       ...result.value,
       diffs:                matchResult.diffs,
-      pairs:                matchResult.pairs,
+      pairs:                resolvePairsToNodes(matchResult.pairs, result.value.allDesignNodes, result.value.allArkuiNodes),
       unmatchedDesignNodes: matchResult.unmatchedDesignNodes,
       unmatchedArkuiNodes:  matchResult.unmatchedArkuiNodes,
       stats:                matchResult.stats,
@@ -963,6 +1011,7 @@ async function selectCase(id) {
     delete data._rawDevContent
     delete data._devImgExt
     result.value = data
+    result.value.pairs = resolvePairsToNodes(result.value.pairs, result.value.allDesignNodes, result.value.allArkuiNodes)
 
     const designJsonFile = jsonToFile(rawDesignJson, 'design.json')
     const devJsonFile    = jsonToFile(rawDevContent,  'arkui.json')
@@ -1064,13 +1113,15 @@ async function loadHistoryVersion(rawVersion, deviceType) {
   devPreview.value        = null
   designPreview.value     = null
 
+  const _allArkui  = devParsed.nodes    ?? []
+  const _allDesign = designParsed.nodes ?? []
   result.value = {
-    pairs,
+    pairs:                resolvePairsToNodes(pairs, _allDesign, _allArkui),
     diffs,
     canvas:               { arkui: devParsed.canvas ?? designParsed.canvas, design: designParsed.canvas ?? devParsed.canvas },
     stats:                { errorCount, warningCount },
-    allArkuiNodes:        devParsed.nodes  ?? [],
-    allDesignNodes:       designParsed.nodes ?? [],
+    allArkuiNodes:        _allArkui,
+    allDesignNodes:       _allDesign,
     unmatchedDesignNodes: [],
   }
   blobUrls.value = {
@@ -1255,6 +1306,7 @@ async function runUpload(platform) {
       uploadFiles.value.arkuiImage,
       platform || currentPlatform.value,
     )
+    result.value.pairs = resolvePairsToNodes(result.value.pairs, result.value.allDesignNodes, result.value.allArkuiNodes)
     ElMessage.success('分析完成')
     submitResult()
   } catch (e) { ElMessage.error(`分析失败：${e.response?.data?.error || e.message}`) }

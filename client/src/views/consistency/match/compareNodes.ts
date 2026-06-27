@@ -1,5 +1,7 @@
 /** 前端节点样式对比（用于 debugger 模式手动选节点后的即时对比） */
 
+import { parseOverrideValue, getNodeStyleRawValue } from './overrideValidator'
+
 export interface SimpleNode {
   id: string
   type: 'text' | 'container'
@@ -12,10 +14,17 @@ export interface SimpleNode {
 }
 
 export interface NodeDiff {
-  property: string
-  label: string
+  property:    string
+  label:       string
   designValue: string
-  devValue: string
+  devValue:    string
+  _isManual?:  boolean
+}
+
+/** 人工覆盖：key → 用户输入的原始字符串（哪侧 Inspector 填的就覆盖哪侧的实际值） */
+export interface CompareOverrides {
+  design?: Record<string, string>
+  dev?:    Record<string, string>
 }
 
 // ── 容差 ──────────────────────────────────────────────────────────────────────
@@ -179,12 +188,37 @@ function diffShadow(out: NodeDiff[], dv: any, av: any) {
 
 // ── 主函数 ────────────────────────────────────────────────────────────────────
 
+// 属性名 → 中文标签（用于 _isManual diff 的 label 字段）
+const PROP_LABELS: Record<string, string> = {
+  fontSize:        '字号',
+  fontWeight:      '字重',
+  fontColor:       '字色',
+  fontFamily:      '字体',
+  textAlign:       '对齐',
+  lineHeight:      '行高',
+  letterSpacing:   '字间距',
+  backgroundColor: '填充色',
+  opacity:         '不透明度',
+  borderRadius:    '圆角',
+  borderWidth:     '描边宽度',
+  borderColor:     '描边颜色',
+  padding:         '内边距',
+  itemSpacing:     '间距',
+  shadow:          '阴影',
+  blur:            '模糊',
+}
+
 /**
  * 比对设计稿节点与开发侧节点的样式差异
  * @param designNode  设计侧节点
  * @param devNode     开发侧节点
+ * @param overrides   人工覆盖：哪侧 Inspector 填的就覆盖哪侧的实际值
  */
-export function compareNodeStyles(designNode: SimpleNode, devNode: SimpleNode): NodeDiff[] {
+export function compareNodeStyles(
+  designNode: SimpleNode,
+  devNode:    SimpleNode,
+  overrides:  CompareOverrides = {},
+): NodeDiff[] {
   const out: NodeDiff[] = []
   const ds = designNode.style || {}
   const as_ = devNode.style || {}
@@ -209,5 +243,57 @@ export function compareNodeStyles(designNode: SimpleNode, devNode: SimpleNode): 
     diffShadow(out,       ds.shadow,  as_.shadow)
   }
 
+  // 处理人工覆盖（覆盖哪侧的值就用哪侧新值与对侧比对，零容差，标记 _isManual）
+  applyOverrides(out, 'design', overrides.design ?? {}, designNode, devNode)
+  applyOverrides(out, 'dev',    overrides.dev    ?? {}, designNode, devNode)
+
   return out
+}
+
+function applyOverrides(
+  out:        NodeDiff[],
+  side:       'design' | 'dev',
+  overrides:  Record<string, string>,
+  designNode: SimpleNode,
+  devNode:    SimpleNode,
+) {
+  for (const [key, rawVal] of Object.entries(overrides)) {
+    if (!rawVal.trim()) continue
+
+    const parsedVal = parseOverrideValue(key, rawVal)
+
+    // 取对侧现有值
+    const otherNode = side === 'design' ? devNode : designNode
+    const otherRaw  = getNodeStyleRawValue(otherNode, key)
+
+    // 移除正常流程可能已产生的同 property diff（人工覆盖优先）
+    const existIdx = out.findIndex(d =>
+      d.property === key ||
+      (key === 'borderColor' && d.property === 'border.color') ||
+      (key === 'borderWidth' && d.property === 'borderWidth')
+    )
+    if (existIdx >= 0) out.splice(existIdx, 1)
+
+    // 零容差严格对比（字符串化比较）
+    const myStr    = valToString(parsedVal)
+    const otherStr = valToString(otherRaw)
+    if (myStr === otherStr) continue   // 相等则不输出（人工确认一致）
+
+    const designValue = side === 'design' ? myStr : otherStr
+    const devValue    = side === 'dev'    ? myStr : otherStr
+
+    out.push({
+      property:    key,
+      label:       PROP_LABELS[key] ?? key,
+      designValue,
+      devValue,
+      _isManual:   true,
+    })
+  }
+}
+
+function valToString(val: any): string {
+  if (val == null) return ''
+  if (typeof val === 'object') return JSON.stringify(val)
+  return String(val)
 }

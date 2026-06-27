@@ -85,6 +85,7 @@
         <div class="diff-card-head" @click="expandFold(foldKey(d))">
           <div class="diff-card-title">
             <span v-if="d.confidence === 'low'" class="diff-low-badge">仅参考</span>
+            <span v-if="d._isManual" class="diff-manual-badge">人工</span>
             <span class="diff-card-name" :title="cardName(d)">{{ cardName(d) }}</span>
           </div>
           <span class="diff-card-ops">
@@ -679,6 +680,18 @@ function issueLabel(property) {
   padding: 2px 8px;
   background: rgba(208, 216, 253, 0.50);
   color: #1F55B5;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.diff-manual-badge {
+  flex-shrink: 0;
+  height: 24px;
+  padding: 2px 8px;
+  background: rgba(250, 140, 22, 0.12);
+  color: #FA8C16;
   border-radius: 4px;
   font-size: 10px;
   line-height: 20px;

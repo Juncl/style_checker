@@ -183,13 +183,89 @@
   height: 28px;
   font-size: 12px;
 }
-.extra-input {
+.extra-input-wrap {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.extra-input {
+  width: 100%;
 }
 .extra-input .el-input__wrapper {
   height: 28px;
   font-size: 12px;
+}
+.extra-input--error .el-input__wrapper {
+  box-shadow: 0 0 0 1px #FF4D4F inset !important;
+}
+.extra-input--saved .el-input__wrapper {
+  background: transparent;
+  box-shadow: none !important;
+  cursor: default;
+}
+.extra-error-tip {
+  font-size: 10px;
+  color: #FF4D4F;
+  line-height: 1.2;
+  padding: 0 2px;
+}
+
+/* 确认/删除共用基础样式 */
+.extra-action-btn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  border-radius: var(--octo-radius-sm, 4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 150ms ease;
+  padding: 0;
+}
+
+/* 绿勾：默认灰色禁用 */
+.extra-confirm-btn {
+  color: #BFBFBF;
+  cursor: default;
+}
+.extra-confirm-btn--active {
+  color: #52C41A;
+  cursor: pointer;
+}
+.extra-confirm-btn--active:hover {
+  background: rgba(82, 196, 26, 0.12);
+}
+
+/* 删除：hover 变红 */
+.extra-delete-btn {
+  color: var(--octo-text-tertiary, #999);
+  cursor: pointer;
+}
+.extra-delete-btn:hover {
+  background: rgba(255, 77, 79, 0.1);
+  color: #FF4D4F;
+}
+
+/* 已保存行：轻微区分背景 */
+.prop-row--saved {
+  background: var(--octo-bg-light);
+}
+.prop-row--saved:hover {
+  background: var(--octo-bg-light);
+}
+/* 已保存行的 el-select 禁用态去掉灰色遮罩感 */
+.prop-row--saved .extra-select :deep(.el-input__wrapper) {
+  background: transparent;
+  box-shadow: none !important;
+  cursor: default;
+}
+.prop-row--saved .extra-select :deep(.el-input__inner) {
+  color: var(--octo-text-primary);
+  -webkit-text-fill-color: var(--octo-text-primary);
 }
 
 .prop-key {
