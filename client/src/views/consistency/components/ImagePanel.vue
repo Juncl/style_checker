@@ -419,7 +419,14 @@ function onMouseMove(e) {
   if (boxDrag.value) return   // 框选中，跳过 hover
   const coords = getCanvasCoords(e)
   if (!coords) return
-  const hit = findHitNode(coords.px, coords.py)
+  let hit = findHitNode(coords.px, coords.py)
+  // 对比激活时，白色遮罩覆盖区域（选中范围外）不触发 hover
+  if (props.compareActive && hit) {
+    const inSelected = boxHitIds.value.size > 0
+      ? boxHitIds.value.has(hit.id)
+      : hit.id === localSelectedId.value
+    if (!inSelected) hit = null
+  }
   const newId = hit?.id ?? null
   if (newId !== hoveredId.value) {
     hoveredId.value = newId
