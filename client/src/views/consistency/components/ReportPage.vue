@@ -375,10 +375,12 @@ watch(
 function toggleDevSwitch() {
   nodeCanvasMode.value = nodeCanvasMode.value === 'select' ? 'default' : 'select'
   if (nodeCanvasMode.value === 'default') {
-    localArkuiId.value       = null
-    localDesignId.value      = null
+    localArkuiId.value        = null
+    localDesignId.value       = null
     localArkuiNodeList.value  = []
     localDesignNodeList.value = []
+    pendingDiffs.value        = null
+    emit('temp-diffs', null)
   }
   emit('dev-switch-change', nodeCanvasMode.value === 'select')
 }

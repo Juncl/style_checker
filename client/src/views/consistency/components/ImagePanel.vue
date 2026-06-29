@@ -298,6 +298,13 @@ watch(() => props.debugPipelineVisible,  () => nextTick(draw))
 watch(() => props.debugVisible,          () => nextTick(draw))
 watch(() => props.externalHoveredId,     () => nextTick(draw))
 watch(() => props.compareActive,         () => nextTick(draw))
+watch(() => props.boxSelectMode, (on) => {
+  if (!on) {
+    boxHitIds.value       = new Set()
+    localSelectedId.value = null
+    nextTick(draw)
+  }
+})
 watch(() => props.debugPairMap,  () => nextTick(draw), { deep: true })
 watch(() => props.inspectorNode?.id, () => {
   inspectorDragPos.value = null
@@ -348,6 +355,22 @@ function hitNodesAt(px, py) {
 
 function findHitNode(px, py) {
   return hitNodesAt(px, py)[0] ?? null
+}
+
+/** 判断节点在框选区域内是否有至少一个点可被 hover 到（5 点采样） */
+function canHoverInSel(node, sel) {
+  const ix  = Math.max(node.rect.x, sel.x)
+  const iy  = Math.max(node.rect.y, sel.y)
+  const ix2 = Math.min(node.rect.x + node.rect.w, sel.x + sel.w)
+  const iy2 = Math.min(node.rect.y + node.rect.h, sel.y + sel.h)
+  const pts = [
+    [(ix + ix2) / 2, (iy + iy2) / 2],
+    [ix + 1,  iy + 1 ],
+    [ix2 - 1, iy + 1 ],
+    [ix + 1,  iy2 - 1],
+    [ix2 - 1, iy2 - 1],
+  ]
+  return pts.some(([px, py]) => findHitNode(px, py)?.id === node.id)
 }
 
 function hitTypePriority(node) {
@@ -490,7 +513,8 @@ function onBoxMove(e) {
   const hits = props.nodes.filter(n =>
     n.visible !== false && !n.visualOccluded && n.rect && rectsIntersect(sel, n.rect) &&
     !(n.rect.x >= -2 && n.rect.x <= 2 && n.rect.y >= -2 && n.rect.y <= 2 &&
-      n.rect.w >= props.canvasW - 2 && n.rect.h >= props.canvasH - 2)
+      n.rect.w >= props.canvasW - 2 && n.rect.h >= props.canvasH - 2) &&
+    canHoverInSel(n, sel)
   )
   boxHitIds.value = new Set(hits.map(n => n.id))
   draw()
@@ -506,6 +530,7 @@ function finishBox() {
   if (!boxDrag.value) return
   if (suppressClick && boxHitIds.value.size > 0) {
     const selectedNodes = props.nodes.filter(n => boxHitIds.value.has(n.id))
+    console.log('[box-select] 选中节点:', selectedNodes.map(n => ({ id: n.id, name: n.name, type: n.type })))
     emit('box-select', selectedNodes)
   }
   boxDrag.value = null
