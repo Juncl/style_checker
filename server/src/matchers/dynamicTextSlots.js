@@ -83,12 +83,29 @@ export function matchAlignedTextRows(designNodes, arkuiNodes, usedArkui, matched
 }
 
 // bitmask DP 全局最优行配对（状态：di × usedA_mask），复杂度 O(m·2^n)，行数通常 ≤ 8 完全可行
+// 行数超过 12 时退化为贪心，避免 web 侧行数多时指数爆炸（30s+ 退化）
 function maxWeightRowMatch(designRows, arkuiRows, anchors, H, designH) {
   const m = designRows.length
   const n = arkuiRows.length
   if (!m || !n) return []
 
   const scores = designRows.map(dr => arkuiRows.map(ar => rowScore(dr, ar, anchors, H, designH)))
+
+  if (n > 12 || m > 12) {
+    const edges = []
+    for (let di = 0; di < m; di++)
+      for (let ai = 0; ai < n; ai++)
+        if (scores[di][ai] >= ROW_MATCH_THRESHOLD) edges.push({ di, ai, s: scores[di][ai] })
+    edges.sort((a, b) => b.s - a.s)
+    const usedD = new Set(), usedA = new Set(), result = []
+    for (const { di, ai } of edges) {
+      if (usedD.has(di) || usedA.has(ai)) continue
+      usedD.add(di); usedA.add(ai)
+      result.push({ dRow: designRows[di], aRow: arkuiRows[ai] })
+    }
+    return result
+  }
+
   const memo = new Map()
 
   function solve(di, usedA) {
