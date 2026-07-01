@@ -95,13 +95,16 @@ function blindMatch(rematchDev, rematchDesign, nodeAnchorData, textMatchResult, 
     const topK = anchorEntries.slice(0, TOP_K)
     if (topK.length === 0) continue
 
-    // 对每个锚点对，过滤 rematchDesign 里与 devNode 一致性匹配的 design 节点
-    const groups = topK.map(({ devRelation, deAnchor }) =>
-      rematchDesign.filter(dn =>
-        dn.type === devNode.type &&
-        nodeAnchorRelation(dn.rect, deAnchor.rect) === devRelation
-      )
-    )
+    // 对每个锚点对，过滤通过包含一致性 + 方位一致性的 design 节点
+    const groups = topK.map(({ devRelation, devAnchor, deAnchor }) => {
+      const dirDev = octant(cx(devNode), cy(devNode), cx(devAnchor), cy(devAnchor))
+      return rematchDesign.filter(dn => {
+        if (dn.type !== devNode.type) return false
+        if (nodeAnchorRelation(dn.rect, deAnchor.rect) !== devRelation) return false
+        const dirDe = octant(cx(dn), cy(dn), cx(deAnchor), cy(deAnchor))
+        return octantDist(dirDev, dirDe) < 3
+      })
+    })
 
     // 取 5 组的交集
     const intersectionIds = groups.reduce((acc, group) => {
