@@ -603,7 +603,8 @@ function issueLabel(property) {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 16px 16px;
+  padding: 0px 16px 16px 16px;
+  margin-top: 16px
 }
 
 .diff-empty {

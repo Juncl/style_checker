@@ -37,7 +37,7 @@
 
   <DiffReport
     v-show="!debugMode || rightTab === 'diff'"
-    :diffs="tempDiffs ?? result.diffs"
+    :diffs="mergedDiffs"
     :unmatched="tempDiffs ? [] : result.unmatchedDesignNodes"
     :active-pair="activePairForDiff"
     :hover-pair="hoverPairForDiff"
@@ -112,6 +112,7 @@ const props = defineProps({
   closeHistoryKey:   { type: Number,             default: 0 },
   platform:          { type: String,             default: 'hmPhone' },
   tempDiffs:         { type: Array,              default: null },
+  mergedDiffs:       { type: Array,              default: () => [] },
 })
 
 const emit = defineEmits([

@@ -250,22 +250,14 @@
   color: #FF4D4F;
 }
 
-/* 已保存行：轻微区分背景 */
+/* 已保存行：与普通 prop-row 样式一致 */
 .prop-row--saved {
-  background: var(--octo-bg-light);
+  background: transparent;
+  gap: 16px;
+  padding: 8px 16px;
 }
 .prop-row--saved:hover {
   background: var(--octo-bg-light);
-}
-/* 已保存行的 el-select 禁用态去掉灰色遮罩感 */
-.prop-row--saved .extra-select :deep(.el-input__wrapper) {
-  background: transparent;
-  box-shadow: none !important;
-  cursor: default;
-}
-.prop-row--saved .extra-select :deep(.el-input__inner) {
-  color: var(--octo-text-primary);
-  -webkit-text-fill-color: var(--octo-text-primary);
 }
 
 .prop-key {

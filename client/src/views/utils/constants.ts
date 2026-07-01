@@ -25,24 +25,24 @@ export const GUIDE_LINKS = {
 
 export const TEXT_STYLE_OPTIONS = [
   { value: 'fontSize',      label: '字号' },
+  { value: 'fontFamily',    label: '字体' },
   { value: 'fontWeight',    label: '字重' },
   { value: 'fontColor',     label: '颜色' },
-  { value: 'fontFamily',    label: '字体' },
-  { value: 'textAlign',     label: '对齐' },
-  { value: 'lineHeight',    label: '行高' },
-  { value: 'letterSpacing', label: '字间距' },
+  { value: 'shadow',        label: '阴影' },
+  { value: 'blur',          label: '模糊' },
+  { value: 'opacity',       label: '不透明度' },
+  { value: 'other',         label: '其他' },
 ]
 
 export const CONTAINER_STYLE_OPTIONS = [
   { value: 'backgroundColor', label: '填充' },
-  { value: 'opacity',         label: '不透明度' },
   { value: 'borderRadius',    label: '圆角' },
   { value: 'borderWidth',     label: '描边宽度' },
   { value: 'borderColor',     label: '描边颜色' },
-  { value: 'padding',         label: '内边距' },
-  { value: 'itemSpacing',     label: '间距' },
   { value: 'shadow',          label: '阴影' },
   { value: 'blur',            label: '模糊' },
+  { value: 'opacity',         label: '不透明度' },
+  { value: 'other',           label: '其他' },
 ]
 
 export const FILE_SLOTS = [

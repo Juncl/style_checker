@@ -18,7 +18,7 @@
 
     <Transition name="inspector-fade">
       <div
-        v-if="isSpacingInspector || (inspectorNode && (displayStyle.length || debugMode))"
+        v-if="isSpacingInspector || (inspectorNode && (displayStyle.length || debugMode || editMode))"
         ref="inspectorRef"
         class="node-inspector"
         :class="{ dragging: isDraggingInspector, 'inspector--design': side === 'design' }"
@@ -36,7 +36,7 @@
           </span>
           <span v-if="debugMode && !isSpacingInspector" class="inspector-badge">{{ inspectorNode?.rawType || inspectorNode?.type }}</span>
           <button
-            v-if="!isSpacingInspector"
+            v-if="!isSpacingInspector && editMode"
             class="inspector-add-btn"
             :disabled="showPendingRow"
             title="添加自定义对比项"
@@ -77,20 +77,11 @@
             <div
               v-for="row in savedRows"
               :key="row.key"
-              class="prop-row prop-row--extra prop-row--saved"
+              class="prop-row prop-row--saved"
               @click.stop
             >
-              <el-select :model-value="row.key" class="extra-select" disabled>
-                <el-option
-                  v-for="opt in allStyleOptions"
-                  :key="opt.value"
-                  :value="opt.value"
-                  :label="opt.label"
-                />
-              </el-select>
-              <div class="extra-input-wrap">
-                <el-input :model-value="row.rawValue" class="extra-input extra-input--saved" readonly />
-              </div>
+              <span class="prop-key">{{ rowLabel(row.key) }}</span>
+              <span class="prop-val">{{ row.rawValue }}</span>
               <button class="extra-action-btn extra-delete-btn" title="删除" @click.stop="deleteRow(row.key)">
                 <svg viewBox="0 0 16 16" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -163,6 +154,7 @@ const props = defineProps({
   hoverHighlightPairs: { type: Array, default: () => [] },
   platform:            { type: String, default: 'hmPhone' },
   boxSelectMode:       { type: Boolean, default: false },
+  editMode:            { type: Boolean, default: false },
   compareActive:       { type: Boolean, default: false },
 })
 
@@ -1200,12 +1192,19 @@ const pendingKey     = ref('')
 const pendingValue   = ref('')
 const savedRows      = ref([])   // Array<{ key: string, rawValue: string }>
 
-const extraRowOptions = computed(() =>
-  props.inspectorNode?.type === 'text' ? TEXT_STYLE_OPTIONS : CONTAINER_STYLE_OPTIONS
-)
+const extraRowOptions = computed(() => {
+  const savedKeys = new Set(savedRows.value.map(r => r.key))
+  const baseOptions = props.inspectorNode?.type === 'text' ? TEXT_STYLE_OPTIONS : CONTAINER_STYLE_OPTIONS
+  return baseOptions.filter(opt => !savedKeys.has(opt.value))
+})
 
 // 保存行展示用：合并所有属性选项（已保存行可能来自任意类型）
 const allStyleOptions = computed(() => [...TEXT_STYLE_OPTIONS, ...CONTAINER_STYLE_OPTIONS])
+
+function rowLabel(key) {
+  const opt = allStyleOptions.value.find(o => o.value === key)
+  return opt?.label || key
+}
 
 // 实时校验待确认行
 const extraError = computed(() => {

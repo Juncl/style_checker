@@ -155,6 +155,7 @@
         :close-history-key="closeHistoryKey"
         :platform="currentPlatform"
         :temp-diffs="tempDiffs"
+        :merged-diffs="mergedDiffs"
         @diff-select="onDiffSelect"
         @diff-hover="hoveredDiffPair = $event"
         @design-node-click="onDesignNodeClick"
@@ -200,6 +201,7 @@ import { UXLINT_CHECKLIST_EVENT } from './init/detectIframe'
 import { processUxlintCheckList } from './init/processUxlintCheckList'
 import { setUrlParams, removeUrlParams } from '../utils/urlParams'
 import { parseOverrideValue } from './match/overrideValidator'
+import { generateManualDiff, formatStyleValue } from './match/compareNodes'
 import { savePlatform } from './init/restorePlatform'
 import AppLayout from './components/AppLayout.vue'
 import AiChatDrawer from './components/AiChatDrawer.vue'
@@ -230,6 +232,73 @@ const rerunLoading      = ref(false)
 const reportPageRef     = ref(null)
 const devSwitchActive   = ref(false)
 const tempDiffs         = ref(null)
+const manualDiffs       = ref([])   // 人工覆盖产生的差异卡片
+
+function upsertManualDiff(newDiff) {
+  const idx = manualDiffs.value.findIndex(d =>
+    d.property === newDiff.property &&
+    d.designNodeId === newDiff.designNodeId &&
+    d.arkuiNodeId === newDiff.arkuiNodeId
+  )
+  if (idx >= 0) {
+    manualDiffs.value[idx] = newDiff
+  } else {
+    manualDiffs.value.push(newDiff)
+  }
+  console.log('[manual-diff] 生成卡片:', JSON.stringify({
+    property:   newDiff.property,
+    _isManual:  newDiff._isManual,
+    designValue:   newDiff.designValue,
+    arkuiValue:    newDiff.arkuiValue,
+    designNodeId:  newDiff.designNodeId,
+    arkuiNodeId:   newDiff.arkuiNodeId,
+    textContent:   newDiff.textContent,
+    action:       idx >= 0 ? '覆盖' : '新增',
+  }, null, 2))
+}
+
+function removeManualDiffByMatch(designId, arkuiId, property) {
+  manualDiffs.value = manualDiffs.value.filter(d =>
+    !(d.property === property && d.designNodeId === designId && d.arkuiNodeId === arkuiId)
+  )
+}
+
+const mergedDiffs = computed(() => {
+  const base = tempDiffs.value ?? result.value?.diffs ?? []
+  const manual = manualDiffs.value
+  const merged = [...base]
+  for (const md of manual) {
+    const idx = merged.findIndex(d =>
+      d.property === md.property &&
+      d.designNodeId === md.designNodeId &&
+      d.arkuiNodeId === md.arkuiNodeId
+    )
+    if (idx >= 0) {
+      console.log('[merged-diffs] 人工卡片覆盖算法卡片:', {
+        property: md.property,
+        old: { designValue: merged[idx].designValue, arkuiValue: merged[idx].arkuiValue, _isManual: merged[idx]._isManual ?? false },
+        new: { designValue: md.designValue, arkuiValue: md.arkuiValue, _isManual: md._isManual ?? false },
+      })
+      merged[idx] = md
+    } else {
+      console.log('[merged-diffs] 人工卡片新增:', {
+        property: md.property,
+        designValue: md.designValue,
+        arkuiValue: md.arkuiValue,
+        designNodeId: md.designNodeId,
+        arkuiNodeId: md.arkuiNodeId,
+      })
+      merged.push(md)
+    }
+  }
+  console.log('[merged-diffs] 合并后总条数:', merged.length, '其中算法:', base.length, '人工:', manual.length)
+  return merged
+})
+
+watch(() => result.value, () => {
+  manualDiffs.value = []
+})
+
 const devReuploading    = ref(false)
 const designReuploading = ref(false)
 
@@ -884,6 +953,34 @@ function onSaveManualStyle({ side, nodeId, key, parsedValue }) {
   const node  = nodes?.find(n => n.id === nodeId)
   if (!node) return
   node.manualStyle = { ...(node.manualStyle || {}), [key]: parsedValue }
+
+  const mySide    = side === 'design' ? 'design' : 'arkui'
+  const otherSide = side === 'design' ? 'arkui' : 'design'
+  const pairs = result.value?.pairs ?? []
+  const pair = pairs.find(p => p[mySide]?.id === nodeId)
+
+  if (pair) {
+    const manualDiff = generateManualDiff(pair, key, currentPlatform.value)
+    if (manualDiff) {
+      upsertManualDiff(manualDiff)
+    } else {
+      removeManualDiffByMatch(pair.design?.id ?? null, pair.arkui?.id ?? null, key)
+    }
+  } else {
+    const diff = {
+      property: key,
+      [`${mySide}Value`]: formatStyleValue(key, parsedValue, currentPlatform.value),
+      [`${otherSide}Value`]: '—',
+      severity: 'warning',
+      confidence: 'high',
+      [`${mySide}NodeId`]: nodeId,
+      [`${otherSide}NodeId`]: null,
+      _isManual: true,
+      textContent: node.textContent ?? node.name ?? '',
+      designName: side === 'design' ? (node.name ?? '') : undefined,
+    }
+    upsertManualDiff(diff)
+  }
 }
 
 function onRemoveManualStyle({ side, nodeId, key }) {
@@ -893,6 +990,25 @@ function onRemoveManualStyle({ side, nodeId, key }) {
   const updated = { ...node.manualStyle }
   delete updated[key]
   node.manualStyle = Object.keys(updated).length ? updated : undefined
+
+  const mySide    = side === 'design' ? 'design' : 'arkui'
+  const otherSide = side === 'design' ? 'arkui' : 'design'
+  const pairs = result.value?.pairs ?? []
+  const pair = pairs.find(p => p[mySide]?.id === nodeId)
+  if (pair) {
+    const manualDiff = generateManualDiff(pair, key, currentPlatform.value)
+    if (manualDiff) {
+      upsertManualDiff(manualDiff)
+    } else {
+      removeManualDiffByMatch(pair.design?.id ?? null, pair.arkui?.id ?? null, key)
+    }
+  } else {
+    removeManualDiffByMatch(
+      mySide === 'design' ? nodeId : null,
+      mySide === 'arkui' ? nodeId : null,
+      key
+    )
+  }
 }
 
 function applyExtraOverride(nodes, override) {
@@ -1344,9 +1460,24 @@ function onDiffSelect(diff) {
     const pair = result.value?.pairs?.find(p =>
       p.design.id === diff.designNodeId && p.arkui.id === diff.arkuiNodeId
     )
-    selectedPair.value = pair || null
+    if (pair) {
+      selectedPair.value = pair
+    } else if (diff.designNodeId || diff.arkuiNodeId) {
+      const designNode = diff.designNodeId
+        ? result.value?.allDesignNodes?.find(n => n.id === diff.designNodeId) ?? null
+        : null
+      const arkuiNode = diff.arkuiNodeId
+        ? result.value?.allArkuiNodes?.find(n => n.id === diff.arkuiNodeId) ?? null
+        : null
+      selectedPair.value = {
+        matchDetail: { type: 'unmatched' },
+        design: designNode,
+        arkui:  arkuiNode,
+      }
+    } else {
+      selectedPair.value = null
+    }
   }
-  // spacing diff 不触发节点高亮
 }
 </script>
 

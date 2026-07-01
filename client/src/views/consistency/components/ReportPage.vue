@@ -86,18 +86,44 @@
 
   <!-- ── 中间主区：开发侧 + 设计侧 ── -->
   <div class="up-columns">
-    <!-- 开发侧 -->
-    <section class="up-col up-col--dev">
-      <!-- 悬浮开关（右上角，仅 debugger 模式） -->
-      <div v-if="debugMode" class="dev-float-switch" @click.stop>
+    <!-- 悬浮工具栏（底部居中） -->
+    <div
+      :class="['dev-float-bar', { 'dev-float-bar--collapsed': floatBarCollapsed }]"
+      @click.stop="onFloatBarClick"
+    >
+      <div class="float-bar-row" :class="{ 'float-bar-row--hidden': floatBarCollapsed }">
         <button
-          class="octo-toggle"
-          :class="{ 'octo-toggle--on': nodeCanvasMode === 'select' }"
-          @click="toggleDevSwitch"
+          class="float-icon-btn"
+          title="圆形"
+          :class="{ 'float-icon-btn--active': nodeCanvasMode === 'edit' }"
+          @click="onCircleClick"
         >
-          <span class="octo-toggle-thumb"></span>
+          <EditModeIcon />
+        </button>
+        <button
+          class="float-icon-btn"
+          title="矩形"
+          :class="{ 'float-icon-btn--active': nodeCanvasMode === 'select' }"
+          @click="onRectClick"
+        >
+          <SelectModeIcon />
+        </button>
+        <div class="float-bar-sep"></div>
+        <button
+          class="float-icon-btn"
+          title="收起"
+          @click.stop="onTriangleClick"
+        >
+          <MoveDownIcon />
         </button>
       </div>
+      <div class="float-bar-row float-bar-row--collapsed" :class="{ 'float-bar-row--visible': floatBarCollapsed }">
+        <MoveUpIcon />
+      </div>
+    </div>
+
+    <!-- 开发侧 -->
+    <section class="up-col up-col--dev">
 
       <div
         :class="['up-stage', devReuploading && !devPreview && !devPreviewLoading ? '' : 'up-stage--report']"
@@ -156,6 +182,7 @@
           :debug-pair-map="debugPairMap"
 
           :box-select-mode="nodeCanvasMode === 'select'"
+          :edit-mode="nodeCanvasMode === 'edit'"
           :compare-active="compareActive"
           @node-click="onDevNodeClick"
           @node-hover="onArkuiHover"
@@ -229,6 +256,7 @@
           :debug-pair-map="debugPairMap"
 
           :box-select-mode="nodeCanvasMode === 'select'"
+          :edit-mode="nodeCanvasMode === 'edit'"
           :compare-active="compareActive"
           @node-click="onDesignNodeClickLocal"
           @node-hover="onDesignHover"
@@ -253,6 +281,10 @@ import OctoLoading from './common/OctoLoading.vue'
 import ImagePanel from './ImagePanel.vue'
 import DevUploadCard from './DevUploadCard.vue'
 import DesignUploadCard from './DesignUploadCard.vue'
+import EditModeIcon from '@/views/svg-vue/EditModeIcon.vue'
+import SelectModeIcon from '@/views/svg-vue/SelectModeIcon.vue'
+import MoveDownIcon from '@/views/svg-vue/MoveDownIcon.vue'
+import MoveUpIcon from '@/views/svg-vue/MoveUpIcon.vue'
 import { validationBg, confidenceText, confidenceTagType } from '../../utils/tools.ts'
 import { compareNodeStyles } from '../match/compareNodes.ts'
 import { normalizeSelection } from '../match/normalizeSelection.ts'
@@ -315,7 +347,8 @@ const devPanelRef    = ref(null)
 const designPanelRef = ref(null)
 const debugMappingExpanded = ref(false)
 
-const nodeCanvasMode     = ref('default')   // 'default' | 'select'
+const nodeCanvasMode     = ref('default')   // 'default' | 'select' | 'edit'
+const floatBarCollapsed  = ref(false)
 const localArkuiId       = ref(null)
 const localDesignId      = ref(null)
 const localArkuiNodeList  = ref([])    // 开发侧框选节点列表
@@ -372,17 +405,43 @@ watch(
   () => clearCompare()
 )
 
-function toggleDevSwitch() {
-  nodeCanvasMode.value = nodeCanvasMode.value === 'select' ? 'default' : 'select'
-  if (nodeCanvasMode.value === 'default') {
-    localArkuiId.value        = null
-    localDesignId.value       = null
-    localArkuiNodeList.value  = []
-    localDesignNodeList.value = []
-    pendingDiffs.value        = null
-    emit('temp-diffs', null)
+function clearSelectState() {
+  localArkuiId.value        = null
+  localDesignId.value       = null
+  localArkuiNodeList.value  = []
+  localDesignNodeList.value = []
+  pendingDiffs.value        = null
+  emit('temp-diffs', null)
+  emit('dev-switch-change', false)
+}
+
+function onCircleClick() {
+  if (nodeCanvasMode.value === 'edit') {
+    nodeCanvasMode.value = 'default'
+  } else {
+    if (nodeCanvasMode.value === 'select') clearSelectState()
+    nodeCanvasMode.value = 'edit'
   }
-  emit('dev-switch-change', nodeCanvasMode.value === 'select')
+}
+
+function onRectClick() {
+  if (nodeCanvasMode.value === 'select') {
+    nodeCanvasMode.value = 'default'
+    clearSelectState()
+  } else {
+    nodeCanvasMode.value = 'select'
+    emit('dev-switch-change', true)
+  }
+}
+
+function onFloatBarClick() {
+  if (floatBarCollapsed.value) {
+    floatBarCollapsed.value = false
+  }
+}
+
+function onTriangleClick() {
+  floatBarCollapsed.value = true
 }
 
 function onDevBoxSelect(nodes) {
@@ -591,52 +650,106 @@ defineExpose({ runCompare, getActiveOverrides })
   position: relative;
 }
 
-.dev-float-switch {
+.dev-float-bar {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 20;
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.90);
-  backdrop-filter: blur(6px);
-  padding: 4px 6px;
-  border-radius: 9999px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+  width: 136px;
+  height: 48px;
+  gap: 8px;
+  background: #F9F9F9;
+  padding: 8px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+  transition: width 450ms cubic-bezier(0.4, 0, 0.2, 1),
+              height 450ms cubic-bezier(0.4, 0, 0.2, 1),
+              padding 450ms cubic-bezier(0.4, 0, 0.2, 1),
+              gap 450ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.octo-toggle {
-  width: 38px;
-  height: 20px;
-  border-radius: 9999px;
-  border: none;
-  background: #D1D5DC;
-  padding: 0;
-  cursor: pointer;
-  position: relative;
-  transition: background 200ms ease;
-  outline: none;
+.float-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  transition: transform 450ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.octo-toggle--on {
-  background: #0067D1;
-}
-
-.octo-toggle-thumb {
+.float-bar-row--hidden {
+  transform: scale(0);
+  pointer-events: none;
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 9999px;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.20);
-  transition: transform 200ms ease;
+  transition: transform 0s;
 }
 
-.octo-toggle--on .octo-toggle-thumb {
-  transform: translateX(18px);
+.float-bar-row--collapsed {
+  transform: scale(0);
+  pointer-events: none;
+  transition: transform 0s;
 }
+
+.float-bar-row--visible {
+  transform: scale(1);
+  pointer-events: auto;
+  position: static;
+  transition: transform 450ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.float-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+  color: #191919;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.float-icon-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.float-icon-btn--active {
+  background: #E6F2FD;
+  color: var(--octo-primary, #0067D1);
+}
+
+.float-icon-btn--active:hover {
+  background: #E6F2FD;
+  color: var(--octo-primary, #0067D1);
+}
+
+.dev-float-bar--collapsed {
+  width: 44px;
+  height: 24px;
+  padding: 6px 16px;
+  gap: 0;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.dev-float-bar--collapsed svg {
+  color: rgba(0, 0, 0, 0.4);
+}
+
+.float-bar-sep {
+  width: 1px;
+  height: 12px;
+  background: rgba(0, 0, 0, 0.10);
+  flex-shrink: 0;
+}
+
 
 .phone-content--center {
   align-items: center;
