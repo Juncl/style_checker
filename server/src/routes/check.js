@@ -342,6 +342,7 @@ async function runCheck(designJson, devJson, caseId, assets = {}) {
         visualOcclusionReason: n.visualOcclusionReason || null,
         pixelVisibility: n.pixelVisibility || null,
         ocrVisibility: n.ocrVisibility || null,
+        semanticAsset: n.semanticAsset || null,
         matched: matchedIds.has(n.id),
       }))
     })(),
@@ -361,6 +362,7 @@ async function runCheck(designJson, devJson, caseId, assets = {}) {
         visualOccluded: !!n.visualOccluded,
         visualOcclusionReason: n.visualOcclusionReason || null,
         pixelVisibility: n.pixelVisibility || null,
+        compType: n.compType || null,
         matched: matchedIds.has(n.id),
       }))
     })(),
