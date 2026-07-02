@@ -98,7 +98,8 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 8px 16px;
+  height: 40px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--octo-border-separator);
   background: var(--octo-surface-page);
   flex-shrink: 0;
@@ -129,14 +130,12 @@
 .inspector-add-btn {
   margin-left: auto;
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  padding: 4px;
   border-radius: var(--octo-radius-sm);
   border: none;
   background: transparent;
   color: var(--octo-text-secondary);
-  font-size: 16px;
-  line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -144,8 +143,8 @@
   transition: all 150ms ease;
 }
 .inspector-add-btn:hover:not(:disabled) {
-  background: var(--octo-bg-light);
-  color: var(--octo-text-primary);
+  background: rgba(0,103,209,0.12);
+  color: var(--octo-primary);
 }
 .inspector-add-btn:disabled {
   opacity: 0.25;
@@ -170,22 +169,95 @@
 
 .prop-row--extra {
   gap: 8px;
-  padding: 6px 12px;
-  background: var(--octo-bg-light);
+  padding: 6px 16px;
+  background: transparent;
 }
-.prop-row--extra:hover { background: var(--octo-bg-light); }
+.prop-row--extra:hover { background: transparent; }
 
 .extra-select {
-  width: 88px;
+  width: 90px;
   flex-shrink: 0;
 }
-.extra-select .el-input__wrapper {
-  height: 28px;
-  font-size: 12px;
+.extra-select .el-input__wrapper,
+.extra-select .el-select__wrapper {
+  height: 32px;
+  font-size: 14px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px #C9C9C9 inset !important;
+  padding: 5px 12px;
+}
+.extra-select .el-input__wrapper:hover,
+.extra-select .el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px #0067D1 inset !important;
+}
+.extra-select .el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px #0067D1 inset, 0 0 0 1px #B8D9F9 !important;
+}
+.extra-select .el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px #0067D1 inset, 0 0 0 1px #B8D9F9 !important;
+}
+.extra-select .el-select__suffix,
+.extra-select .el-select__caret {
+  color: rgba(0,0,0,0.6) !important;
+}
+
+.extra-select .el-input__inner {
+  font-size: 14px;
+  color: #191919;
+  line-height: 22px;
+}
+.extra-select .el-input__inner::placeholder {
+  color: #AEAEAE;
+}
+
+/* el-select 下拉面板 */
+.extra-select-popper {
+  min-width: 120px !important;
+  border-radius: 6px !important;
+  box-shadow: 0px 4px 12px rgba(0,0,0,0.16) !important;
+}
+.extra-select-popper .el-select-dropdown {
+  padding: 4px;
+}
+.extra-select-popper .el-select-dropdown__wrap {
+  max-height: 250px;
+}
+.extra-select-popper .el-scrollbar__wrap {
+  margin-right: 0 !important;
+  margin-bottom: 0 !important;
+}
+.extra-select-popper .el-scrollbar__bar.is-vertical {
+  right: 0 !important;
+}
+.extra-select-popper .el-select-dropdown__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.extra-select-popper .el-popper__arrow {
+  display: none;
+}
+.extra-select-popper .el-select-dropdown__item {
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #191919;
+  line-height: 36px;
+}
+.extra-select-popper .el-select-dropdown__item:hover {
+  background: rgba(25,25,25,0.05) !important;
+}
+.extra-select-popper .el-select-dropdown__item.selected,
+.extra-select-popper .el-select-dropdown__item.is-selected {
+  background: #E6F2FD !important;
+  color: #0067D1 !important;
+  font-weight: 400 !important;
 }
 .extra-input-wrap {
   flex: 1;
   min-width: 0;
+  max-width: 100px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -193,60 +265,104 @@
 .extra-input {
   width: 100%;
 }
-.extra-input .el-input__wrapper {
-  height: 28px;
-  font-size: 12px;
+.extra-input :deep(.el-input__wrapper) {
+  height: 32px;
+  font-size: 14px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px #C9C9C9 inset !important;
+  padding: 0 12px;
 }
-.extra-input--error .el-input__wrapper {
-  box-shadow: 0 0 0 1px #FF4D4F inset !important;
+.extra-input :deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px #191919 inset !important;
 }
-.extra-input--saved .el-input__wrapper {
+.extra-input :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px #0067D1 inset !important;
+}
+.extra-input :deep(.el-input__inner) {
+  font-size: 14px;
+  color: #191919;
+}
+.extra-input :deep(.el-input__inner::placeholder) {
+  color: #AEAEAE;
+}
+.extra-input--error :deep(.el-input__wrapper) {
+  box-shadow: 0 0 0 1px #E02128 inset !important;
+}
+.extra-input--saved :deep(.el-input__wrapper) {
   background: transparent;
   box-shadow: none !important;
   cursor: default;
 }
 .extra-error-tip {
   font-size: 10px;
-  color: #FF4D4F;
+  color: #E02128;
   line-height: 1.2;
   padding: 0 2px;
 }
 
-/* 确认/删除共用基础样式 */
-.extra-action-btn {
+/* 编辑面板容器（行 + 操作按钮） */
+.extra-edit-panel {
+  padding-top: 4px;
+}
+
+/* 操作按钮行 */
+.extra-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 16px 8px;
+}
+
+.extra-cancel-btn,
+.extra-submit-btn {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 28px;
+  cursor: pointer;
+  transition: all 150ms ease;
+  border: none;
+}
+
+.extra-cancel-btn {
+  background: transparent;
+  color: #191919;
+  border: 1px solid #C9C9C9;
+}
+.extra-cancel-btn:hover {
+  border-color: var(--octo-primary);
+  color: var(--octo-primary);
+}
+
+.extra-submit-btn {
+  background: var(--octo-primary);
+  color: #fff;
+}
+.extra-submit-btn:hover {
+  background: #2E86DE;
+}
+.extra-submit-btn:disabled {
+  background: #8ABEF3;
+  color: #fff;
+  cursor: default;
+}
+
+/* 删除按钮 */
+.extra-delete-btn {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
   border: none;
   background: transparent;
-  border-radius: var(--octo-radius-sm, 4px);
+  color: var(--octo-text-tertiary, #999);
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 150ms ease;
-  padding: 0;
-}
-
-/* 绿勾：默认灰色禁用 */
-.extra-confirm-btn {
-  color: #BFBFBF;
-  cursor: default;
-}
-.extra-confirm-btn--active {
-  color: #52C41A;
-  cursor: pointer;
-}
-.extra-confirm-btn--active:hover {
-  background: rgba(82, 196, 26, 0.12);
-}
-
-/* 删除：hover 变红 */
-.extra-delete-btn {
-  color: var(--octo-text-tertiary, #999);
-  cursor: pointer;
 }
 .extra-delete-btn:hover {
-  background: rgba(255, 77, 79, 0.1);
   color: #FF4D4F;
 }
 

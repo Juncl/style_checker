@@ -42,7 +42,13 @@
             title="添加自定义对比项"
             @click.stop="showPendingRow = true"
             @pointerdown.stop
-          >+</button>
+          >
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2.76 10.0501L11.5567 1.25678C12.3433 0.466778 13.62 0.470111 14.4067 1.25678C15.1967 2.04344 15.1967 3.32011 14.4067 4.11011L5.61333 12.9034L1 14.6668L2.76 10.0501Z" stroke="currentColor" stroke-linejoin="round" stroke-width="1"/>
+              <path d="M10.8833 1.92676L13.7333 4.77676" stroke="currentColor" stroke-linecap="square" stroke-width="1"/>
+              <path d="M8.33325 14.8333L14.3333 14.8333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
+            </svg>
+          </button>
         </div>
         <div class="inspector-body">
           <!-- 间距模式 -->
@@ -83,41 +89,40 @@
               <span class="prop-key">{{ rowLabel(row.key) }}</span>
               <span class="prop-val">{{ row.rawValue }}</span>
               <button class="extra-action-btn extra-delete-btn" title="删除" @click.stop="deleteRow(row.key)">
-                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                 </svg>
               </button>
             </div>
             <!-- 待确认的新行（编辑中） -->
-            <div v-if="showPendingRow" class="prop-row prop-row--extra" @click.stop>
-              <el-select v-model="pendingKey" class="extra-select" placeholder="属性">
-                <el-option
-                  v-for="opt in extraRowOptions"
-                  :key="opt.value"
-                  :value="opt.value"
-                  :label="opt.label"
-                />
-              </el-select>
-              <div class="extra-input-wrap">
-                <el-input
-                  v-model="pendingValue"
-                  class="extra-input"
-                  :class="{ 'extra-input--error': extraError }"
-                  :placeholder="getInputPlaceholder(pendingKey)"
-                />
-                <span v-if="extraError" class="extra-error-tip">{{ extraError }}</span>
+            <div v-if="showPendingRow" class="extra-edit-panel" @click.stop>
+              <div class="prop-row prop-row--extra">
+                <el-select v-model="pendingKey" class="extra-select" popper-class="extra-select-popper" placeholder="属性">
+                  <el-option
+                    v-for="opt in extraRowOptions"
+                    :key="opt.value"
+                    :value="opt.value"
+                    :label="opt.label"
+                  />
+                </el-select>
+                <div class="extra-input-wrap">
+                  <el-input
+                    v-model="pendingValue"
+                    class="extra-input"
+                    :class="{ 'extra-input--error': extraError }"
+                    :placeholder="getInputPlaceholder(pendingKey)"
+                  />
+                  <span v-if="extraError" class="extra-error-tip">{{ extraError }}</span>
+                </div>
               </div>
-              <button
-                class="extra-action-btn extra-confirm-btn"
-                :class="{ 'extra-confirm-btn--active': canConfirm }"
-                :disabled="!canConfirm"
-                title="保存"
-                @click.stop="confirmExtra"
-              >
-                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M2.5 8.5l4 4 7-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </button>
+              <div class="extra-actions">
+                <button class="extra-cancel-btn" @click.stop="cancelExtra">取消</button>
+                <button
+                  class="extra-submit-btn"
+                  :disabled="!canConfirm"
+                  @click.stop="confirmExtra"
+                >确定</button>
+              </div>
             </div>
           </template>
         </div>
@@ -1225,7 +1230,7 @@ watch([pendingKey, pendingValue], ([key, val]) => {
   emit('extra-change', valid ? { nodeId, key, value: val.trim() } : null)
 })
 
-// 点击绿勾：保存到 savedRows，通知父组件写入节点树
+// 点击确认：保存到 savedRows，通知父组件写入节点树
 function confirmExtra() {
   if (!canConfirm.value) return
   const nodeId    = props.inspectorNode?.id
@@ -1238,13 +1243,20 @@ function confirmExtra() {
   if (idx >= 0) savedRows.value.splice(idx, 1, { key, rawValue })
   else          savedRows.value.push({ key, rawValue })
 
-  // 清空待确认行
+  // 清空待确认面板
   showPendingRow.value = false
   pendingKey.value     = ''
   pendingValue.value   = ''
   emit('extra-change', null)
 
   emit('save-manual-style', { nodeId, key, parsedValue: parsedVal })
+}
+
+function cancelExtra() {
+  showPendingRow.value = false
+  pendingKey.value     = ''
+  pendingValue.value   = ''
+  emit('extra-change', null)
 }
 
 // 点击删除：移出 savedRows，通知父组件删除节点树中对应字段

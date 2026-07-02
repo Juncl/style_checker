@@ -50,6 +50,7 @@
           <template v-else>
             <span class="deliverable-item-name" :title="item.name">{{ item.name }}</span>
             <span
+              v-if="allowEdit"
               class="deliverable-action-btn deliverable-edit-trigger"
               @click.stop="onEditClick(item)"
             >
@@ -208,6 +209,25 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   max-width: 280px;
   max-height: 360px;
   overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.deliverable-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.deliverable-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.deliverable-panel::-webkit-scrollbar-thumb {
+  background: #DFDFDF;
+  border-radius: 4px;
+  transition: background 150ms ease;
+}
+
+.deliverable-panel::-webkit-scrollbar-thumb:hover {
+  background: #AEAEAE;
 }
 
 .deliverable-item {

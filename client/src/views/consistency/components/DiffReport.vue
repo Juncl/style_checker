@@ -85,7 +85,7 @@
         <div class="diff-card-head" @click="expandFold(foldKey(d))">
           <div class="diff-card-title">
             <span v-if="d.confidence === 'low'" class="diff-low-badge">仅参考</span>
-            <span v-if="d._isManual" class="diff-manual-badge">人工</span>
+            <span v-if="d._isManual && debugMode" class="diff-manual-badge">人工</span>
             <span class="diff-card-name" :title="cardName(d)">{{ cardName(d) }}</span>
           </div>
           <span class="diff-card-ops">

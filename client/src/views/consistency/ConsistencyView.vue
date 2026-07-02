@@ -963,6 +963,7 @@ function onSaveManualStyle({ side, nodeId, key, parsedValue }) {
     const manualDiff = generateManualDiff(pair, key, currentPlatform.value)
     if (manualDiff) {
       upsertManualDiff(manualDiff)
+      selectedPair.value = pair
     } else {
       removeManualDiffByMatch(pair.design?.id ?? null, pair.arkui?.id ?? null, key)
     }
@@ -980,6 +981,11 @@ function onSaveManualStyle({ side, nodeId, key, parsedValue }) {
       designName: side === 'design' ? (node.name ?? '') : undefined,
     }
     upsertManualDiff(diff)
+    selectedPair.value = {
+      matchDetail: { type: 'unmatched' },
+      design: mySide === 'design' ? node : null,
+      arkui:  mySide === 'arkui'  ? node : null,
+    }
   }
 }
 
