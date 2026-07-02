@@ -85,6 +85,7 @@ export const parseDesignUpload = (
   designJsonFile: File,
   designImageFile: File | null = null,
   platform: string = DEFAULT_PLATFORM,
+  arkuiCanvasWidth?: number,
 ): Promise<ParsedPreview> => {
   const resolvedPlatform: PlatformKey =
     KEY_BY_ZH[platform] ??
@@ -93,6 +94,7 @@ export const parseDesignUpload = (
   form.append('designJson', designJsonFile)
   if (designImageFile) form.append('designImage', designImageFile)
   form.append('platform', resolvedPlatform)
+  if (arkuiCanvasWidth != null) form.append('arkuiCanvasWidthVp', String(arkuiCanvasWidth))
   return http.post('/parse/design', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }).then(r => r.data)

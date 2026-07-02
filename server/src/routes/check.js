@@ -425,12 +425,21 @@ router.post(
 
       res.json({
         nodes: devResult.nodes.map(n => ({
-          id: n.id, name: n.name, type: n.type,
+          id: n.id,
+          name: n.name,
+          type: n.type,
           rawType: n.rawType || null,
           textContent: n.textContent || null,
-          path: n.path, rect: n.rect, style: n.style,
+          path: n.path,
+          rect: n.rect,
+          style: n.style,
+          normRect: n.normRect,
           visible: n.visible !== false,
+          hiddenFrameworkAncestor: !!n.hiddenFrameworkAncestor,
           visualOccluded: !!n.visualOccluded,
+          visualOcclusionReason: n.visualOcclusionReason || null,
+          pixelVisibility: n.pixelVisibility || null,
+          compType: n.compType || null,
         })),
         canvas: {
           w: devResult.canvasWidthVp,
@@ -445,7 +454,9 @@ router.post(
   }
 )
 
-// ── 预览解析：设计侧（不依赖 arkui 画布宽度，使用设计稿原始坐标系）───────────────
+// ── 预览解析：设计侧 ─────────────────────────────────────────────────────────────
+// 接受可选的 arkuiCanvasWidthVp（来自前端先调 /parse/dev 拿到的画布宽度），
+// 使 design 坐标与 arkui vp 对齐；不传则使用设计稿原始坐标（scale=1）
 router.post(
   '/parse/design',
   upload.fields([
@@ -461,21 +472,34 @@ router.post(
       const platform   = getPlatform(platformFromRequest(req))
       const designJson = JSON.parse(files.designJson[0].buffer.toString('utf-8'))
 
-      // arkuiCanvasWidthVp 不传 → buildDesignTree 内 scale=1，节点使用设计稿原始坐标
+      const arkuiCanvasWidthVp = req.body?.arkuiCanvasWidthVp
+        ? Number(req.body.arkuiCanvasWidthVp)
+        : undefined
+
       const designResult = await parseDesign(designJson, {
         imageBuffer: files.designImage?.[0]?.buffer,
-        arkuiCanvasWidthVp: undefined,
+        arkuiCanvasWidthVp,
         designScale: platform.designScale,
       })
 
       res.json({
         nodes: designResult.nodes.map(n => ({
-          id: n.id, name: n.name, type: n.type,
+          id: n.id,
+          name: n.name,
+          type: n.type,
           rawType: n.rawType || null,
           textContent: n.textContent || null,
-          path: n.path, rect: n.rect, style: n.style,
+          path: n.path,
+          rect: n.rect,
+          size: n.size || null,
+          style: n.style,
+          normRect: n.normRect,
           visible: n.visible !== false,
           visualOccluded: !!n.visualOccluded,
+          visualOcclusionReason: n.visualOcclusionReason || null,
+          pixelVisibility: n.pixelVisibility || null,
+          ocrVisibility: n.ocrVisibility || null,
+          semanticAsset: n.semanticAsset || null,
         })),
         canvas: { w: designResult.canvasWidth, h: designResult.canvasHeight },
       })
@@ -533,7 +557,7 @@ router.post('/check/match-nodes', async (req, res) => {
 
     const platform = getPlatform(resolvePlatform(platformKey))
 
-    // 补全 normRect（前端传来的节点没有此字段，匹配算法依赖它）
+    // 补全 normRect（前端 parse 接口已返回此字段，此处为旧数据兜底）
     const dW = canvas.design.w, dH = canvas.design.h
     const aW = canvas.arkui.w,  aH = canvas.arkui.h
     for (const n of designNodes) {

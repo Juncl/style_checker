@@ -238,11 +238,15 @@ watch(() => props.diffs, (diffs) => {
 }, { immediate: true })
 
 const isHighOrMedium = d => d.confidence === 'high' || d.confidence === 'medium'
-const visibleDiffs = computed(() =>
-  matchMode.value === 'fuzzy'
+const visibleDiffs = computed(() => {
+  const list = matchMode.value === 'fuzzy'
     ? props.diffs.filter(d => !isHighOrMedium(d))
     : props.diffs.filter(d => isHighOrMedium(d))
-)
+  return list.filter(d => {
+    if (!d._isResolved) return true
+    return issueKey(d.property) === 'other'
+  })
+})
 const IGNORED_ISSUE_PROPS = new Set(['textAlign'])
 const issueGroups = computed(() =>
   ISSUE_GROUPS.filter(group => group.key === 'all' || (issueCounts.value[group.key] || 0) > 0)
@@ -342,6 +346,19 @@ watch(matchMode, () => {
     activeIssue.value = 'all'
   }
   nextTick(updateSlider)
+})
+
+watch(issueGroups, (groups) => {
+  if (activeIssue.value !== 'all' && !groups.some(g => g.key === activeIssue.value)) {
+    activeIssue.value = 'all'
+    const pair = props.activePair
+    if (pair && (pair.arkuiNodeId || pair.designNodeId)) {
+      const idx = filteredDiffs.value.findIndex(d => isDiffMatchPair(d, pair))
+      selectedIdx.value = idx >= 0 ? idx : -1
+    } else {
+      selectedIdx.value = -1
+    }
+  }
 })
 
 function selectIssue(key) {

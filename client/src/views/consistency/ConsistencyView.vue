@@ -201,7 +201,7 @@ import { UXLINT_CHECKLIST_EVENT } from './init/detectIframe'
 import { processUxlintCheckList } from './init/processUxlintCheckList'
 import { setUrlParams, removeUrlParams } from '../utils/urlParams'
 import { parseOverrideValue } from './match/overrideValidator'
-import { generateManualDiff, formatStyleValue } from './match/compareNodes'
+import { generateManualDiff, formatStyleValue, readStyleValue } from './match/compareNodes'
 import { savePlatform } from './init/restorePlatform'
 import AppLayout from './components/AppLayout.vue'
 import AiChatDrawer from './components/AiChatDrawer.vue'
@@ -292,6 +292,15 @@ const mergedDiffs = computed(() => {
     }
   }
   console.log('[merged-diffs] 合并后总条数:', merged.length, '其中算法:', base.length, '人工:', manual.length)
+  console.log('[merged-diffs] 全部diff:', merged.map(d => ({
+    property: d.property,
+    designValue: d.designValue,
+    arkuiValue: d.arkuiValue,
+    _isManual: d._isManual,
+    _isResolved: d._isResolved,
+    designNodeId: d.designNodeId,
+    arkuiNodeId: d.arkuiNodeId,
+  })))
   return merged
 })
 
@@ -808,6 +817,7 @@ async function triggerDesignPreview(files) {
       files.designJson,
       files.designImage ?? null,
       currentPlatform.value,
+      devPreview.value?.canvas?.w,
     )
   } catch { /* 静默失败 */ }
   finally { designPreviewLoading.value = false }
@@ -965,7 +975,19 @@ function onSaveManualStyle({ side, nodeId, key, parsedValue }) {
       upsertManualDiff(manualDiff)
       selectedPair.value = pair
     } else {
-      removeManualDiffByMatch(pair.design?.id ?? null, pair.arkui?.id ?? null, key)
+      upsertManualDiff({
+        property:      key,
+        designValue:   formatStyleValue(key, readStyleValue(pair.design, key), currentPlatform.value),
+        arkuiValue:    formatStyleValue(key, readStyleValue(pair.arkui,  key), currentPlatform.value),
+        severity:      'warning',
+        confidence:    'high',
+        designNodeId:  pair.design?.id ?? null,
+        arkuiNodeId:   pair.arkui?.id  ?? null,
+        _isManual:     true,
+        _isResolved:   true,
+        textContent:   pair.design?.textContent ?? pair.design?.name ?? pair.arkui?.textContent ?? '',
+        designName:    pair.design?.name,
+      })
     }
   } else {
     const diff = {
@@ -1187,7 +1209,7 @@ async function loadHistoryVersion(rawVersion, deviceType) {
     const designJsonData = await fetchVersionJson(version.designJsonUrl)
     designImageFile = await resolveImageFile(version.designBase64Data, 'design.jpg', ADMIN_BASE_URL)
     designJsonFile  = jsonToFile(designJsonData, 'design.json')
-    designParsed    = await parseDesignUpload(designJsonFile, designImageFile, deviceType)
+    designParsed    = await parseDesignUpload(designJsonFile, designImageFile, deviceType, devParsed.canvas?.w)
   }
 
   // 任一侧为空则无从配对/比对，pairs 与 diffs 均为空
