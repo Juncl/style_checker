@@ -1,6 +1,7 @@
 import { nodeAnchorRelation } from '../anchorCheck.js'
 import { compareDeNodes } from './pass2.js'
 import { makePair } from '../matchStrategies.js'
+import { MatchTools } from '../tools.js'
 
 const TOP_K = 5
 
@@ -150,13 +151,5 @@ function euclidDist(n1, n2) {
   return Math.sqrt(dx * dx + dy * dy)
 }
 
-function octant(px, py, qx, qy) {
-  const angle = Math.atan2(-(py - qy), px - qx)
-  let idx = Math.round(angle / (Math.PI / 4))
-  return ((idx % 8) + 8) % 8
-}
-
-function octantDist(a, b) {
-  const d = Math.abs(a - b)
-  return Math.min(d, 8 - d)
-}
+const octant = MatchTools.octant
+const octantDist = MatchTools.octantDist

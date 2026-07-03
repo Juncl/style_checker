@@ -1,4 +1,5 @@
-import { gaussianCurveParabola, getPlaceScore } from './pass1.js'
+import { getPlaceScore } from './pass1.js'
+import { MatchTools } from '../tools.js'
 import { makePair } from '../matchStrategies.js'
 
 export function matchRemainingNodes(remainingDev, remainingDesign, textMatchResult, ctx) {
@@ -84,12 +85,12 @@ function commonLayerSim(n1, n2, diagonal, canvasHeightHm, canvasHeightDe, rootRe
   const r1 = n1.rect.w / n1.rect.h
   const r2 = n2.rect.w / n2.rect.h
   const minR = Math.min(r1, r2)
-  const whScore = gaussianCurveParabola(r1, r2, { x: 0.86 * minR, y: 0.5 }, 2 * minR)
+  const whScore = MatchTools.gaussianCurveParabola(r1, r2, { x: 0.86 * minR, y: 0.5 }, 2 * minR)
 
   const a1 = n1.rect.w * n1.rect.h
   const a2 = n2.rect.w * n2.rect.h
   const minA = Math.min(a1, a2)
-  const areaScore = gaussianCurveParabola(a1, a2, { x: minA, y: 0.5 }, 3 * minA)
+  const areaScore = MatchTools.gaussianCurveParabola(a1, a2, { x: minA, y: 0.5 }, 3 * minA)
 
   const placeScore = getPlaceScore(n1, n2, diagonal, canvasHeightHm, canvasHeightDe, rootRectW, rootRectMaxH)
 

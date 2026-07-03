@@ -118,8 +118,10 @@
         @design-hover="onDesignHover"
         @dev-switch-change="devSwitchActive = $event"
         @temp-diffs="tempDiffs = $event"
+        @temp-pairs="tempPairs = $event"
         @save-manual-style="onSaveManualStyle"
         @remove-manual-style="onRemoveManualStyle"
+        @node-canvas-mode-change="reportCanvasMode = $event"
       />
       </div>
     </main>
@@ -156,6 +158,8 @@
         :platform="currentPlatform"
         :temp-diffs="tempDiffs"
         :merged-diffs="mergedDiffs"
+        :report-canvas-mode="reportCanvasMode"
+        :has-manual-edits="manualDiffs.length > 0"
         @diff-select="onDiffSelect"
         @diff-hover="hoveredDiffPair = $event"
         @design-node-click="onDesignNodeClick"
@@ -163,6 +167,8 @@
         @toggle-lock="onToggleLock"
         @rerun="rerunCheck"
         @history-view="onHistoryView"
+        @temp-diff-action="mergeTempToResult"
+        @save="onSave"
       />
     </aside>
 
@@ -232,7 +238,27 @@ const rerunLoading      = ref(false)
 const reportPageRef     = ref(null)
 const devSwitchActive   = ref(false)
 const tempDiffs         = ref(null)
+const tempPairs         = ref(null)
+/** 当前可用的匹配对：temp 激活时用 tempPairs，否则用正式 pairs */
+const effectivePairs    = computed(() => tempPairs.value ?? result.value?.pairs ?? [])
 const manualDiffs       = ref([])   // 人工覆盖产生的差异卡片
+
+// 从节点树上收集所有人工覆盖属性，结构：{ dev: { id: { key: val } }, design: { id: { key: val } } }
+const nodeManualAttr = computed(() => {
+  const dev = {}
+  const design = {}
+  for (const n of result.value?.allArkuiNodes ?? []) {
+    if (n.manualStyle && Object.keys(n.manualStyle).length) {
+      dev[n.id] = { ...n.manualStyle }
+    }
+  }
+  for (const n of result.value?.allDesignNodes ?? []) {
+    if (n.manualStyle && Object.keys(n.manualStyle).length) {
+      design[n.id] = { ...n.manualStyle }
+    }
+  }
+  return { dev, design }
+})
 
 function upsertManualDiff(newDiff) {
   const idx = manualDiffs.value.findIndex(d =>
@@ -292,24 +318,18 @@ const mergedDiffs = computed(() => {
     }
   }
   console.log('[merged-diffs] 合并后总条数:', merged.length, '其中算法:', base.length, '人工:', manual.length)
-  console.log('[merged-diffs] 全部diff:', merged.map(d => ({
-    property: d.property,
-    designValue: d.designValue,
-    arkuiValue: d.arkuiValue,
-    _isManual: d._isManual,
-    _isResolved: d._isResolved,
-    designNodeId: d.designNodeId,
-    arkuiNodeId: d.arkuiNodeId,
-  })))
+  console.log('[merged-diffs] 全部diff:', JSON.parse(JSON.stringify(merged)))
   return merged
 })
 
 watch(() => result.value, () => {
   manualDiffs.value = []
+  tempPairs.value = null
 })
 
 const devReuploading    = ref(false)
 const designReuploading = ref(false)
+const reportCanvasMode  = ref('default')
 
 const deliverables     = ref([])
 const pages            = ref([])
@@ -322,18 +342,19 @@ let stopListenFn = null
 
 // 单版本预处理：优先使用 nodeMatchs，回退到兼容旧格式 problems 末尾的 matchedPairIds 特殊项
 function preprocessVersion(v) {
-  if (!v || v._matchedPairIds !== undefined) return v
+  if (!v || (v._matchedPairIds !== undefined && v._nodeManualAttr !== undefined)) return v
 
   // 新格式：nodeMatchs 独立字段（优先级最高）
   if (v.nodeMatchs) {
     try {
       const parsed = JSON.parse(v.nodeMatchs)
       const matchedPairIds = JSON.stringify(parsed.matchedPairIds ?? [])
+      const nodeManualAttr = parsed.nodeManualAttr ?? null
       const problems = [...(v.problems ?? [])]
       // 库存数据可能仍有旧格式特殊项，清理掉
       const idx = problems.findIndex(p => p.id === 'matchedPairIds')
       if (idx >= 0) problems.splice(idx, 1)
-      return { ...v, problems, _matchedPairIds: matchedPairIds }
+      return { ...v, problems, _matchedPairIds: matchedPairIds, _nodeManualAttr: nodeManualAttr }
     } catch { /* 解析失败则回退 */ }
   }
 
@@ -342,7 +363,7 @@ function preprocessVersion(v) {
   const idx = problems.findIndex(p => p.id === 'matchedPairIds')
   const matchedPairIds = idx >= 0 ? problems[idx].data : null
   if (idx >= 0) problems.splice(idx, 1)
-  return { ...v, problems, _matchedPairIds: matchedPairIds }
+  return { ...v, problems, _matchedPairIds: matchedPairIds, _nodeManualAttr: null }
 }
 
 function preprocessVersionList(list) {
@@ -827,9 +848,10 @@ function onAddPage() {
   workingPage.value          = { id: '__new__', name: '新增页面' }
   result.value               = null
   selectedCase.value         = ''
-  activeDiff.value           = null
-  selectedPair.value         = null
-  lockedNodeIds.value        = new Set()
+  activeDiff.value    = null
+  selectedPair.value  = null
+  tempPairs.value     = null
+  lockedNodeIds.value = new Set()
   devPreview.value           = null
   designPreview.value        = null
   devPreviewLoading.value    = false
@@ -909,7 +931,9 @@ async function submitRerunVersion() {
       fileToText(uploadFiles.value.arkuiJson),
       fileToText(uploadFiles.value.designJson),
     ])
-    const { problems: addPageProblems, nodeMatchs: addPageNodeMatchs } = buildProblems(result.value)
+    const { problems: addPageProblems, nodeMatchs: addPageNodeMatchs } = buildProblems(result.value, {
+      nodeManualAttr: nodeManualAttr.value,
+    })
     await addConsistencyCheckPage({
       id:                    String(pageId),
       deliverableId:         String(workingDeliverable.value?.id ?? ''),
@@ -942,6 +966,54 @@ async function submitRerunVersion() {
     reportCompareResult()
   } catch (e) {
     console.error('重新对比存档失败', e)
+  }
+}
+
+// 存储按钮：仅存档当前人工标注和合并后的 diff，不重跑算法
+async function onSave() {
+  const pageId = workingPage.value?.id
+  if (!pageId || pageId === '__new__') return
+  try {
+    const now = formatDateTime(new Date())
+    const [devBase64, designBase64, devJsonStr, designJsonStr] = await Promise.all([
+      fileToBase64(uploadFiles.value.arkuiImage),
+      fileToBase64(uploadFiles.value.designImage),
+      fileToText(uploadFiles.value.arkuiJson),
+      fileToText(uploadFiles.value.designJson),
+    ])
+    const { problems, nodeMatchs } = buildProblems(result.value, {
+      diffs: mergedDiffs.value,
+      nodeManualAttr: nodeManualAttr.value,
+    })
+    await addConsistencyCheckPage({
+      id:                    String(pageId),
+      deliverableId:         String(workingDeliverable.value?.id ?? ''),
+      name:                  workingPage.value?.name ?? '',
+      deviceType:            currentPlatform.value,
+      versionName:           now,
+      devImageBase64Data:    devBase64,
+      devJson:               devJsonStr,
+      designImageBase64Data: designBase64,
+      designJson:            designJsonStr,
+      problems,
+      nodeMatchs,
+    })
+
+    const pageResult = await getResultsByPageId(pageId, 1, 999)
+    pageVersionList.value  = preprocessVersionList(pageResult?.list)
+    const versionId = Array.isArray(pageResult?.list) ? pageResult.list[0]?.id : null
+    workingVersionId.value = versionId ?? null
+
+    const dId = workingDeliverable.value?.id
+    if (dId && versionId) {
+      setUrlParams({ deliverableId: String(dId), pageId: String(pageId), versionId: String(versionId) })
+    }
+    // 清空人工 diff 列表，隐藏存储按钮
+    manualDiffs.value = []
+    ElMessage.success('存储成功')
+  } catch (e) {
+    console.error('存储失败', e)
+    ElMessage.error('存储失败')
   }
 }
 
@@ -1050,6 +1122,55 @@ function applyExtraOverride(nodes, override) {
   return patched
 }
 
+/** "添加到分析结果"：将 temp-diffs/temp-pairs 合并到正式 diffs/pairs，清除 temp 状态 */
+function mergeTempToResult() {
+  if (!tempDiffs.value || !tempPairs.value || !result.value) return
+
+  // 合并 diffs：temp 涉及的任一侧节点 id，删掉正式 diff 中对应的全部条目，用 temp 替换
+  const tempDesignIds = new Set(tempDiffs.value.map(d => d.designNodeId).filter(Boolean))
+  const tempArkuiIds  = new Set(tempDiffs.value.map(d => d.arkuiNodeId).filter(Boolean))
+  const filteredDiffs = (result.value.diffs ?? []).filter(d =>
+    !tempDesignIds.has(d.designNodeId) && !tempArkuiIds.has(d.arkuiNodeId)
+  )
+  const mergedDiffsArr = [...filteredDiffs, ...tempDiffs.value]
+  console.log('[mergeTemp] 删除正式diff:', (result.value.diffs ?? []).length - filteredDiffs.length, '覆盖temp-diff:', tempDiffs.value.length)
+
+  // 合并 pairs：双向覆盖去交集
+  const arkuiMap = new Map()
+  const designMap = new Map()
+  for (const p of (result.value.pairs ?? [])) {
+    if (p.arkui?.id) arkuiMap.set(p.arkui.id, p)
+    if (p.design?.id) designMap.set(p.design.id, p)
+  }
+  for (const p of tempPairs.value) {
+    if (p.arkui?.id) arkuiMap.set(p.arkui.id, p)
+    if (p.design?.id) designMap.set(p.design.id, p)
+  }
+  const pairKeySet = new Set()
+  const mergedPairs = []
+  for (const p of arkuiMap.values()) {
+    const key = `${p.design?.id}|${p.arkui?.id}`
+    if (pairKeySet.has(key)) continue
+    const designPair = p.design?.id ? designMap.get(p.design.id) : null
+    if (designPair && designPair.arkui?.id === p.arkui?.id) {
+      pairKeySet.add(key)
+      mergedPairs.push(p)
+    }
+  }
+
+  result.value = {
+    ...result.value,
+    diffs: mergedDiffsArr,
+    pairs: mergedPairs,
+  }
+
+  // 清除 temp 状态，回到 select-select
+  tempDiffs.value = null
+  tempPairs.value = null
+  reportPageRef.value?.clearCompare?.()
+  ElMessage.success('已添加到分析结果')
+}
+
 async function rerunCheck() {
   if (devSwitchActive.value) {
     reportPageRef.value?.runCompare()
@@ -1074,6 +1195,7 @@ async function rerunCheck() {
       patchedArkuiNodes,
       result.value.canvas,
       currentPlatform.value,
+      'all',
     )
     result.value = {
       ...result.value,
@@ -1097,7 +1219,7 @@ async function rerunCheck() {
 function onDesignNodeClick(nodeId) {
   const node = resolveSelectableNode(designNodes.value, nodeId)
   if (!isSelectableNode(node)) return
-  const pair = result.value?.pairs?.find(p => p.design.id === (node?.id || nodeId))
+  const pair = effectivePairs.value.find(p => p.design?.id === (node?.id || nodeId))
   if (pair) {
     selectedPair.value = pair
   } else {
@@ -1110,7 +1232,7 @@ function onDesignNodeClick(nodeId) {
 function onArkuiNodeClick(nodeId) {
   const node = resolveSelectableNode(allArkuiNodes.value, nodeId)
   if (!isSelectableNode(node)) return
-  const pair = result.value?.pairs?.find(p => p.arkui.id === (node?.id || nodeId))
+  const pair = effectivePairs.value.find(p => p.arkui?.id === (node?.id || nodeId))
   if (pair) {
     selectedPair.value = pair
   } else {
@@ -1121,7 +1243,7 @@ function onArkuiNodeClick(nodeId) {
 }
 
 function nodeDiffsFor(key, nodeId) {
-  return (result.value?.diffs ?? []).filter(d => d[key] === nodeId)
+  return mergedDiffs.value.filter(d => d[key] === nodeId)
 }
 
 function onToggleLock(nodeId) {
@@ -1259,6 +1381,18 @@ async function loadHistoryVersion(rawVersion, deviceType) {
 
   const _allArkui  = devParsed.nodes    ?? []
   const _allDesign = designParsed.nodes ?? []
+
+  // 还原存储时的人工标注属性到节点上
+  if (version._nodeManualAttr) {
+    const { dev, design } = version._nodeManualAttr
+    for (const n of _allArkui) {
+      if (dev?.[n.id]) n.manualStyle = { ...dev[n.id] }
+    }
+    for (const n of _allDesign) {
+      if (design?.[n.id]) n.manualStyle = { ...design[n.id] }
+    }
+  }
+
   result.value = {
     pairs:                resolvePairsToNodes(pairs, _allDesign, _allArkui),
     diffs,
@@ -1379,7 +1513,9 @@ async function submitResult() {
       fileToText(uploadFiles.value.designJson),
     ])
 
-    const { problems: saveProblems, nodeMatchs: saveNodeMatchs } = buildProblems(result.value)
+    const { problems: saveProblems, nodeMatchs: saveNodeMatchs } = buildProblems(result.value, {
+      nodeManualAttr: nodeManualAttr.value,
+    })
     const pageId = await addConsistencyCheckPage({
       deliverableId:         String(deliverableId),
       name:                  pageName,
@@ -1485,8 +1621,8 @@ function onDiffSelect(diff) {
   if (!diff) {
     selectedPair.value = null
   } else if (!diff.property?.startsWith('spacing.')) {
-    const pair = result.value?.pairs?.find(p =>
-      p.design.id === diff.designNodeId && p.arkui.id === diff.arkuiNodeId
+    const pair = effectivePairs.value.find(p =>
+      p.design?.id === diff.designNodeId && p.arkui?.id === diff.arkuiNodeId
     )
     if (pair) {
       selectedPair.value = pair

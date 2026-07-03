@@ -12,6 +12,8 @@
  *   makeAnchorCheck  — 锚点一致性校验工厂，返回 (an, dn) => boolean
  */
 
+import { MatchTools } from './tools.js'
+
 // ── 基础常量 ───────────────────────────────────────────────────────────────────
 
 // Pass 1–6 全部使用 rect 绝对坐标（dp/vp），EPS 统一为 0.5，避免各处各自定义出现偏差
@@ -19,7 +21,7 @@ export const EPS = 0.5
 
 // ── 几何小工具 ─────────────────────────────────────────────────────────────────
 
-export const center = r => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 })
+export const center = MatchTools.center
 
 // outer 是否包住 inner（四边都留 EPS 容差，避免浮点误差导致边缘节点漏判）
 export function rectContains(outer, inner) {

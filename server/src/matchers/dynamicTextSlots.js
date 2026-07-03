@@ -1,6 +1,6 @@
 import { centerY, rectCenter, sizeRatio, xDistance } from '../utils/matchGeometry.js'
 import { makePair } from './matchStrategies.js'
-import { gaussianCurveParabola } from './allTextMatcher.js'
+import { MatchTools } from './tools.js'
 import { candidatePool, regionAffinity } from './regionContext.js'
 import {
   colorDistance,
@@ -228,7 +228,7 @@ function rowScore(dRow, aRow, anchors, H, designH) {
     (H - aFirst.rect.y - aFirst.rect.h) - (designH - dFirst.rect.y - dFirst.rect.h)
   )
   const diff2 = Math.min(diffTop, diffBot)
-  const yScore2 = gaussianCurveParabola(0, diff2, point, diffmax)
+  const yScore2 = MatchTools.gaussianCurveParabola(0, diff2, point, diffmax)
 
   // yScore1：相对最近锚点的偏移差；无锚点则退化为仅用 yScore2
   let yScore
@@ -238,7 +238,7 @@ function rowScore(dRow, aRow, anchors, H, designH) {
     const deltaDesign = dFirst.rect.y - anchor.design.rect.y
     if (deltaDev * deltaDesign < 0) return 0  // 偏移方向相反 → 一票否决
     const diff1 = Math.abs(deltaDev - deltaDesign)
-    const yScore1 = gaussianCurveParabola(0, diff1, point, diffmax)
+    const yScore1 = MatchTools.gaussianCurveParabola(0, diff1, point, diffmax)
     yScore = yScore1 * 0.6 + yScore2 * 0.4
   } else {
     yScore = yScore2

@@ -63,9 +63,15 @@ export function jsonToFile(json: unknown, filename: string): File {
   return new File([text], filename, { type: 'application/json' })
 }
 
-// 从算法结果的 diffs 中提取 problems 列表，同时返回 nodeMatchs
-export function buildProblems(res: any): { problems: object[]; nodeMatchs: string } {
-  const problems = (res?.diffs ?? []).map((d: any) => ({
+// 从算法结果中提取 problems 列表，同时返回 nodeMatchs
+// opts.diffs 传入时优先使用（如合并后的 mergedDiffs），否则取 res.diffs
+// opts.nodeManualAttr 传入时合并到 nodeMatchs 中
+export function buildProblems(
+  res: any,
+  opts?: { diffs?: any[]; nodeManualAttr?: Record<string, any> },
+): { problems: object[]; nodeMatchs: string } {
+  const diffs = opts?.diffs ?? res?.diffs ?? []
+  const problems = diffs.map((d: any) => ({
     id:   `${d.arkuiNodeId}-${d.property}`,
     key:  d.nodeType || 'container',
     type: d.property || '',
@@ -73,11 +79,14 @@ export function buildProblems(res: any): { problems: object[]; nodeMatchs: strin
     data: JSON.stringify(d),
   }))
 
-  // 节点匹配结果独立字段
   const pairIds = (res?.pairs ?? [])
     .map((p: any) => [p.arkui?.id, p.design?.id])
     .filter(([a, d]: [string, string]) => a && d)
-  const nodeMatchs = JSON.stringify({ matchedPairIds: pairIds })
+  const nodeMatchsObj: any = { matchedPairIds: pairIds }
+  if (opts?.nodeManualAttr) {
+    nodeMatchsObj.nodeManualAttr = opts.nodeManualAttr
+  }
+  const nodeMatchs = JSON.stringify(nodeMatchsObj)
 
   return { problems, nodeMatchs }
 }

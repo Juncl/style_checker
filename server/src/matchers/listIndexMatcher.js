@@ -19,13 +19,11 @@
  */
 import { makePair } from './matchStrategies.js'
 import { makeAnchorCheck } from './anchorCheck.js'
+import { MatchTools } from './tools.js'
 
-const ROW_TOL_RATIO        = 0.005  // 同行容差比例（沿用原归一化标定，按画布边换算成绝对 vp/dp）
-const FIRST_NODE_SCORE_MIN = 0.60   // 首节点综合判定分阈值（替代 IoU）
+const ROW_TOL_RATIO        = 0.005
+const FIRST_NODE_SCORE_MIN = 0.60
 const MIN_LIST_SIZE        = 2
-
-// 高斯衰减：dist=0→1，dist=σ→0.607
-function gauss(dist, sigma) { return Math.exp(-(dist * dist) / (2 * sigma * sigma)) }
 
 /**
  * 首节点综合判定分（替代 IoU）：绝对位置 + 相对锚点位置 + 面积比 + 宽高比。
@@ -36,11 +34,11 @@ function firstNodeScore(dn, an, anchor, diag) {
   const d = dn.rect, a = an.rect
   // 绝对位置：中心距离（对角线尺度，宽容小偏移）
   const absDist = Math.hypot((d.x + d.w / 2) - (a.x + a.w / 2), (d.y + d.h / 2) - (a.y + a.h / 2))
-  const absPos = gauss(absDist, 0.10 * diag)
+  const absPos = MatchTools.gauss(absDist, 0.10 * diag)
   // 相对锚点位置：首节点相对锚点左上角的偏移，两侧应一致（累积偏差对锚点/首节点一致，相减抵消）
   const rdx = (d.x - anchor.design.rect.x) - (a.x - anchor.arkui.rect.x)
   const rdy = (d.y - anchor.design.rect.y) - (a.y - anchor.arkui.rect.y)
-  const relAnchor = gauss(Math.hypot(rdx, rdy), 0.06 * diag)
+  const relAnchor = MatchTools.gauss(Math.hypot(rdx, rdy), 0.06 * diag)
   // 面积比
   const areaD = d.w * d.h, areaA = a.w * a.h
   const area = Math.min(areaD, areaA) / Math.max(areaD, areaA)
@@ -226,7 +224,7 @@ function identifyLists(nodes, tolW, tolH) {
             items: segment,
             top:    Math.min(...segment.map(g => g.rect.y)),
             bottom: Math.max(...segment.map(g => g.rect.y + g.rect.h)),
-            cy:     average(segment.map(g => g.rect.y + g.rect.h / 2)),
+            cy:     MatchTools.average(segment.map(g => g.rect.y + g.rect.h / 2)),
           })
         }
       }
@@ -236,6 +234,4 @@ function identifyLists(nodes, tolW, tolH) {
   return lists
 }
 
-function average(arr) {
-  return arr.reduce((a, b) => a + b, 0) / arr.length
-}
+

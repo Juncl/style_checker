@@ -1,6 +1,7 @@
 import { makePair } from './matchStrategies.js'
 import { dropGridOutlierAnchors } from './gridAnchorFilter.js'
 import { normalizeText, textSemanticSimilarity, parseArgb, extractMainTone } from '../utils/textSemantics.js'
+import { MatchTools } from './tools.js'
 
 /**
  * 新版 Pass 1：全文本节点加权匹配
@@ -15,64 +16,7 @@ import { normalizeText, textSemanticSimilarity, parseArgb, extractMainTone } fro
 // 可信文本阈值：finalScore ≥ 此值视为高置信匹配，转成 pair
 const CREDIBLE_THRESHOLD = 0.9
 
-// ─── 抛物线-高斯分段曲线 ───────────────────────────────────────────────────────
-/**
- * 抛物线-高斯分段曲线
- * - num1 === num2          → 1
- * - diff > diffmax         → 0
- * - diff ≤ point.x         → 抛物线段 1 - a·diff²
- * - diff > point.x         → 高斯段 exp(-diff²/2σ²)
- * 抛物线与高斯在 diff = point.x 处衔接，值均为 point.y。
- */
-export function gaussianCurveParabola(num1, num2, point, diffmax) {
-  const diff = Math.abs(num1 - num2)
-  if (num1 === num2) return 1
-  if (diff > diffmax) return 0
-
-  const { x, y } = point
-  const a = (1 - y) / (x * x)                      // 抛物线系数
-  const sigma = x / Math.sqrt(-2 * Math.log(y))    // 高斯 sigma
-
-  let score
-  if (diff <= x) {
-    score = 1 - a * diff * diff                    // 抛物线段
-  } else {
-    score = Math.exp(-(diff * diff) / (2 * sigma * sigma)) // 高斯段
-  }
-  return parseFloat(score.toFixed(4))
-}
-
 // ─── 五个子评分函数 ────────────────────────────────────────────────────────────
-
-/** 计算 Levenshtein 编辑距离相似度 (0-1) */
-function levenshteinSimilarity(s1, s2) {
-  if (!s1 || !s2) return 0
-  if (s1 === s2) return 1
-
-  const len1 = s1.length
-  const len2 = s2.length
-  const maxLen = Math.max(len1, len2)
-  if (maxLen === 0) return 1
-
-  const dp = Array(len2 + 1).fill(0).map(() => Array(len1 + 1).fill(0))
-
-  for (let i = 0; i <= len1; i++) dp[0][i] = i
-  for (let j = 0; j <= len2; j++) dp[j][0] = j
-
-  for (let j = 1; j <= len2; j++) {
-    for (let i = 1; i <= len1; i++) {
-      const cost = s1[i - 1] === s2[j - 1] ? 0 : 1
-      dp[j][i] = Math.min(
-        dp[j][i - 1] + 1,      // 插入
-        dp[j - 1][i] + 1,      // 删除
-        dp[j - 1][i - 1] + cost // 替换
-      )
-    }
-  }
-
-  const distance = dp[len2][len1]
-  return 1 - distance / maxLen
-}
 
 /**
  * 子评分1 · 内容相似度：fuse.js 编辑距离 + 语义相似度 + 前后缀结构相似
@@ -92,7 +36,7 @@ function textSimilar(c1, c2) {
   const t2n = t2.replace(/\d+(\.\d+)?/g, '0')
   if (t1n === t2n) return 1
 
-  const editScore = levenshteinSimilarity(t1n, t2n)
+  const editScore = MatchTools.levenshteinSimilarity(t1n, t2n)
   const semanticScore = textSemanticSimilarity(c1, c2)
 
   // 前后缀相似度计算
@@ -149,7 +93,7 @@ function getSimilarityColor(c1, c2) {
  */
 function getSimilaritySize(s1, s2) {
   if (s1 == null || s2 == null) return 1
-  return gaussianCurveParabola(s1, s2, { x: 4, y: 0.5 }, 12)
+  return MatchTools.gaussianCurveParabola(s1, s2, { x: 4, y: 0.5 }, 12)
 }
 
 /**
@@ -158,7 +102,7 @@ function getSimilaritySize(s1, s2) {
  */
 function getWeightScore(w1, w2) {
   if (w1 == null || w2 == null) return 1
-  return gaussianCurveParabola(w1, w2, { x: 300, y: 0.5 }, 600)
+  return MatchTools.gaussianCurveParabola(w1, w2, { x: 300, y: 0.5 }, 600)
 }
 
 /**
@@ -185,9 +129,9 @@ function getPlaceScore(hmNode, deNode, diagonal, canvasHeightHm, canvasHeightDe,
   const yMax        = 0.8 * rootRectMaxH
 
   function weightedScore(dx, dy) {
-    const euclidScore = gaussianCurveParabola(0, Math.hypot(dx, dy), euclidPoint, euclidMax)
-    const xScore      = gaussianCurveParabola(0, Math.abs(dx), xPoint, xMax)
-    const yScore      = gaussianCurveParabola(0, Math.abs(dy), yPoint, yMax)
+    const euclidScore = MatchTools.gaussianCurveParabola(0, Math.hypot(dx, dy), euclidPoint, euclidMax)
+    const xScore      = MatchTools.gaussianCurveParabola(0, Math.abs(dx), xPoint, xMax)
+    const yScore      = MatchTools.gaussianCurveParabola(0, Math.abs(dy), yPoint, yMax)
     return euclidScore * 0.6 + xScore * 0.3 + yScore * 0.1
   }
 
@@ -227,19 +171,6 @@ function getTextFinalScore(content, color, size, weight, place) {
  *   6(正下)
  * 注意 y 轴向下，正上对应 dy<0，故用 -dy 计算角度。
  */
-function octant(px, py, qx, qy) {
-  const angle = Math.atan2(-(py - qy), px - qx) // [-π, π]，逆时针为正
-  let idx = Math.round(angle / (Math.PI / 4))   // 每 45° 一格
-  idx = ((idx % 8) + 8) % 8                       // 归一到 0..7
-  return idx
-}
-
-/** 两个象限的环形距离：0..4 */
-function octantDist(a, b) {
-  const d = Math.abs(a - b)
-  return Math.min(d, 8 - d)
-}
-
 /**
  * 锚点方位共识过滤：对 Pass 1 的高分锚点再加一道宽松的坎，
  * 踢掉与过半锚点方位矛盾（会把后续拓扑带偏）的离群锚点。
@@ -257,9 +188,6 @@ function filterAnchorsByOrientation(pairs) {
   const CONFLICT_RATE = 0.5   // 与过半锚点矛盾才踢出
   const dropped = []
 
-  // 取绝对中心点（方位只看侧内相对角度，绝对坐标即可，无需归一化）
-  const center = (n) => ({ x: n.rect.x + n.rect.w / 2, y: n.rect.y + n.rect.h / 2 })
-
   let kept = pairs.filter(p => p.design?.rect && p.arkui?.rect)
   const skipped = pairs.filter(p => !(p.design?.rect && p.arkui?.rect))
 
@@ -269,8 +197,8 @@ function filterAnchorsByOrientation(pairs) {
 
     const nodes = kept.map(p => ({
       pair: p,
-      de: center(p.design),
-      hm: center(p.arkui),
+      de: MatchTools.center(p.design.rect),
+      hm: MatchTools.center(p.arkui.rect),
     }))
 
     const survivors = []
@@ -279,9 +207,9 @@ function filterAnchorsByOrientation(pairs) {
       let conflict = 0
       for (let j = 0; j < nodes.length; j++) {
         if (i === j) continue
-        const dirDe = octant(nodes[i].de.x, nodes[i].de.y, nodes[j].de.x, nodes[j].de.y)
-        const dirHm = octant(nodes[i].hm.x, nodes[i].hm.y, nodes[j].hm.x, nodes[j].hm.y)
-        if (octantDist(dirDe, dirHm) >= CONFLICT_OCTANT) conflict++
+        const dirDe = MatchTools.octant(nodes[i].de.x, nodes[i].de.y, nodes[j].de.x, nodes[j].de.y)
+        const dirHm = MatchTools.octant(nodes[i].hm.x, nodes[i].hm.y, nodes[j].hm.x, nodes[j].hm.y)
+        if (MatchTools.octantDist(dirDe, dirHm) >= CONFLICT_OCTANT) conflict++
       }
       const rate = conflict / (nodes.length - 1)
       if (rate > CONFLICT_RATE) {

@@ -546,7 +546,7 @@ router.post('/img/checker', async (req, res) => {
 // 前端传来的节点是解析阶段产出，接口补全 normRect 后直接进匹配 + 比对流水线
 router.post('/check/match-nodes', async (req, res) => {
   try {
-    const { designNodes, arkuiNodes, canvas, platform: platformKey } = req.body
+    const { designNodes, arkuiNodes, canvas, platform: platformKey, nodeNumStatus } = req.body
 
     if (!Array.isArray(designNodes) || !Array.isArray(arkuiNodes)) {
       return res.status(400).json({ error: '缺少 designNodes 或 arkuiNodes' })
@@ -584,6 +584,7 @@ router.post('/check/match-nodes', async (req, res) => {
       canvasWidth:    dW,
       canvasHeight:   dH,
       platform:       platform.key,
+      nodeNumStatus,
     })
 
     // 比对

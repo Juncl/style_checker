@@ -1,55 +1,13 @@
 import { makePair } from '../matchStrategies.js'
 import { dropGridOutlierAnchors } from '../gridAnchorFilter.js'
 import { normalizeText, textSemanticSimilarity, parseArgb, extractMainTone } from '../../utils/textSemantics.js'
+import { MatchTools } from '../tools.js'
 
 const CREDIBLE_THRESHOLD = 0.9
 
-export function gaussianCurveParabola(num1, num2, point, diffmax) {
-  const diff = Math.abs(num1 - num2)
-  if (num1 === num2) return 1
-  if (diff > diffmax) return 0
+export const gaussianCurveParabola = MatchTools.gaussianCurveParabola
 
-  const { x, y } = point
-  const a = (1 - y) / (x * x)
-  const sigma = x / Math.sqrt(-2 * Math.log(y))
-
-  let score
-  if (diff <= x) {
-    score = 1 - a * diff * diff
-  } else {
-    score = Math.exp(-(diff * diff) / (2 * sigma * sigma))
-  }
-  return parseFloat(score.toFixed(4))
-}
-
-function levenshteinSimilarity(s1, s2) {
-  if (!s1 || !s2) return 0
-  if (s1 === s2) return 1
-
-  const len1 = s1.length
-  const len2 = s2.length
-  const maxLen = Math.max(len1, len2)
-  if (maxLen === 0) return 1
-
-  const dp = Array(len2 + 1).fill(0).map(() => Array(len1 + 1).fill(0))
-
-  for (let i = 0; i <= len1; i++) dp[0][i] = i
-  for (let j = 0; j <= len2; j++) dp[j][0] = j
-
-  for (let j = 1; j <= len2; j++) {
-    for (let i = 1; i <= len1; i++) {
-      const cost = s1[i - 1] === s2[j - 1] ? 0 : 1
-      dp[j][i] = Math.min(
-        dp[j][i - 1] + 1,
-        dp[j - 1][i] + 1,
-        dp[j - 1][i - 1] + cost
-      )
-    }
-  }
-
-  const distance = dp[len2][len1]
-  return 1 - distance / maxLen
-}
+const levenshteinSimilarity = MatchTools.levenshteinSimilarity
 
 function textSimilar(c1, c2) {
   const t1 = normalizeText(c1)
@@ -153,24 +111,13 @@ function getTextFinalScore(content, color, size, weight, place) {
   return content * 0.25 + color * 0.15 + size * 0.15 + place * 0.35 + weight * 0.1
 }
 
-function octant(px, py, qx, qy) {
-  const angle = Math.atan2(-(py - qy), px - qx)
-  let idx = Math.round(angle / (Math.PI / 4))
-  idx = ((idx % 8) + 8) % 8
-  return idx
-}
-
-function octantDist(a, b) {
-  const d = Math.abs(a - b)
-  return Math.min(d, 8 - d)
-}
+const octant = MatchTools.octant
+const octantDist = MatchTools.octantDist
 
 function filterAnchorsByOrientation(pairs) {
   const CONFLICT_OCTANT = 3
   const CONFLICT_RATE = 0.5
   const dropped = []
-
-  const center = (n) => ({ x: n.rect.x + n.rect.w / 2, y: n.rect.y + n.rect.h / 2 })
 
   let kept = pairs.filter(p => p.design?.rect && p.arkui?.rect)
   const skipped = pairs.filter(p => !(p.design?.rect && p.arkui?.rect))
@@ -180,8 +127,8 @@ function filterAnchorsByOrientation(pairs) {
 
     const nodes = kept.map(p => ({
       pair: p,
-      de: center(p.design),
-      hm: center(p.arkui),
+      de: MatchTools.center(p.design.rect),
+      hm: MatchTools.center(p.arkui.rect),
     }))
 
     const survivors = []

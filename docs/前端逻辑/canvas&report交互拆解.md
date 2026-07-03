@@ -12,99 +12,95 @@
 
 | 按钮 | 功能 |
 |---|---|
-| 圆形图标（edit） | 切换 `nodeCanvasMode = 'edit'`；再次点击回到 default |
-| 矩形图标（select） | 切换 `nodeCanvasMode = 'select'`；再次点击回到 default 并清空选中状态 |
+| 圆形图标（edit） | 切换 `nodeCanvasMode = 'edit'`；再次点击回到 default；从 select 切入时自动清空 select 状态 |
+| 矩形图标（select） | 切换 `nodeCanvasMode = 'select'` 并 `emit('dev-switch-change', true)`；再次点击回到 default 并清空选中状态 |
 | 上/下箭头 | 折叠/展开 float bar |
 
 三种模式通过 `nodeCanvasMode`（`'default' | 'select' | 'edit'`）驱动，影响以下行为：
 
 | 模式 | 点选效果 | 框选效果 | Inspector 面板 |
 |---|---|---|---|
-| **default** | 更新全局 `selectedPair`，高亮对应节点对 | 不开启 | 仅在节点有 diff 或间距模式时显示 |
-| **select** | 事件被截获，只更新本地选中 id（不向上冒泡） | 开启拖拽框选和 Ctrl/Cmd+单击多选 | 显示被选中节点的属性（无 diff 高亮） |
-| **edit** | 同 default（全局 `selectedPair`） | 不开启 | **始终显示**，出现「+」按钮可添加人工对比属性 |
+| **default** | 事件冒泡到 `ConsistencyView`，更新全局 `selectedPair`，高亮对应节点对 | 不开启 | 有 diff、间距模式或 debugMode 时显示 |
+| **edit** | 同 default（事件冒泡，更新全局 `selectedPair`） | 不开启 | **始终显示**，出现「+」按钮可添加人工对比属性 |
+| **select** | 事件被 `ReportPage` 截获，只更新本地选中 id 和节点列表（不冒泡），画布仅用本地状态绘制 | Ctrl/Cmd+单击：切换单体命中；拖拽：批量框选 | 显示被选中节点的属性（无 diff 高亮） |
 
-Float bar 通过给两侧 `ImagePanel` 传入不同的 `boxSelectMode` 和 `editMode` prop 来切换画布行为。select 模式额外通过 `emit('dev-switch-change', bool)` 通知父组件 `ConsistencyView`，以影响"重新对比"按钮的分流路径。
+Float bar 通过给两侧 `ImagePanel` 传入 `boxSelectMode`（select 时为 true）和 `editMode`（edit 时为 true）prop 来切换画布行为。select 模式额外通过 `emit('dev-switch-change', bool)` 通知父组件 `ConsistencyView`，以影响"重新对比"按钮的分流路径（`devSwitchActive` 控制走局部对比还是全量重跑）。
 
 ### 两侧面板
 
-左侧（开发侧 ArkUI）和右侧（设计侧 Design）各有一个 `ImagePanel` 组件，共享相同的点选/框选实现。select 模式下两侧各有独立的本地选中状态（`localArkuiId` / `localDesignId` 和 `localArkuiNodeList` / `localDesignNodeList`），框选优先于单击，任一侧 ≥ 2 个节点时进入批量对比模式。
+左侧（开发侧 ArkUI）和右侧（设计侧 Design）各有一个 `ImagePanel` 组件，共享相同的点选/框选实现。select 模式下两侧各有独立的本地选中状态（`localArkuiId` / `localDesignId` 和 `localArkuiNodeList` / `localDesignNodeList`）：
+
+- **点选**：命中节点 → 写入本地 id；空白 → 清空本地 id
+- **框选**：拖拽 ≥ 4px 开始绘框 → emit `box-select` → 写入本地节点列表；框选优先于单击（框选后单击清空框选）
+- **选择变化**：任意状态变化触发 `watch` 自动清空临时对比结果（`pendingDiffs`）
+- **批量对比**：任一侧 ≥ 2 个节点时进入批量模式，调用后端 `matchNodes` API
 
 ---
 
-## 二、正常模式（default）
+## 二、default 模式
 
 ### 2.1 点选流程
 
-用户单击 canvas → `getCanvasCoords()` 将客户端坐标转为画布坐标 → `hitNodesAt()` 返回该坐标所有命中节点（排除 locked 节点、visible=false 节点、被遮挡节点等），按类型优先级（文本优先）和面积升序排列 → `findHitNode()` 取首个最优命中。
+用户单击 canvas → `getCanvasCoords()` 将客户端坐标转为画布坐标 → `hitNodesAt()` 返回该坐标所有命中节点（排除 `visible=false`、`visualOccluded`、OCR 不可见文本、locked 节点），按类型优先级（文本优先）和面积升序排列 → `findHitNode()` 取首个最优命中。
 
-若命中节点，`stopPropagation` 阻止事件冒泡，`emit('node-click', id)` 向上传递到 `ReportPage` → `ConsistencyView`，更新全局 `selectedPair`。未命中则 `emit('bg-click')` → `clear-pair`，清空选中态。
+若命中节点，`stopPropagation` 阻止事件冒泡，`emit('node-click', id)` 向上传递到 `ReportPage`。default 模式下 `ReportPage` 不做截获，直接 `emit('arkui-node-click' | 'design-node-click', id)` 继续冒泡到 `ConsistencyView`，更新全局 `selectedPair`。未命中则 `emit('bg-click')` → `clear-pair`，清空选中态。
 
-### 2.2 节点可选性过滤
+### 2.2 命中检测（hitNodesAt）
 
-`ConsistencyView` 接收 `node-click` 事件后，先通过 `resolveSelectableNode` 将容器节点优化替换为其后代中最深、面积最小的匹配文本节点，再通过 `isSelectableNode` 校验（visible 正常、未被遮挡、宽高 > 4px、非框架文本节点等）。通过校验后查找该节点所属的匹配对，有则设置 `selectedPair = pair`，无则生成 `unmatched-dev` / `unmatched` 虚对。
+`hitNodesAt()` 逐节点检查 rect 碰撞并过滤以下不可交互节点：
+- `visible === false`
+- `isHiddenTextNode(n)`：type 为 'text' 且被遮挡（`visualOccluded`）或 OCR 标注不可见
+- `visualOccluded` 非文本节点
+- 无 rect 或 rect 无宽高
+- `props.lockedIds` 包含该 id
 
-### 2.3 双击下钻
+过滤后按 `hitTypePriority`（文本 → 容器 → 其他）和面积升序排列。
 
-双击 canvas → 在同一坐标的命中节点列表中循环选取下一层，用于多节点堆叠时逐层深入。
+### 2.3 节点可选性校验
 
-### 2.4 Hover 联动
+`ConsistencyView` 接收 `node-click` 事件后，先通过 `resolveSelectableNode` 将容器节点优化替换为其后代中最深、面积最小的匹配文本节点，再通过 `isSelectableNode` 做二次校验（排除 visible=false、frameworkText、ocrHidden、visualOccluded、宽高 ≤ 4px）。通过校验后查找该节点所属的匹配对，有则设置 `selectedPair = pair`，无则生成 `unmatched-dev` / `unmatched` 虚对。
 
-`onMouseMove` → `findHitNode()` → `emit('node-hover', id)`。鼠标离开时 emit null。对侧通过 `externalHoveredId` prop 接收联动 hover，以相同样式在对方画布上绘制。cursor 在命中节点时改为 `pointer`。
+### 2.4 双击下钻
 
-### 2.5 Canvas 绘制
+双击 canvas → `hitNodesAt()` 获取同坐标全部命中节点，在列表中循环选取下一层，用于多节点堆叠时逐层深入。
 
-`draw()` 按顺序绘制，后绘覆盖先绘：锁定节点（红色虚线 + 🔒）→ hover 节点（红色虚线 + 浅红背景）→ 对侧联动 hover → 选中节点（红色实线 + 红色背景）→ Diff 间距标注（橙红色）→ Hover 实时间距标注（蓝色）。
+### 2.5 Hover 联动
 
----
+`onMouseMove` → `findHitNode()` → `emit('node-hover', id)`。鼠标离开时 emit null。对侧通过 `externalHoveredId` prop 接收联动 hover，以相同样式在对方画布上绘制。cursor 在命中节点时改为 `pointer`。`compareActive=true` 时，白色遮罩覆盖区域（选中范围外）不触发 hover。
 
-## 三、select 模式（选择比对模式）
+### 2.6 Canvas 绘制
 
-select 模式下，`ReportPage` 截获 `node-click` 和 `bg-click` 事件，只更新本地状态（`localArkuiId` / `localDesignId`），不再向上冒泡给 `ConsistencyView`。这使得用户可以在不影响全局选中状态的前提下自由选点，用于后续重新对比。
-
-### 3.1 框选
-
-`boxSelectMode=true` 时启用鼠标左键拖拽框选，分三个阶段：
-1. **开始拖拽**：记录起始坐标，清空已有框选状态
-2. **拖拽中**：超过 4px 抖动容差后开始绘框（蓝色虚线），实时检测 AABB 碰撞，收集框内命中节点，**不过滤 lockedIds**
-3. **结束拖拽**：`emit('box-select', nodes[])`，框选高亮保持直到下次单击清空
-
-同时支持 Ctrl/Cmd+单击在已有框选集合中增删单节点。
-
-### 3.2 重新对比
-
-select 模式下点击"重新对比"按钮 → `ConsistencyView.rerunCheck()` 检测到 `devSwitchActive=true` → 调用 `reportPageRef.runCompare()`，不走全量算法重跑。
-
-`runCompare()` 分两条子路径：
-- **单节点模式**（两侧各 1 个节点）：调用 `compareNodeStyles()` 前端本地对比，结果存入 `pendingDiffs`（临时），通过 `tempDiffs` 传入 `DiffReport` 覆盖展示，不更新全局 `result.diffs`。同时触发 `compareActive=true`，canvas 绘制白色遮罩高亮选中区域。
-- **批量模式**（任一侧 ≥ 2 个节点）：调用 `normalizeSelection()` + `matchNodes()` 后端 API 批量对比。
-
-选择发生任何变化（点选新节点、框选、点击空白），`watch` 自动清空 `pendingDiffs` 和 `tempDiffs`，DiffReport 回退到全量算法结果。
+`draw()` 按顺序绘制，后绘覆盖先绘：锁定节点（红色虚线 + 锁标）→ hover 节点（红色虚线 + 浅红背景）→ 对侧联动 hover → 选中节点（红色实线 + 红色背景）→ Diff 关联高亮（橙色）→ Diff 间距标注（橙红色 H 形）→ Hover 实时间距标注（蓝色）→ 框选命中高亮 → 框选矩形 → 对比激活白色遮罩。
 
 ---
 
-## 四、节点属性浮层（Inspector）
+## 三、edit 模式（人工标注模式）
 
-点选节点后，`ImagePanel` 在节点旁悬浮显示一个属性面板（`.node-inspector`），展示该节点的样式属性（字号、填充、圆角等），以及与对比结果的差异高亮。
+edit 模式由 float bar 的圆形按钮（edit）触发：点击一次将 `nodeCanvasMode` 设为 `'edit'`，再次点击回到 `'default'`。从 select 模式切入 edit 时会自动清空 select 状态。edit 模式下 `editMode=true` prop 传入 `ImagePanel`，点选行为与 default 一致（emit 冒泡到 `ConsistencyView`），但 Inspector 面板放宽显示条件、并开放人工标注入口。
 
-**显示条件**：
-- 间距模式：`highlightPair.type === 'spacing'` 时显示间距值
-- 节点模式：`inspectorNode` 非 null 且有可展示属性时显示
-- **edit 模式下额外放宽**：即使无 diff 也显示（条件中加入 `editMode`），确保用户始终可以访问人工标注功能
+### 3.1 Inspector 显示与属性展示
 
-**属性展示**：`displayStyle` 遍历 `inspectorNode.style`，将有值字段转为属性行列表，`diff` 字段标记该属性是否存在差异（来自 `styleDiffs` prop）。select 模式下 `styleDiffs` 传入空数组，因此不显示差异高亮。
+点选节点后，`ImagePanel` 在节点旁悬浮显示属性面板（`.node-inspector`），展示该节点的样式属性（字号、填充、圆角等），以及与对比结果的差异高亮。Inspector 支持拖拽自由定位，双击 header 复位到节点旁。
 
-### 4.1 edit 模式下的人工标注
+**显示条件**（满足任一即可）：
+- 间距模式：`highlightPair.type === 'spacing'` 且 value 非 null
+- 节点模式：`inspectorNode` 非 null，且 (`displayStyle` 非空 或 `debugMode` 开 或 **`editMode` 开**)
 
-edit 模式的核心功能：允许用户为任意节点添加人工自定义对比属性，修正算法漏检或错误判断。
+关键：`editMode=true` 时，即使节点无算法 diff、`displayStyle` 为空，Inspector 仍会显示。这是为确保用户始终可访问人工标注功能。
 
-**操作流程**：
+**属性展示**：`displayStyle` 遍历 `inspectorNode.style`，已保存的人工属性（`manualStyle`）也在 Inspector 中以只读行展示。`diff` 标记由 `styleDiffs` prop 驱动。select 模式下 `styleDiffs` 传入空数组，因此差异高亮不显示。
+
+### 3.2 人工标注操作流程
+
 1. Inspector header 右侧出现「+」按钮（最多只允许一行待确认，已存在则按钮变灰）
 2. 点击「+」→ 出现一行：下拉选择属性 + 输入期望值 + 绿勾确认按钮
-3. 输入时实时校验格式（如颜色值合法性），格式错误时提示
-4. 点击绿勾 → 属性保存到 `savedRows`，通过 `emit('save-manual-style')` 冒泡到 `ConsistencyView`
-5. `ConsistencyView.onSaveManualStyle()` 将值写入节点树的 `manualStyle` 字段，并自动生成/更新人工差异项（`_isManual=true`）。若该节点处于某匹配对中，生成双边 diff；否则生成单侧 diff（另一侧为"—"）
-6. 已保存行旁有 × 删除按钮，点击后从 `manualStyle` 和 diffs 中同步移除
+3. 输入时通过 `validateOverrideInput()` 实时校验格式（如颜色值合法性），格式错误时提示
+4. 点击绿勾 → 属性以原始值和解析值（`parseOverrideValue`）保存到 `savedRows`，通过 `emit('save-manual-style', { nodeId, key, parsedValue })` 冒泡到 `ConsistencyView`
+
+   **同时**，pending 行的 watch 会实时 `emit('extra-change', { nodeId, key, value })` 给 `ReportPage`。`ReportPage` 将该值写入 `devExtraOverride` / `designExtraOverride` ref，供 select 模式单节点对比和全量重跑时注入人工覆盖。
+
+5. `ConsistencyView.onSaveManualStyle()` 将值写入节点树的 `manualStyle` 字段，并自动生成/更新人工差异卡片（`_isManual=true`）。若该节点处于某匹配对中，通过 `generateManualDiff()` 生成双边 diff；否则生成单侧 diff（另一侧为"—"）
+6. 已保存行旁有 × 删除按钮，点击后 `emit('remove-manual-style')` → `ConsistencyView.onRemoveManualStyle()` 重新计算该属性的两侧对比，若仍不一致则更新卡片，若一致则移除卡片
 
 **下拉属性选项**（按节点类型区分）：
 
@@ -113,35 +109,161 @@ edit 模式的核心功能：允许用户为任意节点添加人工自定义对
 | `type === 'text'` | 字号、字重、颜色、字体、对齐、行高、字间距 |
 | `type === 'container'` | 填充、不透明度、圆角、描边宽度、描边颜色、内边距、间距、阴影、模糊 |
 
-**节点切换**：切换到不同节点时，pending 行自动清空，已保存行从目标节点的 `manualStyle` 还原显示。
+**节点切换**：`watch(() => props.inspectorNode?.id)` 触发时自动清空 pending 行、从节点的 `manualStyle` 还原已保存行、emit `extra-change(null)` 清除当前覆盖。
 
-**全量重跑影响**：edit 模式下保存的 `manualStyle` 值会在下次 `rerunCheck()` 全量重跑时通过 `getActiveOverrides()` 读取，patch 到节点副本后传入后端 `matchNodes()`，使人工标注参与全局匹配算法。
+### 3.3 Inspector 与 Diff 列表的实时联动
 
-### 4.2 Inspector 与 Diff 列表的实时联动
+**关键前提**：Inspector 显示的属性条目全部来自节点自身的 `style` 对象（`displayStyle` 遍历 `inspectorNode.style`），diff 报告仅通过 `styleDiffs` prop 提供差异标记，不提供属性值。因此联动的前提是 `selectedPair` 中包含完整节点对象（含 `type`、`style`、`textContent`、`rect` 等），仅有 id 的空壳无法驱动 Inspector。
 
-**关键前提**：Inspector 显示的属性条目全部来自节点自身的 `style` 对象（`displayStyle` 遍历 `inspectorNode.style`），diff 报告仅通过 `styleDiffs` prop 提供差异标记（哪些属性有高亮），不提供属性值。因此联动的前提是 `selectedPair` 中包含完整节点对象（含 `type`、`style`、`textContent`、`rect` 等），仅有 id 的空壳无法驱动 Inspector。
+edit 模式下修改 Inspector 属性后，右侧差异列表实时同步更新，形成"标注 → 出卡 → 联动"的闭环：
 
-edit 模式下修改 Inspector 属性后，右侧差异列表会实时同步更新，形成"标注 → 出卡 → 联动"的闭环：
-
-**保存 → 生成差异卡片**：`confirmExtra()` 保存人工属性后，`ConsistencyView.onSaveManualStyle()` 写入 `node.manualStyle`，然后根据节点是否处于匹配对中走两条路径：
+**保存 → 生成差异卡片**：`confirmExtra()` 保存后 → `ConsistencyView.onSaveManualStyle()` 写入 `node.manualStyle`，再根据节点是否处于匹配对中走两条路径：
 
 | 场景 | 生成方式 | diff 卡片内容 |
 |---|---|---|
-| 节点有匹配对 | `generateManualDiff(pair, key)` 检测双侧 `manualStyle[key]` | 仅人工标注侧显示实际值，**未标注侧显示"—"**；双侧均有人工标注时做真实对比 |
-| 节点无匹配对 | 直接构造单侧 diff | 修改侧显示值，对侧显示"—"，对侧 `nodeId` 为 null |
+| 节点有匹配对 | `generateManualDiff(pair, key, platform)` 检测双侧 `manualStyle[key]` → `upsertManualDiff()` | 仅标注侧显示值，**未标注侧显示"—"**；双侧标注时做真实对比；两侧值相等则生成 `_isResolved=true` 卡片 |
+| 节点无匹配对 | 直接构造单侧 diff → `upsertManualDiff()` | 修改侧显示值，对侧显示"—"，对侧 `nodeId` 为 null |
 
-卡片通过 `upsertManualDiff` 去重（同属性+同节点合并），最终经 `mergedDiffs` 与算法 diff 合并（人工同键覆盖、新键追加），传入 `DiffReport` 实时展示。
+`upsertManualDiff` 以 `(property, designNodeId, arkuiNodeId)` 三元组去重（同组覆盖）。最终 `mergedDiffs` 将 `manualDiffs` 与算法 diff 合并：人工卡片同三元组时覆盖算法卡片，新增时追加。
 
 **差异卡片 → 画布 + Inspector 联动**：点击人工差异卡片时，`onDiffSelect` 查找对应匹配对：
-
-- **有匹配对的节点**：pair 查找命中 → `selectedPair` 获得双侧完整节点 → 两侧画布同时高亮，两侧 Inspector 分别展示对应节点属性。即使人工属性只改了单侧，**对侧节点也会联动出现**。
-- **无匹配对的节点**：pair 查找未命中 → 从 `allDesignNodes` / `allArkuiNodes` 中查找完整节点对象 → 仅修改侧画布高亮并展示 Inspector，对侧无联动。
+- **有匹配对的节点**：pair 查找命中 → `selectedPair` 获得双侧完整节点 → 两侧画布同时高亮，两侧 Inspector 分别展示对应节点属性
+- **无匹配对的节点**：pair 未命中 → 从 `allDesignNodes` / `allArkuiNodes` 查找完整节点对象 → 仅修改侧画布高亮并展示 Inspector
 
 人工卡片与算法卡片遵循完全相同的 §六 双向联动机制，无差别。
 
-**删除 → 移除差异卡片**：`deleteRow()` 删除人工属性后，`onRemoveManualStyle()` 重新计算该属性的两侧对比结果。若值仍不一致则更新卡片，若一致则从 `manualDiffs` 中移除，卡片随之消失。
+**删除 → 移除差异卡片**：`deleteRow()` 后 → `onRemoveManualStyle()` 删除 `manualStyle[key]`，重新调用 `generateManualDiff()` 判断两侧是否仍有差异。若一致则 `removeManualDiffByMatch()` 移除卡片；若仍有差异则更新卡片。
 
-**数据复位**：加载新 case 或全量重跑完成后，`watch(() => result.value)` 自动清空 `manualDiffs`，人工标注的 `manualStyle` 保留在节点树中但 diff 列表回归算法结果。再次全量重跑时，`manualStyle` 通过 `getActiveOverrides()` 注入匹配流程，算法重新评估后会产出新的 diff，不再依赖人工 diff 兜底。
+**数据复位**：`watch(() => result.value)` 触发时（加载新 case 或全量重跑完成）自动 `manualDiffs.value = []`，人工标注的 `manualStyle` 保留在节点树中但 diff 列表回归算法结果。
+
+### 3.4 全量重跑中的 manualStyle 传递
+
+edit 模式下点击"重新对比"触发 `rerunCheck()`（default/edit 分支，非 select 分支）：
+1. 从 `reportPageRef.getActiveOverrides()` 读取 Inspector 中当前 pending 行的覆盖值
+2. 通过 `applyExtraOverride()` patch 到 `allDesignNodes` / `allArkuiNodes` 的副本上
+3. 节点树上已保存的 `manualStyle` 字段随节点副本一同传入后端 `matchNodes()`
+4. 后端匹配算法读取 `manualStyle` 覆盖节点样式后重新计算 diff
+
+因此人工标注参与全量重跑有两条数据通道：已保存的 `manualStyle` 存在于节点树中（持久）、pending 行通过 `getActiveOverrides` 读取（临时）。
+
+---
+
+## 四、select 模式（选择比对模式）
+
+select 模式由 float bar 的矩形按钮（select）触发：点击一次将 `nodeCanvasMode` 设为 `'select'` 并 `emit('dev-switch-change', true)` 通知父组件；再次点击回到 `'default'` 并清空选中状态。
+
+select 模式下，`ReportPage` 截获 `node-click` 和 `bg-click` 事件，只更新本地状态（`localArkuiId` / `localDesignId`），不再向上冒泡给 `ConsistencyView`。这使得用户可以在不影响全局选中状态的前提下自由选点，用于后续局部对比。
+
+### 4.1 点选
+
+select 模式下单击 canvas：
+- 命中节点 → `ReportPage.onDevNodeClick(id)` / `onDesignNodeClickLocal(id)` 截获事件，仅写入 `localArkuiId` / `localDesignId`，不 emit 给 `ConsistencyView`
+- 未命中 → `ReportPage.onDevBgClick()` / `onDesignBgClick()` 截获，仅清空本地 id
+- 任意选择变化（id 或节点列表）→ `watch` 自动清空 `pendingDiffs` 和 `tempDiffs`，DiffReport 回退到全量算法结果
+
+由于不更新全局 `selectedPair`，点选不会触发全量 diff 列表联动和画布红色实线高亮（select 模式下 `boxSelectMode=true`、`selectedId` 和 `inspectorNode` 使用本地状态，画布仅显示框选命中高亮或 click 命中的单节点选中高亮）。
+
+### 4.2 框选
+
+select 模式下在 canvas 上按住鼠标左键拖拽：
+- **拖拽 < 4px**：视为抖动容差，不触发任何框选行为，松手后按普通单击处理
+- **拖拽 ≥ 4px**：开始绘框（蓝色虚线 + 浅蓝半透明填充），实时 AABB 碰撞检测。命中判定通过 `canHoverInSel` 验证（框内至少有一个点可 hover 到该节点），全屏包裹节点（rect 接近 canvas 尺寸）自动排除。同时设置 `suppressClick=true`，阻止松手时的 click 事件
+- **松手（结束拖拽）**：`emit('box-select', nodes[])`，框选高亮保持直到下次单击清空。若在框选过程中鼠标移出 `wrapper` 边界，自动结束框选
+
+`boxSelectMode=true`（由 `nodeCanvasMode === 'select'` 驱动）时启用鼠标左键拖拽框选，分三个阶段：
+1. **开始拖拽**：`onBoxStart` 记录起始坐标和鼠标位置，清空上次框选高亮
+2. **拖拽中**：`onBoxMove` 超过 4px 后开始绘框，实时 AABB 碰撞检测
+3. **结束拖拽**：`onBoxEnd` → `emit('box-select', nodes[])`，框选高亮保持直到下次单击清空
+
+同时支持 **Ctrl/Cmd+单击**在已有框选集合中增删单节点（此操作不改变 `localArkuiId`/`localDesignId`）。
+
+**注意**：设计侧 locked 节点在 `hitNodesAt` 阶段被过滤，因此 `canHoverInSel` 判定时无法命中，locked 节点**不会被框选选中**。
+
+### 4.3 重新对比
+
+select 模式下点击"重新对比"按钮 → `ConsistencyView.rerunCheck()` 检测到 `devSwitchActive=true` → 调用 `reportPageRef.runCompare()`，不走全量算法重跑。
+
+`runCompare()` 分两条子路径：
+
+**单节点模式**（两侧各 1 个节点）：
+1. 从 `devExtraOverride` / `designExtraOverride` 读取 Inspector 中 pending 行的人工覆盖值
+2. 调用 `compareNodeStyles(designNode, devNode, overrides)` 前端本地对比
+3. 结果存入 `pendingDiffs`（临时），通过 `emit('temp-diffs', diffs)` 传入父组件 `ConsistencyView`
+4. `ConsistencyView` 以 `tempDiffs` 覆盖传给 `ReportPanel`，优先展示临时结果
+5. 同时 `compareActive=true`，canvas 在选中区外绘制白色遮罩，突出对比区域
+
+**批量模式**（任一侧 ≥ 2 个节点）：
+1. 调用 `normalizeSelection()` 归一化选中节点的 rect
+2. 调用后端 `matchNodes(designNodes, devNodes, canvas, platform, 'part')` API 做局部匹配+比对
+3. 结果同样通过 `pendingDiffs` / `tempDiffs` 临时展示
+
+### 4.4 状态清理
+
+temp 状态不随选择变化自动清除。清除只通过以下方式：
+
+- **点击画布空白区域**：`onDevBgClick()` / `onDesignBgClick()` → `clearCompare()` + `emit('clear-pair')`
+- **退出 select 模式**：悬浮框切换 → `clearSelectState()` → `clearCompare()`
+- **「添加到分析结果」按钮**：`mergeTempToResult()` → 合并 temp-diffs/temp-pairs 到正式结果 → 清除 temp
+
+### 4.5 「添加到分析结果」合并逻辑
+
+点击按钮触发 `mergeTempToResult()`：
+
+1. **diffs 合并**：以 `(designNodeId, arkuiNodeId, property)` 为键，temp-diffs 覆盖正式同键条目、新键追加
+2. **pairs 合并（双向覆盖去交集）**：
+   - 先遍历 arkui 侧覆盖：`arkuiMap[id] = pair`
+   - 再遍历 design 侧覆盖：`designMap[id] = pair`
+   - 取交集：只保留同时出现在两侧且 design-arkui 对应一致的 pair
+3. 合并完成后清空 `tempDiffs` / `tempPairs` / `pendingDiffs`，回到 select-select
+4. 存储按钮检测到 diffs 中有 `_isManual` 标记后自动解禁
+
+### 4.5 temp-diff 双向联动
+
+select 模式下重新对比后产生 temp 状态（`pendingDiffs` 非 null），此时画布和报告需要与正式 diff 保持一致的联动行为。
+
+#### 核心机制：temp 激活时画布切换为 selectedPair 驱动
+
+通过 `selectBranchMode` computed 判断当前所处分支（`'select-select'` | `'select-tempPairs'`）。tempPairs 分支时：
+
+- **画布 selectedId / inspectorNode / styleDiffs**：不再使用本地状态（`localArkuiId` 等），改为使用 `selectedPair` 驱动，与 default/edit 模式一致
+- **节点点击**：同时写入本地 id + emit 到 `ConsistencyView`（更新 `selectedPair`，驱动 diff 列表高亮和 Inspector 展示）
+- **画布空白点击**：清空本地 id + `clearCompare()` + emit `clear-pair`（清除 temp 状态）
+- **diff 卡片点击**：`onDiffSelect` 中 `tempPairs` 非空时只在 tempPairs 中查找匹配对 → 更新 `selectedPair` → 画布高亮 + Inspector 显示
+
+#### 数据传递路径
+
+```
+ReportPage.runCompare()
+  ├─ emit('temp-diffs', diffs)    // diff 列表展示
+  └─ emit('temp-pairs', tempPairs) // diff 卡片点击时查找匹配对
+         ↓
+ConsistencyView
+  ├─ tempDiffs → mergedDiffs → DiffReport 展示
+  ├─ tempPairs → onDiffSelect 优先查找
+  └─ onDiffSelect:
+       tempPairs 非空 → 仅在 tempPairs 查找（命中联动，未命中忽略）
+       tempPairs 为空 → 走正式 pairs 查找
+         ↓
+ImagePanel
+  └─ effectiveDevSelectedId / effectiveDevInspectorNode / effectiveDevStyleDiffs
+      → temp 激活时使用 selectedPair（来自 diff 点击或画布点选的 emit）
+```
+
+#### select 模式下的两种分支对比
+
+| 维度 | 分支1：纯 select（无 temp） | 分支2：temp 激活（已重新对比） |
+|---|---|---|
+| **触发条件** | 进入 select 模式，未点击"重新对比" | 重新对比完成后 `pendingDiffs !== null` |
+| **canvas 驱动源** | `localArkuiId` / `localDesignId` | `selectedPair`（同 default/edit） |
+| **节点点击** | 仅写本地 id，不冒泡 | 写本地 id + emit 到 ConsistencyView → 更新 `selectedPair` |
+| **画布红色高亮** | 点选的本地节点 | `selectedPair` 对应节点 |
+| **Inspector 显示** | 本地节点属性，无 diff 高亮 | `selectedPair` 节点属性 + diff 高亮 |
+| **Inspector 覆盖** | 不支持（无 `editMode`，无 `+` 按钮） | 不支持（无 `editMode`） |
+| **画布空白点击** | 仅清空本地 id | 清空本地 id + `clearCompare()` + `emit('clear-pair')`（清除 temp） |
+| **框选** | 正常拖拽框选 | 正常拖拽框选 |
+| **diff 卡片点击** | —（无 tempDiffs） | 在 `tempPairs` 中查找 → `selectedPair` → 画布高亮 + Inspector |
+| **画布 → diff 列表** | 不联动（事件截获） | 联动（emit 冒泡 → `activePairForDiff`） |
+| **diff 列表 → 画布** | — | 联动（tempPairs → selectedPair → canvas） |
 
 ---
 
@@ -156,7 +278,8 @@ edit 模式下修改 Inspector 属性后，右侧差异列表会实时同步更�
          ├─ 拖拽 → emit('box-select', nodes[])
          ├─ Hover → emit('node-hover', id | null)
          ├─ 空白点击 → emit('bg-click')
-         └─ edit 模式「+」→ emit('save-manual-style' / 'remove-manual-style')
+         ├─ edit 模式 pending 行变化 → emit('extra-change')
+         └─ edit 模式「+」确认/删除 → emit('save-manual-style' / 'remove-manual-style')
          ↓
   ReportPage（两侧面板协调 + float bar 模式开关）
          ├─ default 模式
@@ -169,8 +292,8 @@ edit 模式下修改 Inspector 属性后，右侧差异列表会实时同步更�
          │  └─ 任一选择变化 → watch → clearCompare()
          └─ edit 模式
             ├─ 点选 → 同 default，emit 冒泡
-            ├─ Inspector「+」→ devExtraOverride / designExtraOverride
-            └─ save-manual-style → 冒泡到 ConsistencyView
+            ├─ extra-change → 写入 devExtraOverride / designExtraOverride
+            └─ save-manual-style / remove-manual-style → 冒泡到 ConsistencyView
          ↓（default/edit 模式继续传递）
   ConsistencyView（全局状态管理）
          ├─ onArkuiNodeClick / onDesignNodeClick
@@ -256,11 +379,77 @@ DiffReport 的「精准检查 / 模糊比对」Tab 仅控制可见 diff 集合�
 
 ## 7.3 路径 B：全量重跑（default / edit 模式）
 
-仅在 `devSwitchActive=false` 时生效。流程：清空高亮状态 → 调用 `matchNodes()` 后端接口 → 更新 `result.diffs/pairs/stats` → 存档（`submitRerunVersion`）→ 更新版本列表和 URL 参数。edit 模式下保存的 `manualStyle` 在重跑前通过 `getActiveOverrides()` 注入节点副本，使人工标注参与匹配。
+仅在 `devSwitchActive=false` 时生效。流程：清空高亮状态 → 读取 Inspector 中 pending 行的覆盖值（`getActiveOverrides()`）→ patch 到节点副本 → 节点树上已保存的 `manualStyle` 随副本一同传入后端 `matchNodes()` → 更新 `result.diffs/pairs/stats` → 存档（`submitRerunVersion`）→ 更新版本列表和 URL 参数。
 
 ## 7.4 存档流程
 
 全量重跑成功后自动存档：序列化 diffs/pairs → 调用 mock API 追加新版本（不覆盖旧版本）→ 更新版本列表 → 注入 `_problemId` → 更新 URL 参数。存档失败静默处理。
+
+## 7.5 人工标注的独立存储与消费
+
+edit 模式下用户对节点新增的人工属性（`manualStyle`），通过 ReportPanel 的「存储」按钮独立存档，无需重跑算法。存储后的数据在历史版本加载时自动回显到节点 Inspector 中。
+
+### 7.5.1 存储按钮出现条件
+
+```
+hasManualEdits = manualDiffs.length > 0
+```
+
+- 用户在 edit 模式下新增人工属性并点绿勾确认 → `onSaveManualStyle()` 写入 `node.manualStyle` 并调用 `upsertManualDiff()` 生成人工差异卡片 → `manualDiffs` 长度 > 0 → 存储按钮显示
+- 点击存储成功后 `manualDiffs.value = []` → 按钮自动隐藏
+- 刷新页面或加载历史版本后 `manualDiffs` 被 `watch(() => result.value)` 清空 → 按钮隐藏，直到用户再次新增人工标注
+
+### 7.5.2 存储数据流
+
+```
+ReportPanel handleSave() → emit('save')
+  → ConsistencyView.onSave()
+    → nodeManualAttr (computed) 从节点树收集 manualStyle
+        结构: { dev: { nodeId: { key: val } }, design: { nodeId: { key: val } } }
+    → buildProblems(result, { diffs: mergedDiffs, nodeManualAttr })
+      → nodeMatchs = JSON.stringify({
+          matchedPairIds: [[arkuiId, designId], ...],
+          nodeManualAttr: { dev: {...}, design: {...} }
+        })
+      → problems = mergedDiffs 序列化（含人工 diff 卡片）
+    → addConsistencyCheckPage({ id: pageId, problems, nodeMatchs, ... })
+      → 追加新版本到后端
+    → 刷新版本列表 + 更新 URL versionId
+    → manualDiffs.value = []（隐藏存储按钮）
+```
+
+关键点：
+- `nodeManualAttr` 内嵌在 `nodeMatchs` JSON 字符串中，与 `matchedPairIds` 同级
+- `problems` 使用 `mergedDiffs`（算法 diff + 人工 diff 合并），而非纯算法 diff
+- 与"重新对比"的区别：存储不调用后端算法、不重跑匹配，仅序列化当前前端状态
+
+### 7.5.3 消费端回显
+
+版本加载时自动还原人工标注到节点：
+
+```
+历史版本加载 (onHistoryView / URL 参数加载)
+  → loadHistoryVersion(rawVersion, deviceType)
+    → preprocessVersion(v)
+      → 解析 v.nodeMatchs → 提取 matchedPairIds + nodeManualAttr
+      → 挂到 v._matchedPairIds 和 v._nodeManualAttr
+    → parseDevUpload / parseDesignUpload → 生成 _allArkui / _allDesign 节点数组
+    → 回写人工标注:
+        for (const n of _allArkui) {
+          if (dev[n.id]) n.manualStyle = { ...dev[n.id] }
+        }
+        for (const n of _allDesign) {
+          if (design[n.id]) n.manualStyle = { ...design[n.id] }
+        }
+    → result.value = { allArkuiNodes: _allArkui, allDesignNodes: _allDesign, ... }
+      → nodeManualAttr (computed) 自动反映已还原的 manualStyle
+      → Inspector 展示已保存的人工属性
+```
+
+关键点：
+- 回写发生在 `result.value` 赋值之前，确保节点进入响应式系统时已携带 `manualStyle`
+- 旧版本（无 `nodeManualAttr` 字段）不受影响，`_nodeManualAttr` 为 `null`，回写逻辑跳过
+- 加载后 `manualDiffs` 被 `watch(() => result.value)` 清空，存储按钮隐藏，但节点 Inspector 中仍显示已保存的人工属性行
 
 ---
 
@@ -270,8 +459,8 @@ DiffReport 的「精准检查 / 模糊比对」Tab 仅控制可见 diff 集合�
 |---|---|
 | `components/ImagePanel.vue` | canvas 绘制、点选框选事件、坐标转换、命中检测、对比激活遮罩、edit 模式人工属性编辑 UI |
 | `components/ReportPage.vue` | 两侧面板协调、float bar 模式开关、本地选择状态、`runCompare`、`pendingDiffs`、人工覆盖传递 |
-| `ConsistencyView.vue` | 全局 `selectedPair` / `activeDiff`，事件路由，`tempDiffs` 中转，`rerunCheck` 分流，人工 `manualStyle` 写入与 diff 生成 |
-| `components/ReportPanel.vue` | 右侧差异面板，`tempDiffs ?? result.diffs` 切换展示 |
+| `ConsistencyView.vue` | 全局 `selectedPair` / `activeDiff`，事件路由，`tempDiffs` 中转，`rerunCheck` 分流，人工 `manualStyle` 写入与 diff 生成，`nodeManualAttr` computed 收集与存储/回显 |
+| `components/ReportPanel.vue` | 右侧差异面板，`tempDiffs ?? result.diffs` 切换展示，「存储」按钮状态控制与 emit |
 | `components/DiffReport.vue` | 差异列表点选，emit `diff-select` 触发 `activeDiff` 联动 |
 | `utils/tools.ts` | `isSelectableNode`、`resolveSelectableNode`、`isHiddenTextNode` |
 | `utils/constants.ts` | `TEXT_STYLE_OPTIONS` / `CONTAINER_STYLE_OPTIONS`（edit 模式人工属性选项） |

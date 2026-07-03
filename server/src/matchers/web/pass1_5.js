@@ -2,7 +2,8 @@ import { makePair } from '../matchStrategies.js'
 import { isCompatibleType, hasVisualDecoration } from '../../utils/nodeVisibility.js'
 import { computeIoU } from '../../utils/matchGeometry.js'
 import { rectContains, relation } from '../anchorCheck.js'
-import { tripleScore, round4 } from '../anchorTopology.js'
+import { tripleScore } from '../anchorTopology.js'
+import { MatchTools } from '../tools.js'
 
 export function matchByAnchorContain(anchors, availDev, availDesign, ctx) {
   const consistentWithAnchors = (an, dn) => anchors.every(s => {
@@ -37,7 +38,7 @@ export function matchByAnchorContain(anchors, availDev, availDesign, ctx) {
     lockedDesign.add(dn.id)
     result.push(makePair(dn, an, 'text-con-包含', {
       confidence: 'high',
-      topologyScore: round4(score),
+      topologyScore: MatchTools.round4(score),
       iou: computeIoU(dn.normRect, an.normRect),
     }))
   }

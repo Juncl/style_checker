@@ -190,6 +190,7 @@ let fitW = 0, fitH = 0, wrapW = 0, wrapH = 0
 const boxDrag    = ref(null)        // { startPx, startPy, startCX, startCY }
 const boxRect    = ref(null)        // { x, y, w, h } 当前框（画布坐标）
 const boxHitIds  = ref(new Set())   // 当前框内命中的节点 id
+const frozenMaskRects = ref(null)  // 进入 tempPairs 时快照的遮盖区域，之后不变
 let   suppressClick = false         // 框选完成后阻止下一次 click 事件
 
 // 本地同步记录当前选中 id，用于双击下钻
@@ -294,7 +295,18 @@ watch(() => [props.canvasW, props.canvasH], () => nextTick(draw))
 watch(() => props.debugPipelineVisible,  () => nextTick(draw))
 watch(() => props.debugVisible,          () => nextTick(draw))
 watch(() => props.externalHoveredId,     () => nextTick(draw))
-watch(() => props.compareActive,         () => nextTick(draw))
+watch(() => props.compareActive, (active) => {
+  if (active) {
+    frozenMaskRects.value = boxHitIds.value.size > 0
+      ? props.nodes.filter(n => boxHitIds.value.has(n.id) && n.rect).map(n => n.rect)
+      : ((props.selectedId || localSelectedId.value)
+          ? [props.nodes.find(n => n.id === (props.selectedId || localSelectedId.value))?.rect].filter(Boolean)
+          : [])
+  } else {
+    frozenMaskRects.value = null
+  }
+  nextTick(draw)
+})
 watch(() => props.boxSelectMode, (on) => {
   if (!on) {
     boxHitIds.value       = new Set()
@@ -388,8 +400,8 @@ function onCanvasClick(e) {
   if (suppressClick) { suppressClick = false; if (!(e.ctrlKey || e.metaKey)) return }
   if (e.detail >= 2) return  // 双击序列中的第二次 click，交给 dblclick 处理
 
-  // Ctrl/Cmd+点击：select 模式下切换单个节点的命中状态（Mac 用 Cmd，Windows 用 Ctrl）
-  if ((e.ctrlKey || e.metaKey) && props.boxSelectMode) {
+  // Ctrl/Cmd+点击：select 模式下切换单个节点的命中状态（tempPairs 模式不触发）
+  if ((e.ctrlKey || e.metaKey) && props.boxSelectMode && !props.compareActive) {
     const coords = getCanvasCoords(e)
     if (!coords) return
     const hit = findHitNode(coords.px, coords.py)
@@ -405,8 +417,8 @@ function onCanvasClick(e) {
     return
   }
 
-  if (props.boxSelectMode && boxHitIds.value.size > 0) {
-    boxHitIds.value = new Set()   // 单击清空框选高亮
+  if (props.boxSelectMode && boxHitIds.value.size > 0 && !props.compareActive) {
+    boxHitIds.value = new Set()   // 单击清空框选高亮（tempPairs 模式不清空）
     draw()
   }
   const coords = getCanvasCoords(e)
@@ -444,7 +456,7 @@ function onMouseMove(e) {
   if (props.compareActive && hit) {
     const inSelected = boxHitIds.value.size > 0
       ? boxHitIds.value.has(hit.id)
-      : hit.id === localSelectedId.value
+      : hit.id === (props.selectedId || localSelectedId.value)
     if (!inSelected) hit = null
   }
   const newId = hit?.id ?? null
@@ -474,7 +486,8 @@ function rectsIntersect(a, b) {
 
 function onBoxStart(e) {
   if (!props.boxSelectMode || e.button !== 0) return
-  if (e.ctrlKey || e.metaKey) return  // Ctrl/Cmd+点击交给 click 事件处理，不启动框选
+  if (e.ctrlKey || e.metaKey) return
+  if (props.compareActive) return  // tempPairs 模式不启动框选，光标保持 pointer/default
   const coords = getCanvasCoords(e)
   if (!coords) return
   e.preventDefault()
@@ -699,8 +712,8 @@ function draw() {
     if (n) drawNodeRect(ctx, n.rect, sx, sy, 'rgba(224,33,40,0.10)', '#E02128', 1, [4, 3])
   }
 
-  // 选中节点（红色实线 + 红色背景，对比激活时不绘制）
-  if (props.selectedId && !props.compareActive) {
+  // 选中节点（红色实线 + 红色背景）
+  if (props.selectedId) {
     const n = props.nodes.find(n => n.id === props.selectedId)
     if (n) drawNodeRect(ctx, n.rect, sx, sy, 'rgba(224,33,40,0.20)', '#E02128', 1, [])
   }
@@ -751,13 +764,9 @@ function draw() {
     ctx.setLineDash([])
   }
 
-  // 对比激活：在选中区外绘制白色遮罩，突出高亮选中区
-  if (props.compareActive) {
-    const hitRects = boxHitIds.value.size > 0
-      ? props.nodes.filter(n => boxHitIds.value.has(n.id) && n.rect).map(n => n.rect)
-      : (localSelectedId.value
-          ? [props.nodes.find(n => n.id === localSelectedId.value)?.rect].filter(Boolean)
-          : [])
+  // 对比激活：在选中区外绘制白色遮罩，快照于进入 tempPairs 时刻，之后不变
+  if (props.compareActive && frozenMaskRects.value) {
+    const hitRects = frozenMaskRects.value
     if (hitRects.length > 0) {
       const u = unionRects(hitRects)
       const mX = u.x * sx, mY = u.y * sy, mW = u.w * sx, mH = u.h * sy

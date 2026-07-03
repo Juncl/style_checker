@@ -3,9 +3,18 @@
   <div class="up-tabbar up-tabbar--report">
     <span class="report-tab-title">分析结果</span>
     <div class="report-links">
+      <template v-if="isSaveVisible">
+        <button
+          class="report-link"
+          :class="{ 'report-link--disabled': isSaveDisabled }"
+          :disabled="isSaveDisabled"
+          @click="handleSave"
+        >存储</button>
+        <span class="report-link-sep"></span>
+      </template>
       <button class="report-link" @click="handleShare">分享</button>
       <span class="report-link-sep"></span>
-      <button class="report-link" @click="showHistoryPanel = true">历史报告</button>
+      <button class="report-link" @click="showHistoryPanel = true">历史结果</button>
       <span class="report-link-sep"></span>
       <button
         class="report-link"
@@ -47,6 +56,12 @@
     @select="$emit('diff-select', $event)"
     @diff-hover="$emit('diff-hover', $event)"
   />
+
+  <div v-if="tempDiffs" class="temp-diff-action-bar">
+    <button class="temp-diff-action-btn" @click="onTempDiffAction">
+      添加到分析结果
+    </button>
+  </div>
 
   <div v-show="debugMode && rightTab === 'tree'" class="tree-source-switch">
     <button :class="{ active: treeSide === 'design' }" @click="treeSide = 'design'">
@@ -113,6 +128,8 @@ const props = defineProps({
   platform:          { type: String,             default: 'hmPhone' },
   tempDiffs:         { type: Array,              default: null },
   mergedDiffs:       { type: Array,              default: () => [] },
+  reportCanvasMode:  { type: String,             default: 'default' },
+  hasManualEdits:    { type: Boolean,            default: false },
 })
 
 const emit = defineEmits([
@@ -123,12 +140,20 @@ const emit = defineEmits([
   'toggle-lock',
   'rerun',
   'history-view',
+  'temp-diff-action',
+  'save',
 ])
+
+function onTempDiffAction() {
+  emit('temp-diff-action')
+}
 
 const rightTab = ref('diff')
 const treeSide = ref('design')
 const emptyLockedIds = new Set()
 
+const isSaveDisabled = computed(() => !props.hasManualEdits)
+const isSaveVisible  = computed(() => props.hasManualEdits)
 const showShareDialog  = ref(false)
 const showHistoryPanel = ref(false)
 
@@ -145,6 +170,10 @@ function onHistoryView(item) {
 function handleRerun() {
   showHistoryPanel.value = false
   emit('rerun')
+}
+
+function handleSave() {
+  emit('save')
 }
 
 function handleShare() {
@@ -189,5 +218,30 @@ const treeSelectedId = computed(() =>
 @keyframes rerun-rotate {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
+}
+
+.temp-diff-action-bar {
+  position: sticky;
+  bottom: 16px;
+  padding: 0 16px;
+  margin-top: 16px;
+  flex-shrink: 0;
+}
+
+.temp-diff-action-btn {
+  width: 100%;
+  height: 32px;
+  padding: 4px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #fff;
+  background: var(--octo-primary);
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.temp-diff-action-btn:hover {
+  background: #0056B3;
 }
 </style>

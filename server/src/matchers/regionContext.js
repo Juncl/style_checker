@@ -1,6 +1,7 @@
 import { centerY, unionNormRect, sizeRatio } from '../utils/matchGeometry.js'
 import { hasVisualDecoration } from '../utils/nodeVisibility.js'
 import { normalizeText, setJaccard } from '../utils/textSemantics.js'
+import { MatchTools } from './tools.js'
 
 // Regions provide coarse page structure before individual node matching runs.
 export function segmentRegions(nodes, source) {
@@ -168,7 +169,7 @@ export function regionMatchScore(designRegion, arkuiRegion, anchorVotes) {
   const centerScore = Math.max(0, 1 - Math.abs(centerY(designRegion.rect) - centerY(arkuiRegion.rect)) / 0.35)
   const heightScore = sizeRatio(designRegion.rect.h, arkuiRegion.rect.h)
   const geometryScore = centerScore * 0.65 + heightScore * 0.35
-  const histScore = histogramSimilarity(designRegion.counts, arkuiRegion.counts)
+  const histScore = MatchTools.histogramSimilarity(designRegion.counts, arkuiRegion.counts)
   const textScore = setJaccard(designRegion.textSet, arkuiRegion.textSet)
   const decorationScore = Math.max(0, 1 - Math.abs(designRegion.decoratedRatio - arkuiRegion.decoratedRatio) / 0.5)
   const anchorScore = Math.min(1, anchorVotes / 3)
@@ -199,19 +200,6 @@ export function nodeToRegionMap(regions) {
     for (const id of region.nodeIds) map.set(id, region.id)
   }
   return map
-}
-
-export function histogramSimilarity(a, b) {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
-  let dot = 0, aa = 0, bb = 0
-  for (const key of keys) {
-    const av = a[key] || 0
-    const bv = b[key] || 0
-    dot += av * bv
-    aa += av * av
-    bb += bv * bv
-  }
-  return aa && bb ? dot / Math.sqrt(aa * bb) : 0
 }
 
 export function formatRegionForOutput(region) {

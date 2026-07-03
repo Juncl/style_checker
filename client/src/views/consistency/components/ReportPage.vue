@@ -172,9 +172,9 @@
           :canvas-w="result.canvas.arkui.w"
           :canvas-h="result.canvas.arkui.h"
           :nodes="arkuiNodes"
-          :selected-id="nodeCanvasMode === 'select' ? localArkuiId : (selectedPair?.arkui?.id || null)"
-          :inspector-node="nodeCanvasMode === 'select' ? localArkuiNode : (selectedPair?.arkui || null)"
-          :style-diffs="nodeCanvasMode === 'select' ? [] : selectedArkuiDiffs"
+          :selected-id="effectiveDevSelectedId"
+          :inspector-node="effectiveDevInspectorNode"
+          :style-diffs="effectiveDevStyleDiffs"
           :external-hovered-id="hoveredArkuiCrossId"
           :debug-mode="debugMode"
           :debug-pipeline-visible="debugPipelineOn"
@@ -245,9 +245,9 @@
           :canvas-w="result.canvas.design.w"
           :canvas-h="result.canvas.design.h"
           :nodes="designNodes"
-          :selected-id="nodeCanvasMode === 'select' ? localDesignId : (selectedPair?.design?.id || null)"
-          :inspector-node="nodeCanvasMode === 'select' ? localDesignNode : (selectedPair?.design || null)"
-          :style-diffs="nodeCanvasMode === 'select' ? [] : selectedDesignDiffs"
+          :selected-id="effectiveDesignSelectedId"
+          :inspector-node="effectiveDesignInspectorNode"
+          :style-diffs="effectiveDesignStyleDiffs"
           :locked-ids="lockedNodeIds"
           :external-hovered-id="hoveredDesignCrossId"
           :debug-mode="debugMode"
@@ -338,8 +338,10 @@ const emit = defineEmits([
   'dev-switch-change',
   'compare-nodes',
   'temp-diffs',
+  'temp-pairs',
   'save-manual-style',
   'remove-manual-style',
+  'node-canvas-mode-change',
 ])
 
 
@@ -355,6 +357,8 @@ const localArkuiNodeList  = ref([])    // 开发侧框选节点列表
 const localDesignNodeList = ref([])    // 设计侧框选节点列表
 const pendingDiffs       = ref(null)   // 当前临时对比结果；非 null 即为对比激活状态
 const compareActive      = computed(() => pendingDiffs.value !== null)
+
+watch(nodeCanvasMode, (val) => emit('node-canvas-mode-change', val))
 
 // 两侧 Inspector 自定义对比行的人工覆盖：{ nodeId, key, value } | null
 const devExtraOverride    = ref(null)
@@ -394,16 +398,35 @@ const localDesignNode = computed(() =>
     : null
 )
 
+// ── select 模式下的分支切换 ──────────────────────────────────────────────────
+// select-select：纯 select，画布/Inspector 由本地状态驱动（localArkuiId 等）
+// select-tempPairs：已执行重新对比，画布/Inspector 由 selectedPair 驱动（同 default/edit）
+// 两分支切换：进入 tempPairs 有且只有"重新对比"按钮触发（runCompare 设置 pendingDiffs）
+//            退出 tempPairs：① 悬浮框切出 select → clearSelectState
+//                           ② 画布空白点击 → clearCompare + emit clear-pair
+//                           ③ "添加到分析结果"按钮（待实现）
+
+const selectBranchMode = computed(() =>
+  nodeCanvasMode.value === 'select'
+    ? (pendingDiffs.value !== null ? 'select-tempPairs' : 'select-select')
+    : null
+)
+
+/** 画布是否使用 selectedPair 驱动（default/edit 或 tempPairs 模式） */
+function usePair() { return nodeCanvasMode.value !== 'select' || selectBranchMode.value === 'select-tempPairs' }
+
+const effectiveDevSelectedId     = computed(() => usePair() ? (props.selectedPair?.arkui?.id || null) : localArkuiId.value)
+const effectiveDevInspectorNode  = computed(() => usePair() ? (props.selectedPair?.arkui || null)       : localArkuiNode.value)
+const effectiveDevStyleDiffs     = computed(() => usePair() ? (props.selectedArkuiDiffs ?? [])           : [])
+const effectiveDesignSelectedId  = computed(() => usePair() ? (props.selectedPair?.design?.id || null)   : localDesignId.value)
+const effectiveDesignInspectorNode = computed(() => usePair() ? (props.selectedPair?.design || null)      : localDesignNode.value)
+const effectiveDesignStyleDiffs  = computed(() => usePair() ? (props.selectedDesignDiffs ?? [])          : [])
+
 function clearCompare() {
   pendingDiffs.value = null
   emit('temp-diffs', null)
+  emit('temp-pairs', null)
 }
-
-// 选择变化时自动清除对比状态，不再由各事件处理函数手动调用
-watch(
-  [localArkuiId, localDesignId, localArkuiNodeList, localDesignNodeList],
-  () => clearCompare()
-)
 
 function clearSelectState() {
   localArkuiId.value        = null
@@ -412,6 +435,7 @@ function clearSelectState() {
   localDesignNodeList.value = []
   pendingDiffs.value        = null
   emit('temp-diffs', null)
+  emit('temp-pairs', null)
   emit('dev-switch-change', false)
 }
 
@@ -451,22 +475,30 @@ function onDesignBoxSelect(nodes) {
   localDesignNodeList.value = nodes
 }
 
-function onDevNodeClick(id) {
-  if (nodeCanvasMode.value === 'select') localArkuiId.value = id
-  else emit('arkui-node-click', id)
+/** select 模式下的节点点击：select-select 仅写本地；select-tempPairs 同步 emit 以驱动全局联动 */
+function handleCanvasNodeClick(id, localRef, eventName) {
+  if (nodeCanvasMode.value === 'select') {
+    localRef.value = id
+    if (selectBranchMode.value === 'select-tempPairs') emit(eventName, id)
+  } else {
+    emit(eventName, id)
+  }
 }
-function onDesignNodeClickLocal(id) {
-  if (nodeCanvasMode.value === 'select') localDesignId.value = id
-  else emit('design-node-click', id)
+
+/** select 模式下的画布空白点击：select-select 仅清本地；select-tempPairs 清 temp 并抛 clear-pair */
+function handleCanvasBgClick(localRef) {
+  if (nodeCanvasMode.value === 'select') {
+    localRef.value = null
+    if (selectBranchMode.value === 'select-tempPairs') { clearCompare(); emit('clear-pair') }
+  } else {
+    emit('clear-pair')
+  }
 }
-function onDevBgClick() {
-  if (nodeCanvasMode.value === 'select') localArkuiId.value = null
-  else emit('clear-pair')
-}
-function onDesignBgClick() {
-  if (nodeCanvasMode.value === 'select') localDesignId.value = null
-  else emit('clear-pair')
-}
+
+function onDevNodeClick(id) { handleCanvasNodeClick(id, localArkuiId, 'arkui-node-click') }
+function onDesignNodeClickLocal(id) { handleCanvasNodeClick(id, localDesignId, 'design-node-click') }
+function onDevBgClick() { handleCanvasBgClick(localArkuiId) }
+function onDesignBgClick() { handleCanvasBgClick(localDesignId) }
 
 function runCompare() {
   if (isBatchMode.value) {
@@ -495,13 +527,35 @@ function runCompare() {
     property:     d.property,
     designValue:  d.designValue,
     arkuiValue:   d.devValue,
+    severity:     'error',
+    description:  '',
     confidence:   'high',
+    nodeType:     designNode.type ?? 'container',
+    textContent:  designNode.textContent ?? null,
+    designName:   designNode.name ?? null,
+    arkuiName:    devNode.name    ?? null,
+    matchType:    'select-手动选择',
+    iou:          null,
+    topologyScore: null,
+    regionScore:  null,
     designNodeId: designNode.id ?? null,
     arkuiNodeId:  devNode.id    ?? null,
-    _isManual:    d._isManual ?? false,
+    designRect:   designNode.rect ?? null,
+    arkuiRect:    devNode.rect    ?? null,
+    relatedArkuiNodeId:  d.relatedArkuiNodeId,
+    relatedDesignNodeId: d.relatedDesignNodeId,
+    relationKind: d.relationKind,
+    relationAxis: d.relationAxis,
+    _isManual:    true,
   }))
   pendingDiffs.value = diffs
   emit('temp-diffs', diffs)
+  emit('temp-pairs', [{
+    design: designNode,
+    arkui: devNode,
+    confidence: 'high',
+    matchDetail: { pass: 'select', type: 'select-手动选择' },
+  }])
 }
 
 async function runBoxCompare() {
@@ -512,8 +566,8 @@ async function runBoxCompare() {
   const devResult    = normalizeSelection(devNodes)
   const designResult = normalizeSelection(designNodes)
 
-  const newDevNodes    = devResult.items.map(({ node, newRect }) => ({ ...node, rect: newRect }))
-  const newDesignNodes = designResult.items.map(({ node, newRect }) => ({ ...node, rect: newRect }))
+  const newDevNodes    = devResult.items.map(({ node, newRect }) => ({ ...node, rect: newRect, rawRect: { ...node.rect } }))
+  const newDesignNodes = designResult.items.map(({ node, newRect }) => ({ ...node, rect: newRect, rawRect: { ...node.rect } }))
 
   const canvas = {
     design: { w: designResult.root.w, h: designResult.root.h },
@@ -521,18 +575,29 @@ async function runBoxCompare() {
   }
 
   try {
-    const result = await matchNodes(newDesignNodes, newDevNodes, canvas, props.currentPlatform)
+    const result = await matchNodes(newDesignNodes, newDevNodes, canvas, props.currentPlatform, 'part')
     const diffs = (result.diffs ?? []).map(d => ({
-      property:     d.property,
-      designValue:  d.designValue,
-      arkuiValue:   d.arkuiValue,
-      severity:     d.severity,
-      confidence:   'high',
-      designNodeId: d.designNodeId ?? null,
-      arkuiNodeId:  d.arkuiNodeId  ?? null,
+      ...d,
+      _isManual: true,
     }))
     pendingDiffs.value = diffs
     emit('temp-diffs', diffs)
+    const tempPairs = (result.pairs ?? []).map(p => {
+      const did = p.design?.id ?? p.designId ?? p.designNodeId
+      const aid = p.arkui?.id ?? p.arkuiId ?? p.arkuiNodeId
+      const designNode = newDesignNodes.find(n => n.id === did)
+      const devNode = newDevNodes.find(n => n.id === aid)
+      if (!designNode || !devNode) return null
+      if (designNode.rawRect) designNode.rect = designNode.rawRect
+      if (devNode.rawRect) devNode.rect = devNode.rawRect
+      return {
+        design: designNode,
+        arkui: devNode,
+        confidence: p.confidence ?? 'high',
+        matchDetail: p.matchDetail ?? { pass: 'select', type: 'select-框选' },
+      }
+    }).filter(Boolean)
+    emit('temp-pairs', tempPairs)
   } catch (e) {
     ElMessage.error(`对比失败：${e.response?.data?.error || e.message}`)
   }
@@ -638,7 +703,7 @@ function getActiveOverrides() {
   }
 }
 
-defineExpose({ runCompare, getActiveOverrides })
+defineExpose({ runCompare, getActiveOverrides, clearCompare })
 </script>
 
 <style scoped>

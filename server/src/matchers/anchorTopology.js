@@ -13,33 +13,27 @@
  * 三维评分（统一复用 Pass1 的抛物线-高斯曲线 gaussianCurveParabola）：
  *   位置：posDiff = |欧氏(an中心,a_hm中心) − 欧氏(dn中心,a_de中心)|
  *         point.x = 0.2·maxDiag，拦截线 = 水平 1.5·maxAnchorW / 垂直 0.25·rootRectH
- *   面积：gaussianCurveParabola(area_an, area_dn, {x:1.3·minArea, y:0.5}, 3·minArea)
- *   宽高比：gaussianCurveParabola(rate_an, rate_dn, {x:0.86·minRate, y:0.5}, 2·minRate)
+ *   面积：MatchTools.gaussianCurveParabola(area_an, area_dn, {x:1.3·minArea, y:0.5}, 3·minArea)
+ *   宽高比：MatchTools.gaussianCurveParabola(rate_an, rate_dn, {x:0.86·minRate, y:0.5}, 2·minRate)
  *   三维都 >0 才通过(AND)
  */
-import { gaussianCurveParabola } from './allTextMatcher.js'
+import { MatchTools } from './tools.js'
 import { makePair } from './matchStrategies.js'
 import { isCompatibleType, hasVisualDecoration } from '../utils/nodeVisibility.js'
 import { computeIoU } from '../utils/matchGeometry.js'
-import { EPS, center, relation, makeAnchorCheck } from './anchorCheck.js'
-
-// ── 几何小工具（纯 rect）────────────────────────────────────────────────────────
-const areaOf = r => r.w * r.h
-const aspectOf = r => (r.h > 0 ? r.w / r.h : 0)
-const euclid = (p, q) => Math.hypot(p.x - q.x, p.y - q.y)
-export const round4 = n => parseFloat(n.toFixed(4))
+import { EPS, relation, makeAnchorCheck } from './anchorCheck.js'
 
 // 方向桶内排序键：左右按 x 间距、上下按 y 间距
 function dirDist(rect, anchorRect, dir) {
-  const c = center(rect), ac = center(anchorRect)
+  const c = MatchTools.center(rect), ac = MatchTools.center(anchorRect)
   return (dir === 'left' || dir === 'right') ? Math.abs(c.x - ac.x) : Math.abs(c.y - ac.y)
 }
 
 // ── 三维评分 ───────────────────────────────────────────────────────────────────
 function scorePosition(an, dn, aHm, aDe, dir, ctx) {
   const posDiff = Math.abs(
-    euclid(center(an.rect), center(aHm.rect)) -
-    euclid(center(dn.rect), center(aDe.rect))
+    MatchTools.euclid(MatchTools.center(an.rect), MatchTools.center(aHm.rect)) -
+    MatchTools.euclid(MatchTools.center(dn.rect), MatchTools.center(aDe.rect))
   )
   const horizontalMax = 1.5 * Math.max(aHm.rect.w, aDe.rect.w)
   const verticalMax = 0.25 * ctx.rootRectH
@@ -49,21 +43,21 @@ function scorePosition(an, dn, aHm, aDe, dir, ctx) {
   else diffmax = Math.max(horizontalMax, verticalMax) // contain / diagonal
   // 全局硬上限：位置差超过 max 对角线长度的 1/4 一律截断归 0
   diffmax = Math.min(diffmax, 0.25 * ctx.maxDiag)
-  return gaussianCurveParabola(0, posDiff, { x: 0.2 * ctx.maxDiag, y: 0.5 }, diffmax)
+  return MatchTools.gaussianCurveParabola(0, posDiff, { x: 0.2 * ctx.maxDiag, y: 0.5 }, diffmax)
 }
 
 function scoreArea(an, dn) {
-  const aa = areaOf(an.rect), ad = areaOf(dn.rect)
+  const aa = MatchTools.areaOf(an.rect), ad = MatchTools.areaOf(dn.rect)
   const minArea = Math.min(aa, ad)
   if (minArea <= 0) return 0
-  return gaussianCurveParabola(aa, ad, { x: 1.3 * minArea, y: 0.5 }, 3 * minArea)
+  return MatchTools.gaussianCurveParabola(aa, ad, { x: 1.3 * minArea, y: 0.5 }, 3 * minArea)
 }
 
 function scoreAspect(an, dn) {
-  const ra = aspectOf(an.rect), rd = aspectOf(dn.rect)
+  const ra = MatchTools.aspectOf(an.rect), rd = MatchTools.aspectOf(dn.rect)
   const minRate = Math.min(ra, rd)
   if (minRate <= 0) return 0
-  return gaussianCurveParabola(ra, rd, { x: 0.86 * minRate, y: 0.5 }, 2 * minRate)
+  return MatchTools.gaussianCurveParabola(ra, rd, { x: 0.86 * minRate, y: 0.5 }, 2 * minRate)
 }
 
 // 返回 { pass, score }：pass = 三维都 >0（AND 门控）；score = 0.5/0.25/0.25 加权
@@ -91,17 +85,17 @@ function edgeGap(nodeRect, anchorRect, dir) {
 function posScoreVertical(an, dn, aHm, aDe, ctx) {
   const dx = (an.rect.x - aHm.rect.x) - (dn.rect.x - aDe.rect.x)
   const dy = (an.rect.y - aHm.rect.y) - (dn.rect.y - aDe.rect.y)
-  const eu = gaussianCurveParabola(0, Math.hypot(dx, dy), { x: 0.1 * ctx.diag, y: 0.5 }, 0.25 * ctx.diag)
-  const xs = gaussianCurveParabola(0, Math.abs(dx), { x: 0.15 * ctx.rootW, y: 0.5 }, 0.3 * ctx.rootW)
-  const ys = gaussianCurveParabola(0, Math.abs(dy), { x: 0.2 * ctx.rootMaxH, y: 0.5 }, 0.4 * ctx.rootMaxH)
+  const eu = MatchTools.gaussianCurveParabola(0, Math.hypot(dx, dy), { x: 0.1 * ctx.diag, y: 0.5 }, 0.25 * ctx.diag)
+  const xs = MatchTools.gaussianCurveParabola(0, Math.abs(dx), { x: 0.15 * ctx.rootW, y: 0.5 }, 0.3 * ctx.rootW)
+  const ys = MatchTools.gaussianCurveParabola(0, Math.abs(dy), { x: 0.2 * ctx.rootMaxH, y: 0.5 }, 0.4 * ctx.rootMaxH)
   return eu * 0.5 + xs * 0.38 + ys * 0.12
 }
 // 中心点方向一致性：两侧「锚点→节点」方向向量余弦相似度
 function scoreCenterDirection(an, dn, aHm, aDe) {
-  const dxHm = center(an.rect).x - center(aHm.rect).x
-  const dyHm = center(an.rect).y - center(aHm.rect).y
-  const dxDe = center(dn.rect).x - center(aDe.rect).x
-  const dyDe = center(dn.rect).y - center(aDe.rect).y
+  const dxHm = MatchTools.center(an.rect).x - MatchTools.center(aHm.rect).x
+  const dyHm = MatchTools.center(an.rect).y - MatchTools.center(aHm.rect).y
+  const dxDe = MatchTools.center(dn.rect).x - MatchTools.center(aDe.rect).x
+  const dyDe = MatchTools.center(dn.rect).y - MatchTools.center(aDe.rect).y
   const lenHm = Math.hypot(dxHm, dyHm)
   const lenDe = Math.hypot(dxDe, dyDe)
   if (lenHm < 1e-6 || lenDe < 1e-6) return 1
@@ -115,7 +109,7 @@ function scoreHorizontalAlignment(an, dn, aHm, aDe, ctx) {
   const rightDiff = Math.abs(((an.rect.x + an.rect.w) - (aHm.rect.x + aHm.rect.w)) -
                              ((dn.rect.x + dn.rect.w) - (aDe.rect.x + aDe.rect.w)))
   const minDiff = Math.min(leftDiff, midDiff, rightDiff)
-  return gaussianCurveParabola(0, minDiff, { x: 0.08 * ctx.rootW, y: 0.5 }, 0.25 * ctx.rootW)
+  return MatchTools.gaussianCurveParabola(0, minDiff, { x: 0.08 * ctx.rootW, y: 0.5 }, 0.25 * ctx.rootW)
 }
 // 样式装饰一致性：两侧是否同为有/无视觉装饰
 function scoreStyleDecoration(an, dn) {
@@ -247,7 +241,7 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
     lockedArkui.add(an.id); lockedDesign.add(e.dn.id)
     result.push(makePair(e.dn, an, e.horizontal ? 'text-con-方向x' : 'text-con-方向y', {
       confidence: 'high',
-      topologyScore: round4(e.score),
+      topologyScore: MatchTools.round4(e.score),
       iou: computeIoU(e.dn.normRect, an.normRect),
     }))
   }
