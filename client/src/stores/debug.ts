@@ -1,6 +1,13 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 
+/**
+ * 调试模式 Store
+ *
+ * 全局变量 debugMode：是否开启调试模式，开启后展示调试工具栏、匹配对列表等调试面板。
+ * 全局变量 debugPipelineOn：是否展示流水线各阶段解析结果（step1-step4 数据对比）。
+ * 全局变量 debugOverlayOn：是否展示调试覆盖层（流水线节点高亮标注）。
+ */
 export const useDebugStore = defineStore('debug', () => {
   const _debugMode = ref(false)
   const _debugPipelineOn = ref(false)

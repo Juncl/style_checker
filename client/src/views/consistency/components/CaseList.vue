@@ -31,7 +31,7 @@
 import { ref, watch, onMounted } from 'vue'
 import OctoLoading from './common/OctoLoading.vue'
 import { fetchCases, imageUrl } from '../../../api/index.ts'
-import { usePlatformStore } from '../../../stores/platform'
+import { usePlatformStore } from '../../../stores'
 
 const platformStore = usePlatformStore()
 

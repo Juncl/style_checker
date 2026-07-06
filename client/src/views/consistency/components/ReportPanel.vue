@@ -101,15 +101,13 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useSelectionStore } from '../../../stores/selection'
+import { useSelectionStore, usePlatformStore, useTempResultStore } from '../../../stores'
 import OctoLoading from './common/OctoLoading.vue'
 import DiffReport from './DiffReport.vue'
 import NodeTree from './NodeTree.vue'
 import ShareDialog from './ShareDialog.vue'
 import HistoryPanel from './HistoryPanel.vue'
 import { useDebugStore } from '../../../stores/debug'
-import { usePlatformStore } from '../../../stores/platform'
-import { useTempResultStore } from '../../../stores/tempResult'
 
 const debugStore = useDebugStore()
 const selectionStore = useSelectionStore()

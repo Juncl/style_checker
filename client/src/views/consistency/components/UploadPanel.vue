@@ -49,7 +49,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import iconEmpty from '@/assets/svg/empty-report.svg'
 import CaseList from './CaseList.vue'
-import { usePlatformStore } from '../../../stores/platform'
+import { usePlatformStore } from '../../../stores'
 
 const platformStore = usePlatformStore()
 

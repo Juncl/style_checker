@@ -195,11 +195,8 @@ import ReportPanel from './components/ReportPanel.vue'
 import '../../styles/app.css'
 import { CASE_NAMES_BY_PLATFORM, DEBUG_COLORS } from '../utils/constants'
 import { reportInteraction } from '../utils-inner/report'
-import { useCanvasModeStore } from '../../stores/canvasMode'
+import { useCanvasModeStore, useSelectionStore, usePlatformStore, useTempResultStore } from '../../stores'
 import { useDebugStore } from '../../stores/debug'
-import { useSelectionStore } from '../../stores/selection'
-import { usePlatformStore } from '../../stores/platform'
-import { useTempResultStore } from '../../stores/tempResult'
 
 const route           = useRoute()
 const platformStore = usePlatformStore()

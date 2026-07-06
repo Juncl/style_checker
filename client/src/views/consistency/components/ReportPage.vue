@@ -281,11 +281,8 @@ import { validationBg, confidenceText, confidenceTagType } from '../../utils/too
 import { compareNodeStyles } from '../match/compareNodes.ts'
 import { normalizeSelection } from '../match/normalizeSelection.ts'
 import { matchNodes } from '../../../api/index.ts'
-import { useCanvasModeStore } from '../../../stores/canvasMode'
+import { useCanvasModeStore, useSelectionStore, usePlatformStore, useTempResultStore } from '../../../stores'
 import { useDebugStore } from '../../../stores/debug'
-import { useSelectionStore } from '../../../stores/selection'
-import { usePlatformStore } from '../../../stores/platform'
-import { useTempResultStore } from '../../../stores/tempResult'
 
 const props = defineProps({
   result:               { type: Object,  required: true },
