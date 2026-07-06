@@ -47,16 +47,16 @@
   <DiffReport
     v-show="!debugStore.debugMode || rightTab === 'diff'"
     :diffs="mergedDiffs"
-    :unmatched="tempDiffs ? [] : result.unmatchedDesignNodes"
+    :unmatched="tempResultStore.tempDiffs ? [] : result.unmatchedDesignNodes"
     :active-pair="activePairForDiff"
     :hover-pair="hoverPairForDiff"
     :version-id="workingVersionId"
-    :platform="platform"
+    :platform="platformStore.currentPlatform"
     @select="$emit('diff-select', $event)"
     @diff-hover="$emit('diff-hover', $event)"
   />
 
-  <div v-if="tempDiffs" class="temp-diff-action-bar">
+  <div v-if="tempResultStore.tempDiffs" class="temp-diff-action-bar">
     <button class="temp-diff-action-btn" @click="onTempDiffAction">
       添加到分析结果
     </button>
@@ -74,10 +74,7 @@
     v-show="debugStore.debugMode && rightTab === 'tree'"
     :nodes="treeNodes"
     :selected-id="treeSelectedId"
-    :locked-ids="treeSide === 'design' ? lockedNodeIds : emptyLockedIds"
-    :lockable="treeSide === 'design'"
     @select="treeSide === 'design' ? $emit('design-node-click', $event) : $emit('arkui-node-click', $event)"
-    @toggle-lock="$emit('toggle-lock', $event)"
   />
 
   <transition name="fade">
@@ -111,9 +108,13 @@ import NodeTree from './NodeTree.vue'
 import ShareDialog from './ShareDialog.vue'
 import HistoryPanel from './HistoryPanel.vue'
 import { useDebugStore } from '../../../stores/debug'
+import { usePlatformStore } from '../../../stores/platform'
+import { useTempResultStore } from '../../../stores/tempResult'
 
 const debugStore = useDebugStore()
 const selectionStore = useSelectionStore()
+const platformStore = usePlatformStore()
+const tempResultStore = useTempResultStore()
 
 const props = defineProps({
   result:           { type: Object,  required: true },
@@ -121,14 +122,11 @@ const props = defineProps({
   hoverPairForDiff: { type: Object,  default: null },
   designNodes:      { type: Array,   default: () => [] },
   allArkuiNodes:    { type: Array,   default: () => [] },
-  lockedNodeIds:    { type: Set,     default: () => new Set() },
   rerunLoading:     { type: Boolean, default: false },
   canRerun:         { type: Boolean, default: false },
   versionList:       { type: Array,              default: () => [] },
   workingVersionId:  { type: [Number, String],   default: null },
   closeHistoryKey:   { type: Number,             default: 0 },
-  platform:          { type: String,             default: 'hmPhone' },
-  tempDiffs:         { type: Array,              default: null },
   mergedDiffs:       { type: Array,              default: () => [] },
   reportCanvasMode:  { type: String,             default: 'default' },
   hasManualEdits:    { type: Boolean,            default: false },
@@ -139,7 +137,6 @@ const emit = defineEmits([
   'diff-hover',
   'design-node-click',
   'arkui-node-click',
-  'toggle-lock',
   'rerun',
   'history-view',
   'temp-diff-action',
@@ -152,7 +149,6 @@ function onTempDiffAction() {
 
 const rightTab = ref('diff')
 const treeSide = ref('design')
-const emptyLockedIds = new Set()
 
 const isSaveDisabled = computed(() => !props.hasManualEdits)
 const isSaveVisible  = computed(() => props.hasManualEdits)

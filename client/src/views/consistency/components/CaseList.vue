@@ -31,9 +31,11 @@
 import { ref, watch, onMounted } from 'vue'
 import OctoLoading from './common/OctoLoading.vue'
 import { fetchCases, imageUrl } from '../../../api/index.ts'
+import { usePlatformStore } from '../../../stores/platform'
+
+const platformStore = usePlatformStore()
 
 const props = defineProps({
-  currentPlatform: { type: String,  default: 'hmPhone' },
   selectedCase:    { type: String,  default: '' },
   caseNames:       { type: Object,  default: () => ({}) },
   loading:         { type: Boolean, default: false },
@@ -47,11 +49,11 @@ async function loadCases(platform) {
   catch { /* 静默失败，显示加载状态 */ }
 }
 
-onMounted(() => loadCases(props.currentPlatform))
+onMounted(() => loadCases(platformStore.currentPlatform))
 
-watch(() => props.currentPlatform, (platform) => loadCases(platform))
+watch(() => platformStore.currentPlatform, (platform) => loadCases(platform))
 
 function caseImageUrl(caseId) {
-  return imageUrl(caseId, 'arkui', props.currentPlatform)
+  return imageUrl(caseId, 'arkui', platformStore.currentPlatform)
 }
 </script>

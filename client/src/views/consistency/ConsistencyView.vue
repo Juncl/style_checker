@@ -60,7 +60,6 @@
         v-if="!result"
         ref="uploadPageRef"
         :upload-files="uploadFiles"
-        :current-platform="currentPlatform"
         :dev-preview="devPreview"
         :design-preview="designPreview"
         :dev-preview-loading="devPreviewLoading"
@@ -82,12 +81,10 @@
         :active-diff="activeDiff"
         :debug-pair-items="debugPairItems"
         :debug-pair-map="debugPairMap"
-        :locked-node-ids="lockedNodeIds"
         :selected-design-diffs="selectedDesignDiffs"
         :selected-arkui-diffs="selectedArkuiDiffs"
         :selected-case="selectedCase"
         :case-names="CASE_NAMES"
-        :current-platform="currentPlatform"
         :dev-reuploading="devReuploading"
         :design-reuploading="designReuploading"
         :dev-preview="devPreview"
@@ -107,8 +104,6 @@
         @step-picked="onStepPicked"
         @arkui-hover="onArkuiHover"
         @design-hover="onDesignHover"
-        @temp-diffs="tempDiffs = $event"
-        @temp-pairs="tempPairs = $event"
         @save-manual-style="onSaveManualStyle"
         @remove-manual-style="onRemoveManualStyle"
       />
@@ -122,7 +117,6 @@
         :loading="loading"
         :selected-case="selectedCase"
         :case-names="CASE_NAMES"
-        :current-platform="currentPlatform"
         :upload-files="uploadFiles"
         @run-upload="runUpload"
         @select-case="selectCase"
@@ -135,14 +129,11 @@
         :hover-pair-for-diff="hoverPairForDiff"
         :design-nodes="designNodes"
         :all-arkui-nodes="allArkuiNodes"
-        :locked-node-ids="lockedNodeIds"
         :rerun-loading="rerunLoading"
         :can-rerun="canRerun"
         :version-list="pageVersionList"
         :working-version-id="workingVersionId"
         :close-history-key="closeHistoryKey"
-        :platform="currentPlatform"
-        :temp-diffs="tempDiffs"
         :merged-diffs="mergedDiffs"
         :report-canvas-mode="canvasMode.mode"
         :has-manual-edits="manualDiffs.length > 0"
@@ -150,7 +141,6 @@
         @diff-hover="hoveredDiffPair = $event"
         @design-node-click="onDesignNodeClick"
         @arkui-node-click="onArkuiNodeClick"
-        @toggle-lock="onToggleLock"
         @rerun="rerunCheck"
         @history-view="onHistoryView"
         @temp-diff-action="mergeTempToResult"
@@ -208,25 +198,25 @@ import { reportInteraction } from '../utils-inner/report'
 import { useCanvasModeStore } from '../../stores/canvasMode'
 import { useDebugStore } from '../../stores/debug'
 import { useSelectionStore } from '../../stores/selection'
+import { usePlatformStore } from '../../stores/platform'
+import { useTempResultStore } from '../../stores/tempResult'
 
 const route           = useRoute()
-const currentPlatform = ref('hmPhone')
-const CASE_NAMES      = computed(() => CASE_NAMES_BY_PLATFORM[currentPlatform.value] || {})
+const platformStore = usePlatformStore()
+const tempResultStore = useTempResultStore()
+const CASE_NAMES      = computed(() => CASE_NAMES_BY_PLATFORM[platformStore.currentPlatform] || {})
 const selectedCase    = ref('')
 const loading         = ref(false)
 const result          = ref(null)
 const activeDiff      = ref(null)
-const lockedNodeIds   = ref(new Set())
 const uploadPageRef   = ref(null)
 const aiChatOpen      = ref(false)
 const debugStore = useDebugStore()
 const selectionStore = useSelectionStore()
 const rerunLoading      = ref(false)
 const reportPageRef     = ref(null)
-const tempDiffs         = ref(null)
-const tempPairs         = ref(null)
 /** 当前可用的匹配对：temp 激活时用 tempPairs，否则用正式 pairs */
-const effectivePairs    = computed(() => tempPairs.value ?? result.value?.pairs ?? [])
+const effectivePairs    = computed(() => tempResultStore.tempPairs ?? result.value?.pairs ?? [])
 const manualDiffs       = ref([])   // 人工覆盖产生的差异卡片
 
 // 从节点树上收集所有人工覆盖属性，结构：{ dev: { id: { key: val } }, design: { id: { key: val } } }
@@ -276,7 +266,7 @@ function removeManualDiffByMatch(designId, arkuiId, property) {
 }
 
 const mergedDiffs = computed(() => {
-  const base = tempDiffs.value ?? result.value?.diffs ?? []
+  const base = tempResultStore.tempDiffs ?? result.value?.diffs ?? []
   const manual = manualDiffs.value
   const merged = [...base]
   for (const md of manual) {
@@ -310,7 +300,7 @@ const mergedDiffs = computed(() => {
 
 watch(() => result.value, () => {
   manualDiffs.value = []
-  tempPairs.value = null
+  tempResultStore.clear()
 })
 
 const devReuploading    = ref(false)
@@ -633,8 +623,8 @@ async function applyPlatformDetection(file) {
       ElMessage.error(`请上传 ${PLATFORM_NAMES[expectedType] ?? expectedType} 平台的数据`)
       return false
     }
-  } else if (detected && detected !== currentPlatform.value) {
-    currentPlatform.value = detected
+  } else if (detected && detected !== platformStore.currentPlatform) {
+    platformStore.setPlatform(detected)
     savePlatform(detected)
     reportPlatformChange(detected)
   }
@@ -735,7 +725,7 @@ onMounted(async () => {
   // 保存 iframe 清理函数
   stopListenFn = initResult.stopListenFn
 
-  currentPlatform.value = initResult.platform
+  platformStore.setPlatform(initResult.platform)
 
   const { deliverable } = initResult
   if (deliverable) {
@@ -762,8 +752,8 @@ onMounted(async () => {
 })
 
 function onPlatformSwitch(platform) {
-  if (!platform || platform === currentPlatform.value) return
-  currentPlatform.value = platform
+  if (!platform || platform === platformStore.currentPlatform) return
+  platformStore.setPlatform(platform)
   savePlatform(platform)
   selectedCase.value = ''
   reportPlatformChange(platform)
@@ -806,7 +796,7 @@ async function triggerDevPreview(files) {
     devPreview.value = await parseDevUpload(
       files.arkuiJson,
       files.arkuiImage ?? null,
-      currentPlatform.value,
+      platformStore.currentPlatform,
     )
   } catch { /* 静默失败 */ }
   finally { devPreviewLoading.value = false }
@@ -819,7 +809,7 @@ async function triggerDesignPreview(files) {
     designPreview.value = await parseDesignUpload(
       files.designJson,
       files.designImage ?? null,
-      currentPlatform.value,
+      platformStore.currentPlatform,
       devPreview.value?.canvas?.w,
     )
   } catch { /* 静默失败 */ }
@@ -832,8 +822,7 @@ function onAddPage() {
   selectedCase.value         = ''
   activeDiff.value    = null
   selectionStore.clear()
-  tempPairs.value     = null
-  lockedNodeIds.value = new Set()
+  tempResultStore.clear()
   devPreview.value           = null
   designPreview.value        = null
   devPreviewLoading.value    = false
@@ -854,7 +843,6 @@ function recheckDev() {
   }
   activeDiff.value    = null
   selectionStore.clear()
-  lockedNodeIds.value = new Set()
   devReuploading.value = true
 }
 
@@ -868,7 +856,6 @@ function recheckDesign() {
   }
   activeDiff.value        = null
   selectionStore.clear()
-  lockedNodeIds.value     = new Set()
   designReuploading.value = true
 }
 
@@ -920,7 +907,7 @@ async function submitRerunVersion() {
       id:                    String(pageId),
       deliverableId:         String(workingDeliverable.value?.id ?? ''),
       name:                  workingPage.value?.name ?? '',
-      deviceType:            currentPlatform.value,
+      deviceType:            platformStore.currentPlatform,
       versionName:           now,
       devImageBase64Data:    devBase64,
       devJson:               devJsonStr,
@@ -971,7 +958,7 @@ async function onSave() {
       id:                    String(pageId),
       deliverableId:         String(workingDeliverable.value?.id ?? ''),
       name:                  workingPage.value?.name ?? '',
-      deviceType:            currentPlatform.value,
+      deviceType:            platformStore.currentPlatform,
       versionName:           now,
       devImageBase64Data:    devBase64,
       devJson:               devJsonStr,
@@ -1024,15 +1011,15 @@ function onSaveManualStyle({ side, nodeId, key, parsedValue }) {
   const pair = pairs.find(p => p[mySide]?.id === nodeId)
 
   if (pair) {
-    const manualDiff = generateManualDiff(pair, key, currentPlatform.value)
+    const manualDiff = generateManualDiff(pair, key, platformStore.currentPlatform)
     if (manualDiff) {
       upsertManualDiff(manualDiff)
       selectionStore.select(pair)
     } else {
       upsertManualDiff({
         property:      key,
-        designValue:   formatStyleValue(key, readStyleValue(pair.design, key), currentPlatform.value),
-        arkuiValue:    formatStyleValue(key, readStyleValue(pair.arkui,  key), currentPlatform.value),
+        designValue:   formatStyleValue(key, readStyleValue(pair.design, key), platformStore.currentPlatform),
+        arkuiValue:    formatStyleValue(key, readStyleValue(pair.arkui,  key), platformStore.currentPlatform),
         severity:      'warning',
         confidence:    'high',
         designNodeId:  pair.design?.id ?? null,
@@ -1046,7 +1033,7 @@ function onSaveManualStyle({ side, nodeId, key, parsedValue }) {
   } else {
     const diff = {
       property: key,
-      [`${mySide}Value`]: formatStyleValue(key, parsedValue, currentPlatform.value),
+      [`${mySide}Value`]: formatStyleValue(key, parsedValue, platformStore.currentPlatform),
       [`${otherSide}Value`]: '—',
       severity: 'warning',
       confidence: 'high',
@@ -1074,7 +1061,7 @@ function onRemoveManualStyle({ side, nodeId, key }) {
   const pairs = result.value?.pairs ?? []
   const pair = pairs.find(p => p[mySide]?.id === nodeId)
   if (pair) {
-    const manualDiff = generateManualDiff(pair, key, currentPlatform.value)
+    const manualDiff = generateManualDiff(pair, key, platformStore.currentPlatform)
     if (manualDiff) {
       upsertManualDiff(manualDiff)
     } else {
@@ -1102,16 +1089,16 @@ function applyExtraOverride(nodes, override) {
 
 /** "添加到分析结果"：将 temp-diffs/temp-pairs 合并到正式 diffs/pairs，清除 temp 状态 */
 function mergeTempToResult() {
-  if (!tempDiffs.value || !tempPairs.value || !result.value) return
+  if (!tempResultStore.tempDiffs || !tempResultStore.tempPairs || !result.value) return
 
   // 合并 diffs：temp 涉及的任一侧节点 id，删掉正式 diff 中对应的全部条目，用 temp 替换
-  const tempDesignIds = new Set(tempDiffs.value.map(d => d.designNodeId).filter(Boolean))
-  const tempArkuiIds  = new Set(tempDiffs.value.map(d => d.arkuiNodeId).filter(Boolean))
+  const tempDesignIds = new Set(tempResultStore.tempDiffs.map(d => d.designNodeId).filter(Boolean))
+  const tempArkuiIds  = new Set(tempResultStore.tempDiffs.map(d => d.arkuiNodeId).filter(Boolean))
   const filteredDiffs = (result.value.diffs ?? []).filter(d =>
     !tempDesignIds.has(d.designNodeId) && !tempArkuiIds.has(d.arkuiNodeId)
   )
-  const mergedDiffsArr = [...filteredDiffs, ...tempDiffs.value]
-  console.log('[mergeTemp] 删除正式diff:', (result.value.diffs ?? []).length - filteredDiffs.length, '覆盖temp-diff:', tempDiffs.value.length)
+  const mergedDiffsArr = [...filteredDiffs, ...tempResultStore.tempDiffs]
+  console.log('[mergeTemp] 删除正式diff:', (result.value.diffs ?? []).length - filteredDiffs.length, '覆盖temp-diff:', tempResultStore.tempDiffs.length)
 
   // 合并 pairs：双向覆盖去交集
   const arkuiMap = new Map()
@@ -1120,7 +1107,7 @@ function mergeTempToResult() {
     if (p.arkui?.id) arkuiMap.set(p.arkui.id, p)
     if (p.design?.id) designMap.set(p.design.id, p)
   }
-  for (const p of tempPairs.value) {
+  for (const p of tempResultStore.tempPairs) {
     if (p.arkui?.id) arkuiMap.set(p.arkui.id, p)
     if (p.design?.id) designMap.set(p.design.id, p)
   }
@@ -1143,8 +1130,7 @@ function mergeTempToResult() {
   }
 
   // 清除 temp 状态，回到 select-select
-  tempDiffs.value = null
-  tempPairs.value = null
+  tempResultStore.clear()
   reportPageRef.value?.clearCompare?.()
   ElMessage.success('已添加到分析结果')
 }
@@ -1160,7 +1146,6 @@ async function rerunCheck() {
   }
   activeDiff.value    = null
   selectionStore.clear()
-  lockedNodeIds.value = new Set()
   rerunLoading.value  = true
   try {
     // 将人工覆盖的属性值 patch 到对应节点的副本上，再送入重跑
@@ -1172,7 +1157,7 @@ async function rerunCheck() {
       patchedDesignNodes,
       patchedArkuiNodes,
       result.value.canvas,
-      currentPlatform.value,
+      platformStore.currentPlatform,
       'all',
     )
     result.value = {
@@ -1224,28 +1209,20 @@ function nodeDiffsFor(key, nodeId) {
   return mergedDiffs.value.filter(d => d[key] === nodeId)
 }
 
-function onToggleLock(nodeId) {
-  const next = new Set(lockedNodeIds.value)
-  next.has(nodeId) ? next.delete(nodeId) : next.add(nodeId)
-  lockedNodeIds.value = next
-  if (next.has(nodeId) && selectionStore.selectedPair?.design?.id === nodeId) selectionStore.clear()
-}
-
 async function selectCase(id) {
   selectedCase.value  = id
   activeDiff.value    = null
   selectionStore.clear()
-  lockedNodeIds.value = new Set()
   loading.value       = true
   result.value        = null
   revokeBlobUrls()
   try {
-    const data = await checkCase(id, currentPlatform.value)
+    const data = await checkCase(id, platformStore.currentPlatform)
     // 案例选择打点
     reportInteraction({
       name: 'selectCase',
       event: 'selectCase',
-      extend: { user: getUserAccount(), curTime: new Date().toISOString(), caseName: id, platform: currentPlatform.value, isFrom: inIframe() ? 'hiscenario' : 'octo' },
+      extend: { user: getUserAccount(), curTime: new Date().toISOString(), caseName: id, platform: platformStore.currentPlatform, isFrom: inIframe() ? 'hiscenario' : 'octo' },
     })
 
     const rawDesignJson = data._rawDesignJson
@@ -1260,8 +1237,8 @@ async function selectCase(id) {
     const designJsonFile = jsonToFile(rawDesignJson, 'design.json')
     const devJsonFile    = jsonToFile(rawDevContent,  'arkui.json')
 
-    const arkuiImgUrl  = imageUrl(id, 'arkui',  currentPlatform.value)
-    const designImgUrl = imageUrl(id, 'design', currentPlatform.value)
+    const arkuiImgUrl  = imageUrl(id, 'arkui',  platformStore.currentPlatform)
+    const designImgUrl = imageUrl(id, 'design', platformStore.currentPlatform)
     const [arkuiImgBlob, designImgBlob] = await Promise.all([
       fetch(arkuiImgUrl).then(r => r.blob()),
       fetch(designImgUrl).then(r => r.blob()),
@@ -1414,8 +1391,8 @@ async function onSelectPage(page) {
   workingPage.value = page
   closeHistoryKey.value++
   const deviceType = page.deviceType ?? 'hmPhone'
-  if (deviceType !== currentPlatform.value) {
-    currentPlatform.value = deviceType
+  if (deviceType !== platformStore.currentPlatform) {
+    platformStore.setPlatform(deviceType)
     savePlatform(deviceType)
     reportPlatformChange(deviceType)
   }
@@ -1447,7 +1424,7 @@ async function onHistoryView(item) {
   setUrlParams({ deliverableId: String(dId), pageId: String(pId), versionId: String(item.id) })
   loading.value = true
   try {
-    await loadHistoryVersion(item, workingPage.value?.deviceType ?? currentPlatform.value)
+    await loadHistoryVersion(item, workingPage.value?.deviceType ?? platformStore.currentPlatform)
   } catch (e) {
     console.error('加载历史版本失败', e)
     ElMessage.warning('加载历史版本失败')
@@ -1497,7 +1474,7 @@ async function submitResult() {
     const pageId = await addConsistencyCheckPage({
       deliverableId:         String(deliverableId),
       name:                  pageName,
-      deviceType:            currentPlatform.value,
+      deviceType:            platformStore.currentPlatform,
       versionName:           now,
       devImageBase64Data:    devBase64,
       devJson:               devJsonStr,
@@ -1549,11 +1526,10 @@ async function runUpload(platform) {
   selectedCase.value  = ''
   activeDiff.value    = null
   selectionStore.clear()
-  lockedNodeIds.value = new Set()
   loading.value       = true
   result.value        = null
-  if (platform && platform !== currentPlatform.value) {
-    currentPlatform.value = platform
+  if (platform && platform !== platformStore.currentPlatform) {
+    platformStore.setPlatform(platform)
     reportPlatformChange(platform)
   }
   try {
@@ -1562,7 +1538,7 @@ async function runUpload(platform) {
       uploadFiles.value.arkuiJson,
       uploadFiles.value.designImage,
       uploadFiles.value.arkuiImage,
-      platform || currentPlatform.value,
+      platform || platformStore.currentPlatform,
     )
     result.value.pairs = resolvePairsToNodes(result.value.pairs, result.value.allDesignNodes, result.value.allArkuiNodes)
     ElMessage.success('分析完成')
@@ -1581,7 +1557,7 @@ function reportCompareResult() {
   reportInteraction({
     name: 'clickCompare',
     event: 'clickCompare',
-    extend: { errorlist, platform: currentPlatform.value, isFrom: inIframe() ? 'hiscenario' : 'octo' },
+    extend: { errorlist, platform: platformStore.currentPlatform, isFrom: inIframe() ? 'hiscenario' : 'octo' },
   })
 }
 

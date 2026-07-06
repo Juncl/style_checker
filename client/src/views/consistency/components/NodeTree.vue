@@ -21,7 +21,6 @@
     <div class="tree-stats">
       <span>共 {{ totalCount }} 个节点</span>
       <span class="matched-count">{{ matchedCount }} 已匹配</span>
-      <span v-if="lockedCount > 0" class="locked-count">{{ lockedCount }} 已锁定</span>
     </div>
 
     <!-- 节点列表 -->
@@ -40,11 +39,10 @@
             matched:   node.matched,
             unmatched: !node.matched,
             selected:  selectedNodeId === node.id,
-            locked:    lockedIds.has(node.id),
           }
         ]"
         :style="{ '--indent-width': `${node.depth * 14}px` }"
-        :title="!node.matched ? '未匹配（无对应 ArkUI 节点）' : lockedIds.has(node.id) ? '已锁定（图片侧不可点击，树中仍可选中）' : ''"
+        :title="!node.matched ? '未匹配（无对应 ArkUI 节点）' : ''"
         @click="onNodeClick(node)"
       >
         <span class="tree-left-rail">
@@ -84,24 +82,8 @@
 
         <!-- 右侧操作区 -->
         <span class="node-actions" @click.stop>
-          <!-- 锁定按钮（仅匹配节点） -->
-          <button
-            v-if="lockable && node.matched"
-            :class="['lock-btn', { active: lockedIds.has(node.id) }]"
-            :title="lockedIds.has(node.id) ? '解除锁定' : '锁定（图片侧不可点击）'"
-            @click.stop="$emit('toggle-lock', node.id)"
-          >
-            <svg v-if="lockedIds.has(node.id)" viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-              <path d="M11 7V5a3 3 0 0 0-6 0v2H4v7h8V7h-1zm-4-2a1 1 0 0 1 2 0v2H7V5zm1 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
-            </svg>
-            <svg v-else viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-              <path d="M11 7V5a3 3 0 0 0-6 0v2H4v7h8V7h-1zm-2-2v2H7V5a1 1 0 0 1 2 0zm0 6a1 1 0 1 1-2 0 1 1 0 0 1 2 0z" opacity=".4"/>
-              <path d="M11 2a3 3 0 0 1 3 3v2h-2V5a1 1 0 0 0-2 0v2H4v7h8V9h2v5H2V7h3V5a3 3 0 0 1 3-3h3z" opacity=".4"/>
-            </svg>
-          </button>
-
           <!-- 未匹配指示 -->
-          <span v-else class="unmatched-dot" />
+          <span v-if="!node.matched" class="unmatched-dot" />
         </span>
       </div>
     </div>
@@ -115,10 +97,8 @@ const props = defineProps({
   nodes:          { type: Array,  default: () => [] },
   selectedDesignId: { type: String, default: null },
   selectedId:     { type: String, default: null },
-  lockedIds:      { type: Object, default: () => new Set() }, // Set<string>
-  lockable:       { type: Boolean, default: true },
 })
-const emit = defineEmits(['select', 'toggle-lock'])
+const emit = defineEmits(['select'])
 
 const search      = ref('')
 const matchedOnly = ref(false)
@@ -175,7 +155,6 @@ const sortedNodes = computed(() =>
 
 const totalCount  = computed(() => props.nodes.length)
 const matchedCount = computed(() => props.nodes.filter(n => n.matched).length)
-const lockedCount  = computed(() => props.lockedIds.size)
 
 const selectedNode = computed(() =>
   sortedNodes.value.find(n => n.id === selectedNodeId.value) || null
@@ -315,7 +294,6 @@ watch(selectedNodeId, async (id) => {
   flex-shrink: 0;
 }
 .matched-count { color: #409eff; }
-.locked-count  { color: #f56c6c; margin-left: auto; }
 
 .tree-list {
   flex: 1;
@@ -357,26 +335,13 @@ watch(selectedNodeId, async (id) => {
   color: #303133;
 }
 .tree-node.matched:hover { background: #f0f7ff; }
-.tree-node.matched:hover .lock-btn { opacity: 1; }
 .tree-node.matched.selected { background: #ecf5ff; }
-
-/* 锁定节点：树中仍可点击，但文字变色提示状态 */
-.tree-node.matched.locked {
-  color: #909399;
-  background: #fdf6f6;
-}
-.tree-node.matched.locked:hover { background: #fef0f0; }
-.tree-node.matched.locked:hover .lock-btn { opacity: 1; }
 
 .tree-node.unmatched {
   cursor: pointer;
   color: #86909c;
 }
 .tree-node.unmatched:hover { background: #f7f9fc; }
-
-/* 锁定状态始终显示锁定按钮 */
-.tree-node.locked .lock-btn { opacity: 1 !important; }
-
 .tree-left-rail {
   display: flex;
   align-items: center;
@@ -483,29 +448,6 @@ watch(selectedNodeId, async (id) => {
   margin-left: auto;
   padding-left: 4px;
 }
-
-/* 锁定按钮 */
-.lock-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: none;
-  background: none;
-  border-radius: 3px;
-  cursor: pointer;
-  opacity: 0;
-  color: #c0c4cc;
-  transition: opacity .15s, color .15s, background .15s;
-  padding: 0;
-}
-.lock-btn:hover { background: #f5f7fa; color: #606266; }
-.lock-btn.active {
-  opacity: 1 !important;
-  color: #f56c6c;
-}
-.lock-btn.active:hover { background: #fef0f0; color: #f56c6c; }
 
 .unmatched-dot {
   width: 5px;

@@ -154,7 +154,7 @@
             v-else
             :arkui-json="uploadFiles?.arkuiJson ?? null"
             :arkui-image="uploadFiles?.arkuiImage ?? null"
-            :platform="currentPlatform"
+            :platform="platformStore.currentPlatform"
             :show-download-link="false"
             @pick-json="file => $emit('step-picked', { type: 'arkuiJson', file })"
             @pick-image="file => $emit('step-picked', { type: 'arkuiImage', file })"
@@ -164,7 +164,7 @@
         <ImagePanel
           v-else
           ref="devPanelRef"
-          :platform="currentPlatform"
+          :platform="platformStore.currentPlatform"
           :src="arkuiImgSrc"
           :highlight="null"
           :highlight-pair="arkuiSpacingMark"
@@ -232,7 +232,7 @@
         <ImagePanel
           v-else
           ref="designPanelRef"
-          :platform="currentPlatform"
+          :platform="platformStore.currentPlatform"
           side="design"
           :src="designImgSrc"
           :highlight="null"
@@ -244,7 +244,6 @@
           :selected-id="effectiveDesignSelectedId"
           :inspector-node="effectiveDesignInspectorNode"
           :style-diffs="effectiveDesignStyleDiffs"
-          :locked-ids="lockedNodeIds"
           :external-hovered-id="hoveredDesignCrossId"
           :debug-pair-map="debugPairMap"
 
@@ -285,6 +284,8 @@ import { matchNodes } from '../../../api/index.ts'
 import { useCanvasModeStore } from '../../../stores/canvasMode'
 import { useDebugStore } from '../../../stores/debug'
 import { useSelectionStore } from '../../../stores/selection'
+import { usePlatformStore } from '../../../stores/platform'
+import { useTempResultStore } from '../../../stores/tempResult'
 
 const props = defineProps({
   result:               { type: Object,  required: true },
@@ -296,12 +297,10 @@ const props = defineProps({
   activeDiff:           { type: Object,  default: null },
   debugPairItems:       { type: Array,   default: () => [] },
   debugPairMap:         { type: Object,  default: () => ({}) },
-  lockedNodeIds:        { type: Set,     default: () => new Set() },
   selectedDesignDiffs:  { type: Array,   default: () => [] },
   selectedArkuiDiffs:   { type: Array,   default: () => [] },
   selectedCase:         { type: String,  default: '' },
   caseNames:            { type: Object,  default: () => ({}) },
-  currentPlatform:      { type: String,  default: 'hmPhone' },
   devReuploading:       { type: Boolean, default: false },
   designReuploading:    { type: Boolean, default: false },
   devPreview:           { type: Object,  default: null },
@@ -325,8 +324,6 @@ const emit = defineEmits([
   'arkui-hover',
   'design-hover',
   'compare-nodes',
-  'temp-diffs',
-  'temp-pairs',
   'save-manual-style',
   'remove-manual-style',
 ])
@@ -334,6 +331,8 @@ const emit = defineEmits([
 const canvasMode = useCanvasModeStore()
 const debugStore = useDebugStore()
 const selectionStore = useSelectionStore()
+const platformStore = usePlatformStore()
+const tempResultStore = useTempResultStore()
 
 const devPanelRef    = ref(null)
 const designPanelRef = ref(null)
@@ -411,8 +410,7 @@ const effectiveDesignStyleDiffs  = computed(() => usePair() ? (props.selectedDes
 
 function clearCompare() {
   pendingDiffs.value = null
-  emit('temp-diffs', null)
-  emit('temp-pairs', null)
+  tempResultStore.clear()
 }
 
 function clearSelectState() {
@@ -421,8 +419,7 @@ function clearSelectState() {
   localArkuiNodeList.value  = []
   localDesignNodeList.value = []
   pendingDiffs.value        = null
-  emit('temp-diffs', null)
-  emit('temp-pairs', null)
+  tempResultStore.clear()
 }
 
 function onCircleClick() {
@@ -534,8 +531,7 @@ function runCompare() {
     _isManual:    true,
   }))
   pendingDiffs.value = diffs
-  emit('temp-diffs', diffs)
-  emit('temp-pairs', [{
+  tempResultStore.setResult(diffs, [{
     design: designNode,
     arkui: devNode,
     confidence: 'high',
@@ -560,13 +556,12 @@ async function runBoxCompare() {
   }
 
   try {
-    const result = await matchNodes(newDesignNodes, newDevNodes, canvas, props.currentPlatform, 'part')
+    const result = await matchNodes(newDesignNodes, newDevNodes, canvas, platformStore.currentPlatform, 'part')
     const diffs = (result.diffs ?? []).map(d => ({
       ...d,
       _isManual: true,
     }))
     pendingDiffs.value = diffs
-    emit('temp-diffs', diffs)
     const tempPairs = (result.pairs ?? []).map(p => {
       const did = p.design?.id ?? p.designId ?? p.designNodeId
       const aid = p.arkui?.id ?? p.arkuiId ?? p.arkuiNodeId
@@ -582,7 +577,7 @@ async function runBoxCompare() {
         matchDetail: p.matchDetail ?? { pass: 'select', type: 'select-框选' },
       }
     }).filter(Boolean)
-    emit('temp-pairs', tempPairs)
+    tempResultStore.setResult(diffs, tempPairs)
   } catch (e) {
     ElMessage.error(`对比失败：${e.response?.data?.error || e.message}`)
   }

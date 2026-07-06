@@ -19,7 +19,7 @@
             v-for="opt in platformOptions"
             :key="opt.value"
             class="platform-dropdown-item"
-            :class="{ 'is-selected': currentPlatform === opt.value }"
+            :class="{ 'is-selected': platformStore.currentPlatform === opt.value }"
             @click="selectPlatformOption(opt.value)"
           >{{ opt.label }}</div>
         </div>
@@ -29,13 +29,12 @@
         :loading="loading"
         :disabled="!canStartCheck"
         class="report-start-btn"
-        @click="$emit('run-upload', currentPlatform)"
+        @click="$emit('run-upload', platformStore.currentPlatform)"
       >开始对比</el-button>
     </div>
 
     <!-- 试用案例 -->
     <CaseList
-      :current-platform="currentPlatform"
       :selected-case="selectedCase"
       :case-names="caseNames"
       :loading="loading"
@@ -50,13 +49,14 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import iconEmpty from '@/assets/svg/empty-report.svg'
 import CaseList from './CaseList.vue'
+import { usePlatformStore } from '../../../stores/platform'
 
+const platformStore = usePlatformStore()
 
 const props = defineProps({
   loading:         { type: Boolean, default: false },
   selectedCase:    { type: String,  default: '' },
   caseNames:       { type: Object,  default: () => ({}) },
-  currentPlatform: { type: String,  default: 'hmPhone' },
   uploadFiles:     { type: Object,  required: true },
 })
 
@@ -69,7 +69,7 @@ const platformOptions = [
 ]
 
 const platformLabel = computed(() =>
-  platformOptions.find(o => o.value === props.currentPlatform)?.label ?? '鸿蒙-手机'
+  platformOptions.find(o => o.value === platformStore.currentPlatform)?.label ?? '鸿蒙-手机'
 )
 
 const platformDropdownOpen = ref(false)
@@ -81,6 +81,7 @@ function togglePlatformDropdown() {
 
 function selectPlatformOption(val) {
   platformDropdownOpen.value = false
+  platformStore.setPlatform(val)
   emit('platform-switch', val)
 }
 

@@ -28,7 +28,7 @@
           v-else
           :arkui-json="uploadFiles.arkuiJson"
           :arkui-image="uploadFiles.arkuiImage"
-          :platform="currentPlatform"
+          :platform="platformStore.currentPlatform"
           @pick-json="onDevJsonPicked"
           @pick-image="file => $emit('step-picked', { type: 'arkuiImage', file })"
         />
@@ -74,12 +74,13 @@ import DevUploadCard from './DevUploadCard.vue'
 import DesignUploadCard from './DesignUploadCard.vue'
 import OctoLoading from './common/OctoLoading.vue'
 import { useDebugStore } from '../../../stores/debug'
+import { usePlatformStore } from '../../../stores/platform'
 
 const debugStore = useDebugStore()
+const platformStore = usePlatformStore()
 
 const props = defineProps({
   uploadFiles:          { type: Object,  required: true },
-  currentPlatform:      { type: String,  default: 'hmPhone' },
   devPreview:           { type: Object,  default: null },
   designPreview:        { type: Object,  default: null },
   devPreviewLoading:    { type: Boolean, default: false },

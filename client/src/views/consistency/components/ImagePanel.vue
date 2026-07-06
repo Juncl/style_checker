@@ -152,7 +152,6 @@ const props = defineProps({
   selectedId:   { type: String,  default: null },
   inspectorNode:{ type: Object,  default: null },
   styleDiffs:   { type: Array,   default: () => [] },
-  lockedIds:         { type: Object,  default: () => new Set() }, // Set<string>，不参与图片点击
   externalHoveredId: { type: String,  default: null },
   side:              { type: String,  default: 'dev' },   // 'dev' | 'design'
   debugPairMap:  { type: Object,  default: () => ({}) },
@@ -351,7 +350,6 @@ function hitNodesAt(px, py) {
       !isHiddenTextNode(n) &&
       !n.visualOccluded &&
       n.rect &&
-      !props.lockedIds.has(n.id) &&
       px >= n.rect.x && px <= n.rect.x + n.rect.w &&
       py >= n.rect.y && py <= n.rect.y + n.rect.h
     )
@@ -687,22 +685,8 @@ function draw() {
     }
   }
 
-  // 锁定节点（红色虚线，仅轮廓）— 红色对齐设计稿 color-error #E02128
-  for (const n of props.nodes) {
-    if (n.visible === false || n.visualOccluded || !n.rect) continue
-    if (!props.lockedIds.has(n.id)) continue
-    drawNodeRect(ctx, n.rect, sx, sy, 'rgba(224,33,40,0.06)', '#E02128', 1, [3, 3])
-    // 左上角小锁标
-    const lx = n.rect.x * sx, ly = n.rect.y * sy
-    ctx.fillStyle = 'rgba(224,33,40,0.75)'
-    ctx.fillRect(lx, ly, 14, 14)
-    ctx.fillStyle = '#fff'
-    ctx.font = 'bold 10px sans-serif'
-    ctx.fillText('🔒', lx + 1, ly + 11)
-  }
-
-  // 悬停节点（红色虚线 + 浅红背景，排除锁定层）
-  if (hoveredId.value && hoveredId.value !== props.selectedId && !props.lockedIds.has(hoveredId.value)) {
+  // 悬停节点（红色虚线 + 浅红背景）
+  if (hoveredId.value && hoveredId.value !== props.selectedId) {
     const n = props.nodes.find(n => n.id === hoveredId.value)
     if (n) drawNodeRect(ctx, n.rect, sx, sy, 'rgba(224,33,40,0.10)', '#E02128', 1, [4, 3])
   }
