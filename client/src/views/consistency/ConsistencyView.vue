@@ -79,7 +79,6 @@
         :design-nodes="designNodes"
         :all-arkui-nodes="allArkuiNodes"
         :arkui-nodes="arkuiNodes"
-        :selected-pair="selectedPair"
         :active-diff="activeDiff"
         :debug-pair-items="debugPairItems"
         :debug-pair-map="debugPairMap"
@@ -105,7 +104,6 @@
         @select-case="selectCase"
         @arkui-node-click="onArkuiNodeClick"
         @design-node-click="onDesignNodeClick"
-        @clear-pair="selectedPair = null"
         @step-picked="onStepPicked"
         @arkui-hover="onArkuiHover"
         @design-hover="onDesignHover"
@@ -135,7 +133,6 @@
         :result="result"
         :active-pair-for-diff="activePairForDiff"
         :hover-pair-for-diff="hoverPairForDiff"
-        :selected-pair="selectedPair"
         :design-nodes="designNodes"
         :all-arkui-nodes="allArkuiNodes"
         :locked-node-ids="lockedNodeIds"
@@ -210,6 +207,7 @@ import { CASE_NAMES_BY_PLATFORM, DEBUG_COLORS } from '../utils/constants'
 import { reportInteraction } from '../utils-inner/report'
 import { useCanvasModeStore } from '../../stores/canvasMode'
 import { useDebugStore } from '../../stores/debug'
+import { useSelectionStore } from '../../stores/selection'
 
 const route           = useRoute()
 const currentPlatform = ref('hmPhone')
@@ -218,11 +216,11 @@ const selectedCase    = ref('')
 const loading         = ref(false)
 const result          = ref(null)
 const activeDiff      = ref(null)
-const selectedPair    = ref(null)
 const lockedNodeIds   = ref(new Set())
 const uploadPageRef   = ref(null)
 const aiChatOpen      = ref(false)
 const debugStore = useDebugStore()
+const selectionStore = useSelectionStore()
 const rerunLoading      = ref(false)
 const reportPageRef     = ref(null)
 const tempDiffs         = ref(null)
@@ -370,10 +368,10 @@ const hoveredDesignNodeId = ref(null)
 const hoveredDiffPair     = ref(null)
 
 const activePairForDiff = computed(() => {
-  if (!selectedPair.value) return null
+  if (!selectionStore.selectedPair) return null
   return {
-    designNodeId: selectedPair.value.design?.id ?? null,
-    arkuiNodeId:  selectedPair.value.arkui?.id  ?? null,
+    designNodeId: selectionStore.selectedPair.design?.id ?? null,
+    arkuiNodeId:  selectionStore.selectedPair.arkui?.id  ?? null,
   }
 })
 
@@ -484,7 +482,7 @@ function computeSpacingMarks(rectA, rectB, sizeA, sizeB) {
 }
 
 const hoverArkuiSpacingMarks = computed(() => {
-  const selNode = selectedPair.value?.arkui
+  const selNode = selectionStore.selectedPair?.arkui
   if (!selNode?.rect) return []
   const hoverId = hoveredArkuiNodeId.value || hoveredArkuiCrossId.value
   if (!hoverId || hoverId === selNode.id) return []
@@ -495,7 +493,7 @@ const hoverArkuiSpacingMarks = computed(() => {
 })
 
 const hoverDesignSpacingMarks = computed(() => {
-  const selNode = selectedPair.value?.design
+  const selNode = selectionStore.selectedPair?.design
   if (!selNode?.rect) return []
   const hoverId = hoveredDesignNodeId.value || hoveredDesignCrossId.value
   if (!hoverId || hoverId === selNode.id) return []
@@ -510,14 +508,14 @@ const arkuiNodes  = computed(() =>
 )
 
 const selectedDesignDiffs = computed(() =>
-  selectedPair.value?.design?.id
-    ? nodeDiffsFor('designNodeId', selectedPair.value.design.id)
+  selectionStore.selectedPair?.design?.id
+    ? nodeDiffsFor('designNodeId', selectionStore.selectedPair.design.id)
     : []
 )
 
 const selectedArkuiDiffs = computed(() =>
-  selectedPair.value?.arkui?.id
-    ? nodeDiffsFor('arkuiNodeId', selectedPair.value.arkui.id)
+  selectionStore.selectedPair?.arkui?.id
+    ? nodeDiffsFor('arkuiNodeId', selectionStore.selectedPair.arkui.id)
     : []
 )
 
@@ -833,7 +831,7 @@ function onAddPage() {
   result.value               = null
   selectedCase.value         = ''
   activeDiff.value    = null
-  selectedPair.value  = null
+  selectionStore.clear()
   tempPairs.value     = null
   lockedNodeIds.value = new Set()
   devPreview.value           = null
@@ -855,7 +853,7 @@ function recheckDev() {
     blobUrls.value = { ...blobUrls.value, arkui: '' }
   }
   activeDiff.value    = null
-  selectedPair.value  = null
+  selectionStore.clear()
   lockedNodeIds.value = new Set()
   devReuploading.value = true
 }
@@ -869,7 +867,7 @@ function recheckDesign() {
     blobUrls.value = { ...blobUrls.value, design: '' }
   }
   activeDiff.value        = null
-  selectedPair.value      = null
+  selectionStore.clear()
   lockedNodeIds.value     = new Set()
   designReuploading.value = true
 }
@@ -1029,7 +1027,7 @@ function onSaveManualStyle({ side, nodeId, key, parsedValue }) {
     const manualDiff = generateManualDiff(pair, key, currentPlatform.value)
     if (manualDiff) {
       upsertManualDiff(manualDiff)
-      selectedPair.value = pair
+      selectionStore.select(pair)
     } else {
       upsertManualDiff({
         property:      key,
@@ -1059,11 +1057,7 @@ function onSaveManualStyle({ side, nodeId, key, parsedValue }) {
       designName: side === 'design' ? (node.name ?? '') : undefined,
     }
     upsertManualDiff(diff)
-    selectedPair.value = {
-      matchDetail: { type: 'unmatched' },
-      design: mySide === 'design' ? node : null,
-      arkui:  mySide === 'arkui'  ? node : null,
-    }
+    selectionStore.selectUnmatched(mySide === 'design' ? 'design' : 'arkui', node)
   }
 }
 
@@ -1165,7 +1159,7 @@ async function rerunCheck() {
     return
   }
   activeDiff.value    = null
-  selectedPair.value  = null
+  selectionStore.clear()
   lockedNodeIds.value = new Set()
   rerunLoading.value  = true
   try {
@@ -1205,10 +1199,10 @@ function onDesignNodeClick(nodeId) {
   if (!isSelectableNode(node)) return
   const pair = effectivePairs.value.find(p => p.design?.id === (node?.id || nodeId))
   if (pair) {
-    selectedPair.value = pair
+    selectionStore.select(pair)
   } else {
     const designNode = node || result.value?.allDesignNodes?.find(n => n.id === nodeId)
-    if (designNode) selectedPair.value = { matchDetail: { type: 'unmatched' }, design: designNode, arkui: null }
+    if (designNode) selectionStore.selectUnmatched('design', designNode)
   }
   activeDiff.value = null
 }
@@ -1218,10 +1212,10 @@ function onArkuiNodeClick(nodeId) {
   if (!isSelectableNode(node)) return
   const pair = effectivePairs.value.find(p => p.arkui?.id === (node?.id || nodeId))
   if (pair) {
-    selectedPair.value = pair
+    selectionStore.select(pair)
   } else {
     const arkuiNode = node || result.value?.allArkuiNodes?.find(n => n.id === nodeId)
-    if (arkuiNode) selectedPair.value = { matchDetail: { type: 'unmatched-dev' }, design: null, arkui: arkuiNode }
+    if (arkuiNode) selectionStore.selectUnmatched('arkui', arkuiNode)
   }
   activeDiff.value = null
 }
@@ -1234,13 +1228,13 @@ function onToggleLock(nodeId) {
   const next = new Set(lockedNodeIds.value)
   next.has(nodeId) ? next.delete(nodeId) : next.add(nodeId)
   lockedNodeIds.value = next
-  if (next.has(nodeId) && selectedPair.value?.design?.id === nodeId) selectedPair.value = null
+  if (next.has(nodeId) && selectionStore.selectedPair?.design?.id === nodeId) selectionStore.clear()
 }
 
 async function selectCase(id) {
   selectedCase.value  = id
   activeDiff.value    = null
-  selectedPair.value  = null
+  selectionStore.clear()
   lockedNodeIds.value = new Set()
   loading.value       = true
   result.value        = null
@@ -1554,7 +1548,7 @@ async function submitResult() {
 async function runUpload(platform) {
   selectedCase.value  = ''
   activeDiff.value    = null
-  selectedPair.value  = null
+  selectionStore.clear()
   lockedNodeIds.value = new Set()
   loading.value       = true
   result.value        = null
@@ -1603,13 +1597,13 @@ function reportPlatformChange(platform) {
 function onDiffSelect(diff) {
   activeDiff.value = diff
   if (!diff) {
-    selectedPair.value = null
+    selectionStore.clear()
   } else if (!diff.property?.startsWith('spacing.')) {
     const pair = effectivePairs.value.find(p =>
       p.design?.id === diff.designNodeId && p.arkui?.id === diff.arkuiNodeId
     )
     if (pair) {
-      selectedPair.value = pair
+      selectionStore.select(pair)
     } else if (diff.designNodeId || diff.arkuiNodeId) {
       const designNode = diff.designNodeId
         ? result.value?.allDesignNodes?.find(n => n.id === diff.designNodeId) ?? null
@@ -1617,13 +1611,13 @@ function onDiffSelect(diff) {
       const arkuiNode = diff.arkuiNodeId
         ? result.value?.allArkuiNodes?.find(n => n.id === diff.arkuiNodeId) ?? null
         : null
-      selectedPair.value = {
+      selectionStore.select({
         matchDetail: { type: 'unmatched' },
         design: designNode,
         arkui:  arkuiNode,
-      }
+      })
     } else {
-      selectedPair.value = null
+      selectionStore.clear()
     }
   }
 }

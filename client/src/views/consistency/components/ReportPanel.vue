@@ -104,6 +104,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useSelectionStore } from '../../../stores/selection'
 import OctoLoading from './common/OctoLoading.vue'
 import DiffReport from './DiffReport.vue'
 import NodeTree from './NodeTree.vue'
@@ -112,12 +113,12 @@ import HistoryPanel from './HistoryPanel.vue'
 import { useDebugStore } from '../../../stores/debug'
 
 const debugStore = useDebugStore()
+const selectionStore = useSelectionStore()
 
 const props = defineProps({
   result:           { type: Object,  required: true },
   activePairForDiff:{ type: Object,  default: null },
   hoverPairForDiff: { type: Object,  default: null },
-  selectedPair:     { type: Object,  default: null },
   designNodes:      { type: Array,   default: () => [] },
   allArkuiNodes:    { type: Array,   default: () => [] },
   lockedNodeIds:    { type: Set,     default: () => new Set() },
@@ -192,8 +193,8 @@ const treeNodes = computed(() =>
 
 const treeSelectedId = computed(() =>
   treeSide.value === 'design'
-    ? props.selectedPair?.design?.id || null
-    : props.selectedPair?.arkui?.id  || null
+    ? selectionStore.selectedPair?.design?.id || null
+    : selectionStore.selectedPair?.arkui?.id  || null
 )
 </script>
 

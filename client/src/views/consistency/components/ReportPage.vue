@@ -56,30 +56,30 @@
 
   <!-- ── 节点选中说明条（悬浮，左上角）── -->
   <transition name="fade">
-    <div v-if="debugStore.debugMode && selectedPair" class="node-bar" :style="{ left: nodeBarX + 'px' }">
+    <div v-if="debugStore.debugMode && selectionStore.selectedPair" class="node-bar" :style="{ left: nodeBarX + 'px' }">
       <div class="node-bar-head drag-handle" @mousedown="startDrag($event, 'nodebar')">
         <span>已选中实机节点</span>
-        <button class="node-bar-close" @click.stop="$emit('clear-pair')">✕</button>
+        <button class="node-bar-close" @click.stop="selectionStore.clear()">✕</button>
       </div>
       <div class="node-bar-body">
         <el-icon class="node-bar-icon"><Crop /></el-icon>
-        <b class="node-bar-name">{{ selectedPair.arkui?.textContent || selectedPair.arkui?.name || selectedPair.design?.textContent || selectedPair.design?.name }}</b>
+        <b class="node-bar-name">{{ selectionStore.selectedPair.arkui?.textContent || selectionStore.selectedPair.arkui?.name || selectionStore.selectedPair.design?.textContent || selectionStore.selectedPair.design?.name }}</b>
         <div class="node-bar-tags">
           <el-tag
             size="small"
             effect="plain"
-            :type="confidenceTagType(selectedPair.confidence)"
+            :type="confidenceTagType(selectionStore.selectedPair.confidence)"
           >
-            {{ selectedPair.matchDetail?.pass ? selectedPair.matchDetail.pass + ': ' : '' }}{{ selectedPair.matchDetail?.type }}
+            {{ selectionStore.selectedPair.matchDetail?.pass ? selectionStore.selectedPair.matchDetail.pass + ': ' : '' }}{{ selectionStore.selectedPair.matchDetail?.type }}
           </el-tag>
           <el-tag
-            v-if="selectedPair.confidence"
+            v-if="selectionStore.selectedPair.confidence"
             size="small"
             effect="plain"
-            :type="confidenceTagType(selectedPair.confidence)"
-          >{{ confidenceText(selectedPair.confidence) }}</el-tag>
+            :type="confidenceTagType(selectionStore.selectedPair.confidence)"
+          >{{ confidenceText(selectionStore.selectedPair.confidence) }}</el-tag>
         </div>
-        <div v-if="selectedPair.matchDetail?.desc" class="node-bar-desc">{{ selectedPair.matchDetail.desc }}</div>
+        <div v-if="selectionStore.selectedPair.matchDetail?.desc" class="node-bar-desc">{{ selectionStore.selectedPair.matchDetail.desc }}</div>
       </div>
     </div>
   </transition>
@@ -127,7 +127,7 @@
 
       <div
         :class="['up-stage', devReuploading && !devPreview && !devPreviewLoading ? '' : 'up-stage--report']"
-        @click="devReuploading ? undefined : $emit('clear-pair')"
+        @click="devReuploading ? undefined : selectionStore.clear()"
       >
         <!-- 重新上传模式 -->
         <template v-if="devReuploading">
@@ -197,7 +197,7 @@
     <section class="up-col up-col--design">
       <div
         :class="['up-stage', designReuploading && !designPreview && !designPreviewLoading ? '' : 'up-stage--report']"
-        @click="designReuploading ? undefined : $emit('clear-pair')"
+        @click="designReuploading ? undefined : selectionStore.clear()"
       >
         <!-- 重新上传模式 -->
         <template v-if="designReuploading">
@@ -284,6 +284,7 @@ import { normalizeSelection } from '../match/normalizeSelection.ts'
 import { matchNodes } from '../../../api/index.ts'
 import { useCanvasModeStore } from '../../../stores/canvasMode'
 import { useDebugStore } from '../../../stores/debug'
+import { useSelectionStore } from '../../../stores/selection'
 
 const props = defineProps({
   result:               { type: Object,  required: true },
@@ -292,7 +293,6 @@ const props = defineProps({
   designNodes:          { type: Array,   default: () => [] },
   allArkuiNodes:        { type: Array,   default: () => [] },
   arkuiNodes:           { type: Array,   default: () => [] },
-  selectedPair:         { type: Object,  default: null },
   activeDiff:           { type: Object,  default: null },
   debugPairItems:       { type: Array,   default: () => [] },
   debugPairMap:         { type: Object,  default: () => ({}) },
@@ -320,7 +320,6 @@ const props = defineProps({
 const emit = defineEmits([
   'arkui-node-click',
   'design-node-click',
-  'clear-pair',
   'step-picked',
   'select-case',
   'arkui-hover',
@@ -334,6 +333,7 @@ const emit = defineEmits([
 
 const canvasMode = useCanvasModeStore()
 const debugStore = useDebugStore()
+const selectionStore = useSelectionStore()
 
 const devPanelRef    = ref(null)
 const designPanelRef = ref(null)
@@ -402,11 +402,11 @@ const selectBranchMode = computed(() =>
 /** 画布是否使用 selectedPair 驱动（default/edit 或 tempPairs 模式） */
 function usePair() { return canvasMode.mode !== 'select' || selectBranchMode.value === 'select-tempPairs' }
 
-const effectiveDevSelectedId     = computed(() => usePair() ? (props.selectedPair?.arkui?.id || null) : localArkuiId.value)
-const effectiveDevInspectorNode  = computed(() => usePair() ? (props.selectedPair?.arkui || null)       : localArkuiNode.value)
+const effectiveDevSelectedId     = computed(() => usePair() ? (selectionStore.selectedPair?.arkui?.id || null) : localArkuiId.value)
+const effectiveDevInspectorNode  = computed(() => usePair() ? (selectionStore.selectedPair?.arkui || null)       : localArkuiNode.value)
 const effectiveDevStyleDiffs     = computed(() => usePair() ? (props.selectedArkuiDiffs ?? [])           : [])
-const effectiveDesignSelectedId  = computed(() => usePair() ? (props.selectedPair?.design?.id || null)   : localDesignId.value)
-const effectiveDesignInspectorNode = computed(() => usePair() ? (props.selectedPair?.design || null)      : localDesignNode.value)
+const effectiveDesignSelectedId  = computed(() => usePair() ? (selectionStore.selectedPair?.design?.id || null)   : localDesignId.value)
+const effectiveDesignInspectorNode = computed(() => usePair() ? (selectionStore.selectedPair?.design || null)      : localDesignNode.value)
 const effectiveDesignStyleDiffs  = computed(() => usePair() ? (props.selectedDesignDiffs ?? [])          : [])
 
 function clearCompare() {
@@ -474,9 +474,9 @@ function handleCanvasNodeClick(id, localRef, eventName) {
 function handleCanvasBgClick(localRef) {
   if (canvasMode.mode === 'select') {
     localRef.value = null
-    if (selectBranchMode.value === 'select-tempPairs') { clearCompare(); emit('clear-pair') }
+    if (selectBranchMode.value === 'select-tempPairs') { clearCompare(); selectionStore.clear() }
   } else {
-    emit('clear-pair')
+    selectionStore.clear()
   }
 }
 
@@ -598,7 +598,7 @@ function onDesignPanelZoom({ factor, normX, normY }) {
 function onWindowResize() {
   devPanelRef.value?.resetZoom()
   designPanelRef.value?.resetZoom()
-  emit('clear-pair')
+  selectionStore.clear()
 }
 
 onMounted(() => window.addEventListener('resize', onWindowResize))
