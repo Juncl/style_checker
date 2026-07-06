@@ -125,3 +125,38 @@ export const useTempResultStore = defineStore('tempResult', () => {
 
   return { tempDiffs, tempPairs, setResult, clear }
 })
+
+// ============================================================================
+// 五、select 模式选中节点 Store
+// ============================================================================
+
+/**
+ * select 模式选中节点 Store
+ *
+ * 在 select 模式下，点选和框选选中的节点统一存储于此，不再区分来源。
+ * 点选一个节点 → devNodes/designNodes 为单元素数组
+ * 框选多个节点 → devNodes/designNodes 为多元素数组
+ * 空白点击 / 退出 select 模式 → 清空对应侧数组
+ *
+ * 消费者：
+ *   - ReportPage.currentDevNodes / currentDesignNodes（computed 透传）
+ *   - ReportPage.isBatchMode（任一侧 >= 2 个节点时走批量 API 对比）
+ *   - ReportPage.runCompare / runBoxCompare（取节点列表发起对比）
+ *   - ImagePanel selectedId（取 devNodes[0]?.id 作为画布高亮目标）
+ */
+export const useSelectNodesStore = defineStore('selectNodes', () => {
+  const devNodes = ref([])
+  const designNodes = ref([])
+
+  function setDevNodes(nodes) { devNodes.value = nodes }
+  function setDesignNodes(nodes) { designNodes.value = nodes }
+  function clearDevNodes() { devNodes.value = [] }
+  function clearDesignNodes() { designNodes.value = [] }
+  function clearAll() { devNodes.value = []; designNodes.value = [] }
+
+  return {
+    devNodes, designNodes,
+    setDevNodes, setDesignNodes,
+    clearDevNodes, clearDesignNodes, clearAll,
+  }
+})

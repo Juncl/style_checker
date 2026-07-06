@@ -726,6 +726,11 @@ onMounted(async () => {
 
   const { deliverable } = initResult
   if (deliverable) {
+    // 历史报告的平台以实际数据为准，覆盖 localStorage 缓存的平台值
+    if (deliverable.deviceType && deliverable.deviceType !== platformStore.currentPlatform) {
+      platformStore.setPlatform(deliverable.deviceType)
+      savePlatform(deliverable.deviceType)
+    }
     try {
       deliverables.value     = deliverable.deliverableList
       pages.value            = deliverable.pageList
@@ -1134,7 +1139,7 @@ function mergeTempToResult() {
 
 async function rerunCheck() {
   if (canvasMode.mode === 'select') {
-    reportPageRef.value?.runCompare()
+    await reportPageRef.value?.runCompare()
     return
   }
   if (!result.value) {

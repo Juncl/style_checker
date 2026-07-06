@@ -17,10 +17,12 @@ import { isCanvasRoot } from '../../utils/deduplicateRootNodes.js'
 import { comparePaths } from '../../utils/pathOrder.js'
 
 export function matchNodes(designNodes, devNodes, options = {}) {
-  const { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight } = options
+  const { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight, nodeNumStatus = 'all' } = options
 
-  designNodes = designNodes.filter(n => !isCanvasRoot(n, canvasWidth, canvasHeight))
-  devNodes    = devNodes.filter(n => !isCanvasRoot(n, canvasWidthVp, canvasHeightVp))
+  if (nodeNumStatus !== 'part') {
+    designNodes = [...designNodes].filter(n => !isCanvasRoot(n, canvasWidth, canvasHeight))
+    devNodes    = [...devNodes].filter(n => !isCanvasRoot(n, canvasWidthVp, canvasHeightVp))
+  }
 
   const usedDev = new Set()
   const matchedDesignIds = new Set()

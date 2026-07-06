@@ -181,6 +181,7 @@
           :box-select-mode="canvasMode.mode === 'select'"
           :edit-mode="canvasMode.mode === 'edit'"
           :compare-active="compareActive"
+          :selected-node-ids="devSelectedNodeIds"
           @node-click="onDevNodeClick"
           @node-hover="onArkuiHover"
           @bg-click="onDevBgClick"
@@ -250,6 +251,7 @@
           :box-select-mode="canvasMode.mode === 'select'"
           :edit-mode="canvasMode.mode === 'edit'"
           :compare-active="compareActive"
+          :selected-node-ids="designSelectedNodeIds"
           @node-click="onDesignNodeClickLocal"
           @node-hover="onDesignHover"
           @bg-click="onDesignBgClick"
@@ -278,10 +280,9 @@ import SelectModeIcon from '@/views/svg-vue/SelectModeIcon.vue'
 import MoveDownIcon from '@/views/svg-vue/MoveDownIcon.vue'
 import MoveUpIcon from '@/views/svg-vue/MoveUpIcon.vue'
 import { validationBg, confidenceText, confidenceTagType } from '../../utils/tools.ts'
-import { compareNodeStyles } from '../match/compareNodes.ts'
 import { normalizeSelection } from '../match/normalizeSelection.ts'
 import { matchNodes } from '../../../api/index.ts'
-import { useCanvasModeStore, useSelectionStore, usePlatformStore, useTempResultStore } from '../../../stores'
+import { useCanvasModeStore, useSelectionStore, usePlatformStore, useTempResultStore, useSelectNodesStore } from '../../../stores'
 import { useDebugStore } from '../../../stores/debug'
 
 const props = defineProps({
@@ -330,16 +331,13 @@ const debugStore = useDebugStore()
 const selectionStore = useSelectionStore()
 const platformStore = usePlatformStore()
 const tempResultStore = useTempResultStore()
+const selectNodesStore = useSelectNodesStore()
 
 const devPanelRef    = ref(null)
 const designPanelRef = ref(null)
 const debugMappingExpanded = ref(false)
 
 const floatBarCollapsed  = ref(false)
-const localArkuiId       = ref(null)
-const localDesignId      = ref(null)
-const localArkuiNodeList  = ref([])    // 开发侧框选节点列表
-const localDesignNodeList = ref([])    // 设计侧框选节点列表
 const pendingDiffs       = ref(null)   // 当前临时对比结果；非 null 即为对比激活状态
 const compareActive      = computed(() => pendingDiffs.value !== null)
 
@@ -347,37 +345,19 @@ const compareActive      = computed(() => pendingDiffs.value !== null)
 const devExtraOverride    = ref(null)
 const designExtraOverride = ref(null)
 
-// 每侧当前选中的节点列表（框选优先；没有框选则用单击 id 拼成单元素数组）
-const currentDevNodes = computed(() => {
-  if (localArkuiNodeList.value.length > 0) return localArkuiNodeList.value
-  if (localArkuiId.value) {
-    const n = props.allArkuiNodes?.find(n => n.id === localArkuiId.value)
-    return n ? [n] : []
-  }
-  return []
-})
-const currentDesignNodes = computed(() => {
-  if (localDesignNodeList.value.length > 0) return localDesignNodeList.value
-  if (localDesignId.value) {
-    const n = (props.result?.allDesignNodes ?? props.designNodes)?.find(n => n.id === localDesignId.value)
-    return n ? [n] : []
-  }
-  return []
-})
-
-// 任意一边 >= 2 → 批量模式（后台对比）；两边各 1 → 单节点模式（前端对比）
-const isBatchMode = computed(() =>
-  currentDevNodes.value.length > 1 || currentDesignNodes.value.length > 1
-)
+// 每侧当前选中的节点列表（点选/框选统一存储在 store 中）
+// 直接读 selectNodesStore，不再包 computed（store 内部已是 ref，Pinia 自动解包）
+const devSelectedNodeIds = computed(() => selectNodesStore.devNodes.map(n => n.id))
+const designSelectedNodeIds = computed(() => selectNodesStore.designNodes.map(n => n.id))
 
 const localArkuiNode  = computed(() =>
-  canvasMode.mode === 'select' && localArkuiId.value
-    ? (props.allArkuiNodes?.find(n => n.id === localArkuiId.value) ?? null)
+  canvasMode.mode === 'select' && selectNodesStore.devNodes.length === 1
+    ? selectNodesStore.devNodes[0]
     : null
 )
 const localDesignNode = computed(() =>
-  canvasMode.mode === 'select' && localDesignId.value
-    ? ((props.result?.allDesignNodes ?? props.designNodes)?.find(n => n.id === localDesignId.value) ?? null)
+  canvasMode.mode === 'select' && selectNodesStore.designNodes.length === 1
+    ? selectNodesStore.designNodes[0]
     : null
 )
 
@@ -398,10 +378,10 @@ const selectBranchMode = computed(() =>
 /** 画布是否使用 selectedPair 驱动（default/edit 或 tempPairs 模式） */
 function usePair() { return canvasMode.mode !== 'select' || selectBranchMode.value === 'select-tempPairs' }
 
-const effectiveDevSelectedId     = computed(() => usePair() ? (selectionStore.selectedPair?.arkui?.id || null) : localArkuiId.value)
+const effectiveDevSelectedId     = computed(() => usePair() ? (selectionStore.selectedPair?.arkui?.id || null) : ((selectNodesStore.devNodes.length === 1 ? selectNodesStore.devNodes[0]?.id : null) ?? null))
 const effectiveDevInspectorNode  = computed(() => usePair() ? (selectionStore.selectedPair?.arkui || null)       : localArkuiNode.value)
 const effectiveDevStyleDiffs     = computed(() => usePair() ? (props.selectedArkuiDiffs ?? [])           : [])
-const effectiveDesignSelectedId  = computed(() => usePair() ? (selectionStore.selectedPair?.design?.id || null)   : localDesignId.value)
+const effectiveDesignSelectedId  = computed(() => usePair() ? (selectionStore.selectedPair?.design?.id || null)   : ((selectNodesStore.designNodes.length === 1 ? selectNodesStore.designNodes[0]?.id : null) ?? null))
 const effectiveDesignInspectorNode = computed(() => usePair() ? (selectionStore.selectedPair?.design || null)      : localDesignNode.value)
 const effectiveDesignStyleDiffs  = computed(() => usePair() ? (props.selectedDesignDiffs ?? [])          : [])
 
@@ -411,11 +391,8 @@ function clearCompare() {
 }
 
 function clearSelectState() {
-  localArkuiId.value        = null
-  localDesignId.value       = null
-  localArkuiNodeList.value  = []
-  localDesignNodeList.value = []
-  pendingDiffs.value        = null
+  selectNodesStore.clearAll()
+  pendingDiffs.value = null
   tempResultStore.clear()
 }
 
@@ -448,98 +425,65 @@ function onTriangleClick() {
 }
 
 function onDevBoxSelect(nodes) {
-  localArkuiNodeList.value = nodes
+  selectNodesStore.setDevNodes(nodes)
 }
 function onDesignBoxSelect(nodes) {
-  localDesignNodeList.value = nodes
+  selectNodesStore.setDesignNodes(nodes)
 }
 
-/** select 模式下的节点点击：select-select 仅写本地；select-tempPairs 同步 emit 以驱动全局联动 */
-function handleCanvasNodeClick(id, localRef, eventName) {
+/** select 模式下的节点点击：点选单节点，写入 store；select-tempPairs 同步 emit 以驱动全局联动 */
+function onDevNodeClick(id) {
   if (canvasMode.mode === 'select') {
-    localRef.value = id
-    if (selectBranchMode.value === 'select-tempPairs') emit(eventName, id)
+    const node = props.allArkuiNodes?.find(n => n.id === id)
+    selectNodesStore.setDevNodes(node ? [node] : [])
+    if (selectBranchMode.value === 'select-tempPairs') emit('arkui-node-click', id)
   } else {
-    emit(eventName, id)
+    emit('arkui-node-click', id)
+  }
+}
+function onDesignNodeClickLocal(id) {
+  if (canvasMode.mode === 'select') {
+    const node = (props.result?.allDesignNodes ?? props.designNodes)?.find(n => n.id === id)
+    selectNodesStore.setDesignNodes(node ? [node] : [])
+    if (selectBranchMode.value === 'select-tempPairs') emit('design-node-click', id)
+  } else {
+    emit('design-node-click', id)
   }
 }
 
-/** select 模式下的画布空白点击：select-select 仅清本地；select-tempPairs 清 temp 并抛 clear-pair */
-function handleCanvasBgClick(localRef) {
+/** select 模式下的画布空白点击：select-select 清空对应侧；select-tempPairs 清 temp 并抛 clear-pair */
+function onDevBgClick() {
   if (canvasMode.mode === 'select') {
-    localRef.value = null
+    selectNodesStore.clearDevNodes()
+    if (selectBranchMode.value === 'select-tempPairs') { clearCompare(); selectionStore.clear() }
+  } else {
+    selectionStore.clear()
+  }
+}
+function onDesignBgClick() {
+  if (canvasMode.mode === 'select') {
+    selectNodesStore.clearDesignNodes()
     if (selectBranchMode.value === 'select-tempPairs') { clearCompare(); selectionStore.clear() }
   } else {
     selectionStore.clear()
   }
 }
 
-function onDevNodeClick(id) { handleCanvasNodeClick(id, localArkuiId, 'arkui-node-click') }
-function onDesignNodeClickLocal(id) { handleCanvasNodeClick(id, localDesignId, 'design-node-click') }
-function onDevBgClick() { handleCanvasBgClick(localArkuiId) }
-function onDesignBgClick() { handleCanvasBgClick(localDesignId) }
-
-function runCompare() {
-  if (isBatchMode.value) {
-    runBoxCompare()
-    return
-  }
-  const devNode    = currentDevNodes.value[0]
-  const designNode = currentDesignNodes.value[0]
-  if (!devNode || !designNode) { return }
-
-  // 构建人工覆盖：只有覆盖节点与当前选中节点一致时才带入
-  const overrides = {
-    dev:    devExtraOverride.value?.nodeId    === devNode.id
-              ? { [devExtraOverride.value.key]:    devExtraOverride.value.value    } : {},
-    design: designExtraOverride.value?.nodeId === designNode.id
-              ? { [designExtraOverride.value.key]: designExtraOverride.value.value } : {},
-  }
-
-  if (designNode.type !== devNode.type) {
-    ElMessage.warning('文本节点不能与容器节点对比，请重新选择')
+async function runCompare() {
+  const devNodes = selectNodesStore.devNodes
+  const designNodes = selectNodesStore.designNodes
+  if (!devNodes.length || !designNodes.length) {
+    ElMessage.warning('请选中两边的节点后再进行重新对比')
     return
   }
 
-  const raw = compareNodeStyles(designNode, devNode, overrides)
-  const diffs = raw.map(d => ({
-    property:     d.property,
-    designValue:  d.designValue,
-    arkuiValue:   d.devValue,
-    severity:     'error',
-    description:  '',
-    confidence:   'high',
-    nodeType:     designNode.type ?? 'container',
-    textContent:  designNode.textContent ?? null,
-    designName:   designNode.name ?? null,
-    arkuiName:    devNode.name    ?? null,
-    matchType:    'select-手动选择',
-    iou:          null,
-    topologyScore: null,
-    regionScore:  null,
-    designNodeId: designNode.id ?? null,
-    arkuiNodeId:  devNode.id    ?? null,
-    designRect:   designNode.rect ?? null,
-    arkuiRect:    devNode.rect    ?? null,
-    relatedArkuiNodeId:  d.relatedArkuiNodeId,
-    relatedDesignNodeId: d.relatedDesignNodeId,
-    relationKind: d.relationKind,
-    relationAxis: d.relationAxis,
-    _isManual:    true,
-  }))
-  pendingDiffs.value = diffs
-  tempResultStore.setResult(diffs, [{
-    design: designNode,
-    arkui: devNode,
-    confidence: 'high',
-    matchDetail: { pass: 'select', type: 'select-手动选择' },
-  }])
-}
-
-async function runBoxCompare() {
-  const devNodes    = currentDevNodes.value
-  const designNodes = currentDesignNodes.value
-  if (!devNodes.length || !designNodes.length) return
+  // 类型校验：单节点时两侧类型必须一致
+  if (devNodes.length === 1 && designNodes.length === 1) {
+    if (designNodes[0].type !== devNodes[0].type) {
+      ElMessage.warning('文本节点不能与容器节点对比，请重新选择')
+      return
+    }
+  }
 
   const devResult    = normalizeSelection(devNodes)
   const designResult = normalizeSelection(designNodes)
@@ -571,7 +515,7 @@ async function runBoxCompare() {
         design: designNode,
         arkui: devNode,
         confidence: p.confidence ?? 'high',
-        matchDetail: p.matchDetail ?? { pass: 'select', type: 'select-框选' },
+        matchDetail: p.matchDetail ?? { pass: 'select', type: devNodes.length > 1 ? 'select-框选' : 'select-手动选择' },
       }
     }).filter(Boolean)
     tempResultStore.setResult(diffs, tempPairs)

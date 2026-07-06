@@ -8,7 +8,8 @@
 
 | 文件 | 相关函数/变量 |
 |---|---|
-| `ReportPage.vue` | `nodeCanvasMode`、`onCircleClick`、`onRectClick`、`clearSelectState`、`localArkuiId`/`localDesignId`、`localArkuiNodeList`/`localDesignNodeList`、`devExtraOverride`/`designExtraOverride` |
+| `ReportPage.vue` | `canvasMode`（Pinia）、`onCircleClick`、`onRectClick`、`clearSelectState`、`selectNodesStore`（Pinia，管理 `{devNodes, designNodes}`）、`devExtraOverride`/`designExtraOverride` |
+| `stores/index.ts` | `useSelectNodesStore`（select 模式选中节点的统一存储：点选=单元素数组，框选=多元素数组；`isBatchMode`、`clearAll`） |
 | `ImagePanel.vue` | `boxSelectMode`/`editMode` prop、`getCanvasCoords`、`hitNodesAt` |
 
 ### Float Bar 模式切换
@@ -16,26 +17,26 @@
 | 文件 | 行号 | 说明 |
 |---|---|---|
 | `ReportPage.vue` | 90-123 | Float Bar 模板 |
-| `ReportPage.vue` | 352-353 | `nodeCanvasMode` ref |
-| `ReportPage.vue` | 442-459 | `onCircleClick`/`onRectClick` 模式切换 |
-| `ReportPage.vue` | 461-469 | 折叠按钮 |
+| `stores/index.ts` | 16-29 | `useCanvasModeStore`（`mode` / `setMode`） |
+| `ReportPage.vue` | 400-416 | `onCircleClick`/`onRectClick` 模式切换 |
+| `ReportPage.vue` | 418-426 | 折叠按钮 |
 | `ImagePanel.vue` | 161-163 | `boxSelectMode`/`editMode` prop 定义 |
 
 底部居中的悬浮工具栏（`.dev-float-bar`，`ReportPage.vue`）提供两个功能按钮和一个折叠按钮，控制画布进入三种工作模式之一：
 
 | 按钮 | 功能 |
 |---|---|
-| 圆形图标（edit） | 切换 `nodeCanvasMode = 'edit'`；再次点击回到 default；从 select 切入时自动清空 select 状态 |
-| 矩形图标（select） | 切换 `nodeCanvasMode = 'select'` 并 `emit('dev-switch-change', true)`；再次点击回到 default 并清空选中状态 |
+| 圆形图标（edit） | 切换 `canvasMode.setMode('edit')`；再次点击回到 default；从 select 切入时自动清空 select 状态 |
+| 矩形图标（select） | 切换 `canvasMode.setMode('select')` 并 `emit('dev-switch-change', true)`；再次点击回到 default 并清空选中状态 |
 | 上/下箭头 | 折叠/展开 float bar |
 
-三种模式通过 `nodeCanvasMode`（`'default' | 'select' | 'edit'`）驱动，影响以下行为：
+三种模式通过 `canvasMode.mode`（`'default' | 'select' | 'edit'`）驱动，影响以下行为：
 
 | 模式 | 点选效果 | 框选效果 | Inspector 面板 |
 |---|---|---|---|
 | **default** | 事件冒泡到 `ConsistencyView`，更新全局 `selectedPair`，高亮对应节点对 | 不开启 | 有 diff、间距模式或 debugMode 时显示 |
 | **edit** | 同 default（事件冒泡，更新全局 `selectedPair`） | 不开启 | **始终显示**，出现铅笔图标按钮可添加人工对比属性 |
-| **select** | 事件被 `ReportPage` 截获，只更新本地选中 id 和节点列表（不冒泡），画布仅用本地状态绘制 | Ctrl/Cmd+单击：切换单体命中；拖拽：批量框选 | 显示被选中节点的属性（无 diff 高亮） |
+| **select** | 事件被 `ReportPage` 截获，写入 `selectNodesStore`（点选=单元素数组，框选=多元素数组），不冒泡；画布仅用本地状态绘制 | Ctrl/Cmd+单击：切换单体命中；拖拽：批量框选 | 显示被选中节点的属性（无 diff 高亮） |
 
 Float bar 通过给两侧 `ImagePanel` 传入 `boxSelectMode`（select 时为 true）和 `editMode`（edit 时为 true）prop 来切换画布行为。select 模式额外通过 `emit('dev-switch-change', bool)` 通知父组件 `ConsistencyView`，以影响"重新对比"按钮的分流路径（`devSwitchActive` 控制走局部对比还是全量重跑）。
 
@@ -43,17 +44,18 @@ Float bar 通过给两侧 `ImagePanel` 传入 `boxSelectMode`（select 时为 tr
 
 | 文件 | 行号 | 说明 |
 |---|---|---|
-| `ReportPage.vue` | 354-357 | `localArkuiId`/`localDesignId`/`localArkuiNodeList`/`localDesignNodeList` |
-| `ReportPage.vue` | 328-345 | `dev-switch-change` emit 定义 |
-| `ReportPage.vue` | 439 | `clearSelectState` 中 emit false |
-| `ReportPage.vue` | 457 | `onRectClick` 中 emit true |
+| `stores/index.ts` | 147-171 | `useSelectNodesStore`：`devNodes`/`designNodes`、`setDevNodes`/`setDesignNodes`、`clearAll`、`isBatchMode` |
+| `ReportPage.vue` | 347-352 | `currentDevNodes`/`currentDesignNodes`/`isBatchMode`（computed 透传 store） |
+| `ReportPage.vue` | 428-471 | 点选/框选/空白点击处理函数 |
+| `ReportPage.vue` | 394-398 | `clearSelectState` → `selectNodesStore.clearAll()` |
 
-左侧（开发侧 ArkUI）和右侧（设计侧 Design）各有一个 `ImagePanel` 组件，共享相同的点选/框选实现。select 模式下两侧各有独立的本地选中状态（`localArkuiId` / `localDesignId` 和 `localArkuiNodeList` / `localDesignNodeList`）：
+左侧（开发侧 ArkUI）和右侧（设计侧 Design）各有一个 `ImagePanel` 组件。select 模式下，点选和框选选中的节点统一写入 `selectNodesStore`（Pinia store），不再区分来源：
 
-- **点选**：命中节点 → 写入本地 id；空白 → 清空本地 id
-- **框选**：拖拽 ≥ 4px 开始绘框 → emit `box-select` → 写入本地节点列表；框选优先于单击（框选后单击清空框选）
-- **选择变化**：任意状态变化触发 `watch` 自动清空临时对比结果（`pendingDiffs`）
-- **批量对比**：任一侧 ≥ 2 个节点时进入批量模式，调用后端 `matchNodes` API
+- **点选**：命中节点 → `selectNodesStore.setDevNodes([node])` / `setDesignNodes([node])`（单元素数组）
+- **框选**：拖拽 ≥ 4px 开始绘框 → emit `box-select` → `selectNodesStore.setDevNodes(nodes)` / `setDesignNodes(nodes)`（多元素数组）
+- **空白点击**：`selectNodesStore.clearDevNodes()` / `clearDesignNodes()`（清空对应侧）
+- **退出 select 模式**：`clearSelectState()` → `selectNodesStore.clearAll()`（清空两侧）
+- **批量对比**：`selectNodesStore.isBatchMode`（任一侧 ≥ 2 个节点时走 `runBoxCompare`）
 
 ---
 
@@ -151,7 +153,7 @@ Float bar 通过给两侧 `ImagePanel` 传入 `boxSelectMode`（select 时为 tr
 | `ReportPage.vue` | `devExtraOverride`/`designExtraOverride`、`getActiveOverrides` |
 | `constants.ts` | `TEXT_STYLE_OPTIONS`、`CONTAINER_STYLE_OPTIONS` |
 
-edit 模式由 float bar 的圆形按钮（edit）触发：点击一次将 `nodeCanvasMode` 设为 `'edit'`，再次点击回到 `'default'`。从 select 模式切入 edit 时会自动清空 select 状态。edit 模式下 `editMode=true` prop 传入 `ImagePanel`，点选行为与 default 一致（emit 冒泡到 `ConsistencyView`），但 Inspector 面板放宽显示条件、并开放人工标注入口。
+edit 模式由 float bar 的圆形按钮（edit）触发：点击一次通过 `canvasMode.setMode('edit')` 进入，再次点击回到 `'default'`。从 select 模式切入 edit 时会自动清空 select 状态。edit 模式下 `editMode=true` prop 传入 `ImagePanel`，点选行为与 default 一致（emit 冒泡到 `ConsistencyView`），但 Inspector 面板放宽显示条件、并开放人工标注入口。
 
 ### 3.1 Inspector 显示与属性展示
 
@@ -265,30 +267,31 @@ edit 模式下点击"重新对比"触发 `rerunCheck()`（default/edit 分支，
 ## 四、select 模式（选择比对模式）
 
 | 文件 | 相关函数/变量 |
-|---|---|
-| `ReportPage.vue` | `onDevNodeClick`、`onDesignNodeClickLocal`、`onDevBgClick`、`onDesignBgClick`、`runCompare`、`runBoxCompare`、`clearCompare`、`clearSelectState`、`selectBranchMode`、`effectiveDevSelectedId` 等 |
+|---|---|---|
+| `ReportPage.vue` | `onDevNodeClick`、`onDesignNodeClickLocal`、`onDevBgClick`、`onDesignBgClick`、`onDevBoxSelect`、`onDesignBoxSelect`、`runCompare`、`runBoxCompare`、`clearCompare`、`clearSelectState`、`selectBranchMode`、`effectiveDevSelectedId` 等 |
+| `stores/index.ts` | `useSelectNodesStore`（`devNodes`/`designNodes`、`isBatchMode`、`clearAll`） |
 | `ImagePanel.vue` | `onBoxStart`、`onBoxMove`、`onBoxEnd`、`finishBox`、`canHoverInSel`、`rectsIntersect` |
 | `ConsistencyView.vue` | `mergeTempToResult` |
 | `compareNodes.ts` | `compareNodeStyles` |
 | `normalizeSelection.ts` | `normalizeSelection` |
 
-select 模式由 float bar 的矩形按钮（select）触发：点击一次将 `nodeCanvasMode` 设为 `'select'` 并 `emit('dev-switch-change', true)` 通知父组件；再次点击回到 `'default'` 并清空选中状态。
+select 模式由 float bar 的矩形按钮（select）触发：点击一次通过 `canvasMode.setMode('select')` 进入，并 `emit('dev-switch-change', true)` 通知父组件；再次点击回到 `'default'` 并清空选中状态。
 
-select 模式下，`ReportPage` 截获 `node-click` 和 `bg-click` 事件，只更新本地状态（`localArkuiId` / `localDesignId`），不再向上冒泡给 `ConsistencyView`。这使得用户可以在不影响全局选中状态的前提下自由选点，用于后续局部对比。
+select 模式下，`ReportPage` 截获 `node-click` 和 `bg-click` 事件，只更新 `selectNodesStore`（不再由局部 ref 管理），不再向上冒泡给 `ConsistencyView`。这使得用户可以在不影响全局选中状态的前提下自由选点，用于后续局部对比。
 
 ### 4.1 点选
 
 | 文件 | 行号 | 说明 |
 |---|---|---|
-| `ReportPage.vue` | 498-499 | `onDevNodeClick`/`onDesignNodeClickLocal` |
-| `ReportPage.vue` | 500-501 | `onDevBgClick`/`onDesignBgClick` |
-| `ReportPage.vue` | 479-496 | `handleCanvasNodeClick`/`handleCanvasBgClick` 辅助 |
-| `ReportPage.vue` | 361 | watch `nodeCanvasMode` 清空 `pendingDiffs` |
+| `ReportPage.vue` | 436-443 | `onDevNodeClick` |
+| `ReportPage.vue` | 445-452 | `onDesignNodeClickLocal` |
+| `ReportPage.vue` | 456-463 | `onDevBgClick` |
+| `ReportPage.vue` | 464-471 | `onDesignBgClick` |
 
 select 模式下单击 canvas：
-- 命中节点 → `ReportPage.onDevNodeClick(id)` / `onDesignNodeClickLocal(id)` 截获事件，仅写入 `localArkuiId` / `localDesignId`，不 emit 给 `ConsistencyView`
-- 未命中 → `ReportPage.onDevBgClick()` / `onDesignBgClick()` 截获，仅清空本地 id
-- 任意选择变化（id 或节点列表）→ `watch` 自动清空 `pendingDiffs` 和 `tempDiffs`，DiffReport 回退到全量算法结果
+- 命中节点 → `ReportPage.onDevNodeClick(id)` / `onDesignNodeClickLocal(id)` 截获事件，从 `props.allArkuiNodes` / `allDesignNodes` 查找完整节点对象，调用 `selectNodesStore.setDevNodes([node])` / `setDesignNodes([node])`，不 emit 给 `ConsistencyView`
+- 未命中 → `ReportPage.onDevBgClick()` / `onDesignBgClick()` 截获，调用 `selectNodesStore.clearDevNodes()` / `clearDesignNodes()`
+- 注意：点选和框选均写入同一 `selectNodesStore`，不再存在"框选未清空导致点选被覆盖"的问题
 
 由于不更新全局 `selectedPair`，点选不会触发全量 diff 列表联动和画布红色实线高亮（select 模式下 `boxSelectMode=true`、`selectedId` 和 `inspectorNode` 使用本地状态，画布仅显示框选命中高亮或 click 命中的单节点选中高亮）。
 
@@ -301,19 +304,19 @@ select 模式下单击 canvas：
 | `ImagePanel.vue` | 533-551 | `onBoxEnd`/`finishBox` |
 | `ImagePanel.vue` | 370-383 | `canHoverInSel` |
 | `ImagePanel.vue` | 482-485 | `rectsIntersect` |
-| `ReportPage.vue` | 471-476 | `onDevBoxSelect`/`onDesignBoxSelect` |
+| `ReportPage.vue` | 428-432 | `onDevBoxSelect`/`onDesignBoxSelect` |
 
 select 模式下在 canvas 上按住鼠标左键拖拽：
 - **拖拽 < 4px**：视为抖动容差，不触发任何框选行为，松手后按普通单击处理
 - **拖拽 ≥ 4px**：开始绘框（蓝色虚线 + 浅蓝半透明填充），实时 AABB 碰撞检测。命中判定通过 `canHoverInSel` 验证（框内至少有一个点可 hover 到该节点），全屏包裹节点（rect 接近 canvas 尺寸）自动排除。同时设置 `suppressClick=true`，阻止松手时的 click 事件
 - **松手（结束拖拽）**：`emit('box-select', nodes[])`，框选高亮保持直到下次单击清空。若在框选过程中鼠标移出 `wrapper` 边界，自动结束框选
 
-`boxSelectMode=true`（由 `nodeCanvasMode === 'select'` 驱动）时启用鼠标左键拖拽框选，分三个阶段：
+`boxSelectMode=true`（由 `canvasMode.mode === 'select'` 驱动）时启用鼠标左键拖拽框选，分三个阶段：
 1. **开始拖拽**：`onBoxStart` 记录起始坐标和鼠标位置，清空上次框选高亮
 2. **拖拽中**：`onBoxMove` 超过 4px 后开始绘框，实时 AABB 碰撞检测
 3. **结束拖拽**：`onBoxEnd` → `emit('box-select', nodes[])`，框选高亮保持直到下次单击清空
 
-同时支持 **Ctrl/Cmd+单击**在已有框选集合中增删单节点（此操作不改变 `localArkuiId`/`localDesignId`）。
+同时支持 **Ctrl/Cmd+单击**在已有框选集合中增删单节点（通过 `emit('box-select', updatedNodes)` 更新 `selectNodesStore`，不经过 `onDevNodeClick`/`onDesignNodeClickLocal`）。
 
 **注意**：设计侧 locked 节点在 `hitNodesAt` 阶段被过滤，因此 `canHoverInSel` 判定时无法命中，locked 节点**不会被框选选中**。
 
@@ -321,12 +324,12 @@ select 模式下在 canvas 上按住鼠标左键拖拽：
 
 | 文件 | 行号 | 说明 |
 |---|---|---|
-| `ReportPage.vue` | 503-559 | `runCompare` 单节点模式 |
-| `ReportPage.vue` | 561-604 | `runBoxCompare` 批量模式 |
+| `ReportPage.vue` | 473-527 | `runCompare` 单节点模式 |
+| `ReportPage.vue` | 529-600 | `runBoxCompare` 批量模式 |
 | `compareNodes.ts` | 219-253 | `compareNodeStyles` |
 | `normalizeSelection.ts` | 全文件 | `normalizeSelection` |
-| `ReportPage.vue` | 364-365 | `devExtraOverride`/`designExtraOverride` ref |
-| `ReportPage.vue` | 358-359 | `pendingDiffs` ref / `compareActive` computed |
+| `ReportPage.vue` | 343-345 | `devExtraOverride`/`designExtraOverride` ref |
+| `ReportPage.vue` | 340-341 | `pendingDiffs` ref / `compareActive` computed |
 
 select 模式下点击"重新对比"按钮 → `ConsistencyView.rerunCheck()` 检测到 `devSwitchActive=true` → 调用 `reportPageRef.runCompare()`，不走全量算法重跑。
 
@@ -348,13 +351,13 @@ select 模式下点击"重新对比"按钮 → `ConsistencyView.rerunCheck()` �
 
 | 文件 | 行号 | 说明 |
 |---|---|---|
-| `ReportPage.vue` | 425-429 | `clearCompare` |
-| `ReportPage.vue` | 431-440 | `clearSelectState` |
+| `ReportPage.vue` | 389-392 | `clearCompare` |
+| `ReportPage.vue` | 394-398 | `clearSelectState` |
 
 temp 状态不随选择变化自动清除。清除只通过以下方式：
 
-- **点击画布空白区域**：`onDevBgClick()` / `onDesignBgClick()` → `clearCompare()` + `emit('clear-pair')`
-- **退出 select 模式**：悬浮框切换 → `clearSelectState()` → `clearCompare()`
+- **点击画布空白区域**：`onDevBgClick()` / `onDesignBgClick()` → `selectNodesStore.clearDevNodes()` / `clearDesignNodes()` +（若 tempPairs 分支）`clearCompare()` + `emit('clear-pair')`
+- **退出 select 模式**：`clearSelectState()` → `selectNodesStore.clearAll()` + `clearCompare()`
 - **「添加到分析结果」按钮**：`mergeTempToResult()` → 合并 temp-diffs/temp-pairs 到正式结果 → 清除 temp
 
 ### 4.5 「添加到分析结果」合并逻辑
@@ -377,8 +380,8 @@ temp 状态不随选择变化自动清除。清除只通过以下方式：
 
 | 文件 | 行号 | 说明 |
 |---|---|---|
-| `ReportPage.vue` | 409-413 | `selectBranchMode` computed |
-| `ReportPage.vue` | 418-423 | `effectiveDevSelectedId`/`effectiveDevInspectorNode`/`effectiveDevStyleDiffs` 及 design 侧 |
+| `ReportPage.vue` | 373-377 | `selectBranchMode` computed |
+| `ReportPage.vue` | 382-387 | `effectiveDevSelectedId`/`effectiveDevInspectorNode`/`effectiveDevStyleDiffs` 及 design 侧 |
 | `ConsistencyView.vue` | 240-241 | `tempDiffs`/`tempPairs` ref |
 | `ConsistencyView.vue` | 243 | `effectivePairs` computed |
 
@@ -388,9 +391,9 @@ select 模式下重新对比后产生 temp 状态（`pendingDiffs` 非 null）�
 
 通过 `selectBranchMode` computed 判断当前所处分支（`'select-select'` | `'select-tempPairs'`）。tempPairs 分支时：
 
-- **画布 selectedId / inspectorNode / styleDiffs**：不再使用本地状态（`localArkuiId` 等），改为使用 `selectedPair` 驱动，与 default/edit 模式一致
-- **节点点击**：同时写入本地 id + emit 到 `ConsistencyView`（更新 `selectedPair`，驱动 diff 列表高亮和 Inspector 展示）
-- **画布空白点击**：清空本地 id + `clearCompare()` + emit `clear-pair`（清除 temp 状态）
+- **画布 selectedId / inspectorNode / styleDiffs**：不再使用本地状态，改为使用 `selectedPair` 驱动，与 default/edit 模式一致
+- **节点点击**：同时写入 `selectNodesStore` + emit 到 `ConsistencyView`（更新 `selectedPair`，驱动 diff 列表高亮和 Inspector 展示）
+- **画布空白点击**：清空 `selectNodesStore` + `clearCompare()` + emit `clear-pair`（清除 temp 状态）
 - **diff 卡片点击**：`onDiffSelect` 中 `tempPairs` 非空时只在 tempPairs 中查找匹配对 → 更新 `selectedPair` → 画布高亮 + Inspector 显示
 
 #### 数据传递路径
@@ -417,12 +420,12 @@ ImagePanel
 | 维度 | 分支1：纯 select（无 temp） | 分支2：temp 激活（已重新对比） |
 |---|---|---|
 | **触发条件** | 进入 select 模式，未点击"重新对比" | 重新对比完成后 `pendingDiffs !== null` |
-| **canvas 驱动源** | `localArkuiId` / `localDesignId` | `selectedPair`（同 default/edit） |
-| **节点点击** | 仅写本地 id，不冒泡 | 写本地 id + emit 到 ConsistencyView → 更新 `selectedPair` |
-| **画布红色高亮** | 点选的本地节点 | `selectedPair` 对应节点 |
+| **canvas 驱动源** | `selectNodesStore`（`devNodes[0]?.id` / `designNodes[0]?.id`） | `selectedPair`（同 default/edit） |
+| **节点点击** | 写入 `selectNodesStore`，不冒泡 | 写入 `selectNodesStore` + emit 到 ConsistencyView → 更新 `selectedPair` |
+| **画布红色高亮** | `selectNodesStore` 对应节点 | `selectedPair` 对应节点 |
 | **Inspector 显示** | 本地节点属性，无 diff 高亮 | `selectedPair` 节点属性 + diff 高亮 |
 | **Inspector 覆盖** | 不支持（无 `editMode`，无铅笔图标按钮） | 不支持（无 `editMode`） |
-| **画布空白点击** | 仅清空本地 id | 清空本地 id + `clearCompare()` + `emit('clear-pair')`（清除 temp） |
+| **画布空白点击** | 清空 `selectNodesStore` 对应侧 | 清空 `selectNodesStore` 对应侧 + `clearCompare()` + `emit('clear-pair')`（清除 temp） |
 | **框选** | 正常拖拽框选 | 正常拖拽框选 |
 | **diff 卡片点击** | —（无 tempDiffs） | 在 `tempPairs` 中查找 → `selectedPair` → 画布高亮 + Inspector |
 | **画布 → diff 列表** | 不联动（事件截获） | 联动（emit 冒泡 → `activePairForDiff`） |
@@ -457,10 +460,10 @@ ImagePanel
          │  ├─ 点选 → emit('arkui-node-click' | 'design-node-click', id)
          │  └─ 空白 → emit('clear-pair')
          ├─ select 模式
-         │  ├─ 点选 → 截获，写入 localArkuiId / localDesignId
-         │  ├─ 框选 → 写入 localArkuiNodeList / localDesignNodeList
-         │  ├─ 空白 → 清空本地 id（watch 自动清 pendingDiffs）
-         │  └─ 任一选择变化 → watch → clearCompare()
+         │  ├─ 点选 → 截获，写入 selectNodesStore（devNodes/designNodes）
+         │  ├─ 框选 → 写入 selectNodesStore（devNodes/designNodes）
+         │  ├─ 空白 → 清空 selectNodesStore 对应侧
+         │  └─ 退出 select → clearSelectState() → selectNodesStore.clearAll()
          └─ edit 模式
             ├─ 点选 → 同 default，emit 冒泡
             ├─ extra-change → 写入 devExtraOverride / designExtraOverride
@@ -750,7 +753,7 @@ ReportPanel handleSave() → emit('save')
 | 文件 | 核心职责 | 关键行/函数 |
 |---|---|---|
 | `components/ImagePanel.vue` | canvas 绘制、点选框选事件、坐标转换、命中检测、对比激活遮罩、edit 模式人工属性编辑 UI | `getCanvasCoords:L336-344`, `hitNodesAt:L347-363`, `findHitNode:L365-367`, `isHiddenTextNode:L391-395`, `onCanvasClick:L399-434`, `onCanvasDblClick:L437-448`, `onMouseMove:L450-469`, `onBoxStart:L487-501`, `onBoxMove:L503-531`, `onBoxEnd:L533-535`, `draw:L629-782`, `confirmExtra:L1243-1262` |
-| `components/ReportPage.vue` | 两侧面板协调、float bar 模式开关、本地选择状态、`runCompare`、`pendingDiffs`、人工覆盖传递 | `nodeCanvasMode:L352-353`, `localArkuiId/localDesignId:L354-355`, `onDevNodeClick:L498`, `clearCompare:L425-429`, `clearSelectState:L431-440`, `runCompare:L503-559`, `runBoxCompare:L561-604`, `selectBranchMode:L409-413`, `effectiveDevSelectedId:L418-423`, `getActiveOverrides:L699-704` |
+| `components/ReportPage.vue` | 两侧面板协调、float bar 模式开关、select 模式状态管理、`runCompare`、`pendingDiffs`、人工覆盖传递 | `canvasMode:L328`, `selectNodesStore:L333`, `currentDevNodes:L348`, `clearCompare:L389-392`, `clearSelectState:L394-398`, `onDevBoxSelect:L428-429`, `onDevNodeClick:L436-443`, `onDevBgClick:L456-463`, `runCompare:L473-527`, `runBoxCompare:L529-600`, `selectBranchMode:L373-377`, `effectiveDevSelectedId:L382-387`, `getActiveOverrides:L681-686` |
 | `ConsistencyView.vue` | 全局 `selectedPair` / `activeDiff`，事件路由，`tempDiffs` 中转，`rerunCheck` 分流，人工 `manualStyle` 写入与 diff 生成，`nodeManualAttr` computed 收集与存储/回显 | `selectedPair:L230`, `activeDiff:L229`, `tempDiffs:L240`, `tempPairs:L241`, `devSwitchActive:L239`, `rerunCheck:L1174-1217`, `onSaveManualStyle:L1033-1084`, `onRemoveManualStyle:L1086-1112`, `upsertManualDiff:L263-284`, `mergedDiffs:L292-323`, `nodeManualAttr:L247-261`, `onSave:L973-1018`, `buildProblems:L984`, `mergeTempToResult:L1126-1172`, `onDiffSelect:L1619-1645`, `activePairForDiff:L384-390`, `hoverPairForDiff:L392-398`, `computeSpacingMarks:L436-496`, `loadHistoryVersion:L1311-1415`, `preprocessVersion:L344-367`, `canRerun:L423-427`, `applyExtraOverride:L1114-1123`, `onDesignNodeClick:L1219-1230`, `onArkuiNodeClick:L1232-1243` |
 | `components/ReportPanel.vue` | 右侧差异面板，`mergedDiffs` 展示，「存储」按钮状态控制与 emit，「重新对比」按钮 | rerun 按钮:`L19-24`, save 按钮:`L6-14`, `DiffReport` 使用:`L47-58`, `hasManualEdits` prop:`L132`, `canRerun` prop:`L124` |
 | `components/DiffReport.vue` | 差异列表点选、hover、精准/模糊 Tab 切换、高亮联动、滚动定位 | Props:`L187-195`, Emits:`L196`, `filteredDiffs:L263-286`, `selectItem:L369-378`, `isDiffMatchPair:L290-296`, `activeDiffKeys:L298-305`, `hoverDiffKeys:L307-314`, `matchMode:L211`, watch activePair→scroll:`L318-340` |
