@@ -61,7 +61,6 @@
           v-else
           :design-json="uploadFiles.designJson"
           :design-image="uploadFiles.designImage"
-          :debug-mode="debugMode"
           @step-picked="$emit('step-picked', $event)"
         />
       </div>
@@ -74,10 +73,12 @@ import ImagePanel from './ImagePanel.vue'
 import DevUploadCard from './DevUploadCard.vue'
 import DesignUploadCard from './DesignUploadCard.vue'
 import OctoLoading from './common/OctoLoading.vue'
+import { useDebugStore } from '../../../stores/debug'
+
+const debugStore = useDebugStore()
 
 const props = defineProps({
   uploadFiles:          { type: Object,  required: true },
-  debugMode:            { type: Boolean, default: false },
   currentPlatform:      { type: String,  default: 'hmPhone' },
   devPreview:           { type: Object,  default: null },
   designPreview:        { type: Object,  default: null },

@@ -5,7 +5,7 @@
     <div class="phone-bg"></div>
     <div class="phone-content">
       <!-- debugger 模式 -->
-      <template v-if="debugMode">
+      <template v-if="debugStore.debugMode">
         <!-- 传送码模式 -->
         <div v-if="debugStep3Mode" class="up-url-group">
           <div v-if="urlLoading" class="url-loading-overlay">
@@ -117,11 +117,13 @@ import { transferCode } from '../init/handleTransferCode'
 import iconJson from '@/assets/upload-json.png'
 import iconImage from '@/assets/upload-image.png'
 import iconStep3 from '@/assets/svg/Step3-up.svg'
+import { useDebugStore } from '../../../stores/debug'
+
+const debugStore = useDebugStore()
 
 const props = defineProps({
   designJson:  { type: Object,  default: null },
   designImage: { type: Object,  default: null },
-  debugMode:   { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['step-picked'])

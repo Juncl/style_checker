@@ -26,7 +26,7 @@
   </div>
 
   <!-- debugger 模式：差异 / 节点树 切换 -->
-  <div v-if="debugMode" class="right-tabs">
+  <div v-if="debugStore.debugMode" class="right-tabs">
     <button
       :class="['rtab', { active: rightTab === 'diff' }]"
       @click="rightTab = 'diff'"
@@ -45,12 +45,11 @@
   </div>
 
   <DiffReport
-    v-show="!debugMode || rightTab === 'diff'"
+    v-show="!debugStore.debugMode || rightTab === 'diff'"
     :diffs="mergedDiffs"
     :unmatched="tempDiffs ? [] : result.unmatchedDesignNodes"
     :active-pair="activePairForDiff"
     :hover-pair="hoverPairForDiff"
-    :debug-mode="debugMode"
     :version-id="workingVersionId"
     :platform="platform"
     @select="$emit('diff-select', $event)"
@@ -63,7 +62,7 @@
     </button>
   </div>
 
-  <div v-show="debugMode && rightTab === 'tree'" class="tree-source-switch">
+  <div v-show="debugStore.debugMode && rightTab === 'tree'" class="tree-source-switch">
     <button :class="{ active: treeSide === 'design' }" @click="treeSide = 'design'">
       设计 <span>{{ designNodes.length }}</span>
     </button>
@@ -72,7 +71,7 @@
     </button>
   </div>
   <NodeTree
-    v-show="debugMode && rightTab === 'tree'"
+    v-show="debugStore.debugMode && rightTab === 'tree'"
     :nodes="treeNodes"
     :selected-id="treeSelectedId"
     :locked-ids="treeSide === 'design' ? lockedNodeIds : emptyLockedIds"
@@ -110,12 +109,14 @@ import DiffReport from './DiffReport.vue'
 import NodeTree from './NodeTree.vue'
 import ShareDialog from './ShareDialog.vue'
 import HistoryPanel from './HistoryPanel.vue'
+import { useDebugStore } from '../../../stores/debug'
+
+const debugStore = useDebugStore()
 
 const props = defineProps({
   result:           { type: Object,  required: true },
   activePairForDiff:{ type: Object,  default: null },
   hoverPairForDiff: { type: Object,  default: null },
-  debugMode:        { type: Boolean, default: false },
   selectedPair:     { type: Object,  default: null },
   designNodes:      { type: Array,   default: () => [] },
   allArkuiNodes:    { type: Array,   default: () => [] },

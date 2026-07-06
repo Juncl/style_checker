@@ -50,7 +50,7 @@
           {{ group.label }}({{ issueCounts[group.key] || 0 }})
         </button>
       </div>
-      <div v-if="debugMode" class="diff-tools">
+      <div v-if="debugStore.debugMode" class="diff-tools">
         <el-input
           v-model="search"
           placeholder="搜索差异项"
@@ -85,7 +85,7 @@
         <div class="diff-card-head" @click="expandFold(foldKey(d))">
           <div class="diff-card-title">
             <span v-if="d.confidence === 'low'" class="diff-low-badge">仅参考</span>
-            <span v-if="d._isManual && debugMode" class="diff-manual-badge">人工</span>
+            <span v-if="d._isManual && debugStore.debugMode" class="diff-manual-badge">人工</span>
             <span class="diff-card-name" :title="cardName(d)">{{ cardName(d) }}</span>
           </div>
           <span class="diff-card-ops">
@@ -151,6 +151,9 @@ import { ElMessage } from 'element-plus'
 import { updateConsistencyCheckProblem } from '../../../api/api.ts'
 import { toWebColorDisplay } from '../../utils/tools.ts'
 import noproblemSvg from '../../../assets/svg/noproblem.svg'
+import { useDebugStore } from '../../../stores/debug'
+
+const debugStore = useDebugStore()
 
 const ColorDot = defineComponent({
   props: { hex: String },
@@ -189,7 +192,6 @@ const props = defineProps({
   unmatched:  { type: Array,   default: () => [] },
   activePair: { type: Object,  default: null },
   hoverPair:  { type: Object,  default: null },
-  debugMode:  { type: Boolean, default: false },
   versionId:  { type: [Number, String], default: null },
   platform:   { type: String,  default: 'hmPhone' },
 })

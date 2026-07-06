@@ -39,7 +39,6 @@
       :selected-case="selectedCase"
       :case-names="caseNames"
       :loading="loading"
-      :debug-mode="debugMode"
       @select-case="$emit('select-case', $event)"
       @platform-switch="$emit('platform-switch', $event)"
     />
@@ -52,13 +51,13 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import iconEmpty from '@/assets/svg/empty-report.svg'
 import CaseList from './CaseList.vue'
 
+
 const props = defineProps({
   loading:         { type: Boolean, default: false },
   selectedCase:    { type: String,  default: '' },
   caseNames:       { type: Object,  default: () => ({}) },
   currentPlatform: { type: String,  default: 'hmPhone' },
   uploadFiles:     { type: Object,  required: true },
-  debugMode:       { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['run-upload', 'select-case', 'platform-switch'])

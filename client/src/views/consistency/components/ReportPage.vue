@@ -1,6 +1,6 @@
 <template>
   <!-- ── Debugger 悬浮框 ── -->
-  <div v-if="debugMode" class="debugger-float"
+  <div v-if="debugStore.debugMode" class="debugger-float"
     :style="debugFloatX !== null ? { left: debugFloatX + 'px', right: 'auto' } : {}">
     <div class="debugger-head">
       <div class="debugger-title drag-handle" @mousedown="startDrag($event, 'debug')">
@@ -10,15 +10,15 @@
       <div class="debugger-switches">
         <span class="debugger-switch-group" title="显示进入节点匹配阶段的节点轮廓">
           <span class="debugger-switch-label">框线</span>
-          <el-switch :model-value="debugPipelineOn" size="small" @update:model-value="$emit('update:debug-pipeline-on', $event)" />
+          <el-switch :model-value="debugStore.debugPipelineOn" size="small" @update:model-value="debugStore.setDebugPipelineOn($event)" />
         </span>
         <span class="debugger-switch-group" title="显示节点映射关系">
           <span class="debugger-switch-label">匹配</span>
-          <el-switch :model-value="debugOverlayOn" size="small" @update:model-value="$emit('update:debug-overlay-on', $event)" />
+          <el-switch :model-value="debugStore.debugOverlayOn" size="small" @update:model-value="debugStore.setDebugOverlayOn($event)" />
         </span>
       </div>
     </div>
-    <div v-show="debugOverlayOn" class="debugger-body">
+    <div v-show="debugStore.debugOverlayOn" class="debugger-body">
       <button
         class="debugger-summary-toggle"
         type="button"
@@ -56,7 +56,7 @@
 
   <!-- ── 节点选中说明条（悬浮，左上角）── -->
   <transition name="fade">
-    <div v-if="debugMode && selectedPair" class="node-bar" :style="{ left: nodeBarX + 'px' }">
+    <div v-if="debugStore.debugMode && selectedPair" class="node-bar" :style="{ left: nodeBarX + 'px' }">
       <div class="node-bar-head drag-handle" @mousedown="startDrag($event, 'nodebar')">
         <span>已选中实机节点</span>
         <button class="node-bar-close" @click.stop="$emit('clear-pair')">✕</button>
@@ -95,7 +95,7 @@
         <button
           class="float-icon-btn"
           title="圆形"
-          :class="{ 'float-icon-btn--active': nodeCanvasMode === 'edit' }"
+          :class="{ 'float-icon-btn--active': canvasMode.mode === 'edit' }"
           @click="onCircleClick"
         >
           <EditModeIcon />
@@ -103,7 +103,7 @@
         <button
           class="float-icon-btn"
           title="矩形"
-          :class="{ 'float-icon-btn--active': nodeCanvasMode === 'select' }"
+          :class="{ 'float-icon-btn--active': canvasMode.mode === 'select' }"
           @click="onRectClick"
         >
           <SelectModeIcon />
@@ -176,13 +176,10 @@
           :inspector-node="effectiveDevInspectorNode"
           :style-diffs="effectiveDevStyleDiffs"
           :external-hovered-id="hoveredArkuiCrossId"
-          :debug-mode="debugMode"
-          :debug-pipeline-visible="debugPipelineOn"
-          :debug-visible="debugOverlayOn"
           :debug-pair-map="debugPairMap"
 
-          :box-select-mode="nodeCanvasMode === 'select'"
-          :edit-mode="nodeCanvasMode === 'edit'"
+          :box-select-mode="canvasMode.mode === 'select'"
+          :edit-mode="canvasMode.mode === 'edit'"
           :compare-active="compareActive"
           @node-click="onDevNodeClick"
           @node-hover="onArkuiHover"
@@ -228,7 +225,6 @@
             v-else
             :design-json="uploadFiles?.designJson ?? null"
             :design-image="uploadFiles?.designImage ?? null"
-            :debug-mode="debugMode"
             @step-picked="$emit('step-picked', $event)"
           />
         </template>
@@ -250,13 +246,10 @@
           :style-diffs="effectiveDesignStyleDiffs"
           :locked-ids="lockedNodeIds"
           :external-hovered-id="hoveredDesignCrossId"
-          :debug-mode="debugMode"
-          :debug-pipeline-visible="debugPipelineOn"
-          :debug-visible="debugOverlayOn"
           :debug-pair-map="debugPairMap"
 
-          :box-select-mode="nodeCanvasMode === 'select'"
-          :edit-mode="nodeCanvasMode === 'edit'"
+          :box-select-mode="canvasMode.mode === 'select'"
+          :edit-mode="canvasMode.mode === 'edit'"
           :compare-active="compareActive"
           @node-click="onDesignNodeClickLocal"
           @node-hover="onDesignHover"
@@ -274,7 +267,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Crop } from '@element-plus/icons-vue'
 import OctoLoading from './common/OctoLoading.vue'
@@ -289,6 +282,8 @@ import { validationBg, confidenceText, confidenceTagType } from '../../utils/too
 import { compareNodeStyles } from '../match/compareNodes.ts'
 import { normalizeSelection } from '../match/normalizeSelection.ts'
 import { matchNodes } from '../../../api/index.ts'
+import { useCanvasModeStore } from '../../../stores/canvasMode'
+import { useDebugStore } from '../../../stores/debug'
 
 const props = defineProps({
   result:               { type: Object,  required: true },
@@ -299,9 +294,6 @@ const props = defineProps({
   arkuiNodes:           { type: Array,   default: () => [] },
   selectedPair:         { type: Object,  default: null },
   activeDiff:           { type: Object,  default: null },
-  debugMode:            { type: Boolean, default: false },
-  debugPipelineOn:      { type: Boolean, default: false },
-  debugOverlayOn:       { type: Boolean, default: false },
   debugPairItems:       { type: Array,   default: () => [] },
   debugPairMap:         { type: Object,  default: () => ({}) },
   lockedNodeIds:        { type: Set,     default: () => new Set() },
@@ -330,26 +322,23 @@ const emit = defineEmits([
   'design-node-click',
   'clear-pair',
   'step-picked',
-  'update:debug-pipeline-on',
-  'update:debug-overlay-on',
   'select-case',
   'arkui-hover',
   'design-hover',
-  'dev-switch-change',
   'compare-nodes',
   'temp-diffs',
   'temp-pairs',
   'save-manual-style',
   'remove-manual-style',
-  'node-canvas-mode-change',
 ])
 
+const canvasMode = useCanvasModeStore()
+const debugStore = useDebugStore()
 
 const devPanelRef    = ref(null)
 const designPanelRef = ref(null)
 const debugMappingExpanded = ref(false)
 
-const nodeCanvasMode     = ref('default')   // 'default' | 'select' | 'edit'
 const floatBarCollapsed  = ref(false)
 const localArkuiId       = ref(null)
 const localDesignId      = ref(null)
@@ -357,8 +346,6 @@ const localArkuiNodeList  = ref([])    // 开发侧框选节点列表
 const localDesignNodeList = ref([])    // 设计侧框选节点列表
 const pendingDiffs       = ref(null)   // 当前临时对比结果；非 null 即为对比激活状态
 const compareActive      = computed(() => pendingDiffs.value !== null)
-
-watch(nodeCanvasMode, (val) => emit('node-canvas-mode-change', val))
 
 // 两侧 Inspector 自定义对比行的人工覆盖：{ nodeId, key, value } | null
 const devExtraOverride    = ref(null)
@@ -388,12 +375,12 @@ const isBatchMode = computed(() =>
 )
 
 const localArkuiNode  = computed(() =>
-  nodeCanvasMode.value === 'select' && localArkuiId.value
+  canvasMode.mode === 'select' && localArkuiId.value
     ? (props.allArkuiNodes?.find(n => n.id === localArkuiId.value) ?? null)
     : null
 )
 const localDesignNode = computed(() =>
-  nodeCanvasMode.value === 'select' && localDesignId.value
+  canvasMode.mode === 'select' && localDesignId.value
     ? ((props.result?.allDesignNodes ?? props.designNodes)?.find(n => n.id === localDesignId.value) ?? null)
     : null
 )
@@ -407,13 +394,13 @@ const localDesignNode = computed(() =>
 //                           ③ "添加到分析结果"按钮（待实现）
 
 const selectBranchMode = computed(() =>
-  nodeCanvasMode.value === 'select'
+  canvasMode.mode === 'select'
     ? (pendingDiffs.value !== null ? 'select-tempPairs' : 'select-select')
     : null
 )
 
 /** 画布是否使用 selectedPair 驱动（default/edit 或 tempPairs 模式） */
-function usePair() { return nodeCanvasMode.value !== 'select' || selectBranchMode.value === 'select-tempPairs' }
+function usePair() { return canvasMode.mode !== 'select' || selectBranchMode.value === 'select-tempPairs' }
 
 const effectiveDevSelectedId     = computed(() => usePair() ? (props.selectedPair?.arkui?.id || null) : localArkuiId.value)
 const effectiveDevInspectorNode  = computed(() => usePair() ? (props.selectedPair?.arkui || null)       : localArkuiNode.value)
@@ -436,25 +423,23 @@ function clearSelectState() {
   pendingDiffs.value        = null
   emit('temp-diffs', null)
   emit('temp-pairs', null)
-  emit('dev-switch-change', false)
 }
 
 function onCircleClick() {
-  if (nodeCanvasMode.value === 'edit') {
-    nodeCanvasMode.value = 'default'
+  if (canvasMode.mode === 'edit') {
+    canvasMode.setMode('default')
   } else {
-    if (nodeCanvasMode.value === 'select') clearSelectState()
-    nodeCanvasMode.value = 'edit'
+    if (canvasMode.mode === 'select') clearSelectState()
+    canvasMode.setMode('edit')
   }
 }
 
 function onRectClick() {
-  if (nodeCanvasMode.value === 'select') {
-    nodeCanvasMode.value = 'default'
+  if (canvasMode.mode === 'select') {
+    canvasMode.setMode('default')
     clearSelectState()
   } else {
-    nodeCanvasMode.value = 'select'
-    emit('dev-switch-change', true)
+    canvasMode.setMode('select')
   }
 }
 
@@ -477,7 +462,7 @@ function onDesignBoxSelect(nodes) {
 
 /** select 模式下的节点点击：select-select 仅写本地；select-tempPairs 同步 emit 以驱动全局联动 */
 function handleCanvasNodeClick(id, localRef, eventName) {
-  if (nodeCanvasMode.value === 'select') {
+  if (canvasMode.mode === 'select') {
     localRef.value = id
     if (selectBranchMode.value === 'select-tempPairs') emit(eventName, id)
   } else {
@@ -487,7 +472,7 @@ function handleCanvasNodeClick(id, localRef, eventName) {
 
 /** select 模式下的画布空白点击：select-select 仅清本地；select-tempPairs 清 temp 并抛 clear-pair */
 function handleCanvasBgClick(localRef) {
-  if (nodeCanvasMode.value === 'select') {
+  if (canvasMode.mode === 'select') {
     localRef.value = null
     if (selectBranchMode.value === 'select-tempPairs') { clearCompare(); emit('clear-pair') }
   } else {

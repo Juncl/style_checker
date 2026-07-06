@@ -35,7 +35,6 @@
       <div class="ai-canvas-area">
       <ConsistencyTabbar
         :view-mode="result ? 'report' : 'upload'"
-        :debug-mode="debugMode"
         :deliverables="deliverables"
         :selected-deliverable="workingDeliverable"
         :pages="pages"
@@ -61,7 +60,6 @@
         v-if="!result"
         ref="uploadPageRef"
         :upload-files="uploadFiles"
-        :debug-mode="debugMode"
         :current-platform="currentPlatform"
         :dev-preview="devPreview"
         :design-preview="designPreview"
@@ -83,9 +81,6 @@
         :arkui-nodes="arkuiNodes"
         :selected-pair="selectedPair"
         :active-diff="activeDiff"
-        :debug-mode="debugMode"
-        :debug-pipeline-on="debugPipelineOn"
-        :debug-overlay-on="debugOverlayOn"
         :debug-pair-items="debugPairItems"
         :debug-pair-map="debugPairMap"
         :locked-node-ids="lockedNodeIds"
@@ -112,16 +107,12 @@
         @design-node-click="onDesignNodeClick"
         @clear-pair="selectedPair = null"
         @step-picked="onStepPicked"
-        @update:debug-pipeline-on="debugPipelineOn = $event"
-        @update:debug-overlay-on="debugOverlayOn = $event"
         @arkui-hover="onArkuiHover"
         @design-hover="onDesignHover"
-        @dev-switch-change="devSwitchActive = $event"
         @temp-diffs="tempDiffs = $event"
         @temp-pairs="tempPairs = $event"
         @save-manual-style="onSaveManualStyle"
         @remove-manual-style="onRemoveManualStyle"
-        @node-canvas-mode-change="reportCanvasMode = $event"
       />
       </div>
     </main>
@@ -135,7 +126,6 @@
         :case-names="CASE_NAMES"
         :current-platform="currentPlatform"
         :upload-files="uploadFiles"
-        :debug-mode="debugMode"
         @run-upload="runUpload"
         @select-case="selectCase"
         @platform-switch="onPlatformSwitch"
@@ -145,7 +135,6 @@
         :result="result"
         :active-pair-for-diff="activePairForDiff"
         :hover-pair-for-diff="hoverPairForDiff"
-        :debug-mode="debugMode"
         :selected-pair="selectedPair"
         :design-nodes="designNodes"
         :all-arkui-nodes="allArkuiNodes"
@@ -158,7 +147,7 @@
         :platform="currentPlatform"
         :temp-diffs="tempDiffs"
         :merged-diffs="mergedDiffs"
-        :report-canvas-mode="reportCanvasMode"
+        :report-canvas-mode="canvasMode.mode"
         :has-manual-edits="manualDiffs.length > 0"
         @diff-select="onDiffSelect"
         @diff-hover="hoveredDiffPair = $event"
@@ -219,6 +208,8 @@ import ReportPanel from './components/ReportPanel.vue'
 import '../../styles/app.css'
 import { CASE_NAMES_BY_PLATFORM, DEBUG_COLORS } from '../utils/constants'
 import { reportInteraction } from '../utils-inner/report'
+import { useCanvasModeStore } from '../../stores/canvasMode'
+import { useDebugStore } from '../../stores/debug'
 
 const route           = useRoute()
 const currentPlatform = ref('hmPhone')
@@ -230,13 +221,10 @@ const activeDiff      = ref(null)
 const selectedPair    = ref(null)
 const lockedNodeIds   = ref(new Set())
 const uploadPageRef   = ref(null)
-const debugMode       = ref(false)
-const debugPipelineOn = ref(false)
-const debugOverlayOn  = ref(false)
 const aiChatOpen      = ref(false)
+const debugStore = useDebugStore()
 const rerunLoading      = ref(false)
 const reportPageRef     = ref(null)
-const devSwitchActive   = ref(false)
 const tempDiffs         = ref(null)
 const tempPairs         = ref(null)
 /** 当前可用的匹配对：temp 激活时用 tempPairs，否则用正式 pairs */
@@ -329,7 +317,7 @@ watch(() => result.value, () => {
 
 const devReuploading    = ref(false)
 const designReuploading = ref(false)
-const reportCanvasMode  = ref('default')
+const canvasMode = useCanvasModeStore()
 
 const deliverables     = ref([])
 const pages            = ref([])
@@ -721,9 +709,9 @@ async function onUxlintCheckList(e) {
 }
 
 onMounted(async () => {
-  debugMode.value = route.query['debugger'] === '1'
-  debugPipelineOn.value = false
-  debugOverlayOn.value = false
+  debugStore.setDebugMode(route.query['debugger'] === '1')
+  debugStore.setDebugPipelineOn(false)
+  debugStore.setDebugOverlayOn(false)
 
   // URL 含三参数时提前遮住上传页，避免等待 API 期间闪现
   if (route.query.deliverableId && route.query.pageId && route.query.versionId) {
@@ -797,10 +785,6 @@ async function detectPlatformFromJson(file) {
   } catch { /* 解析失败不切换平台 */ }
   return null
 }
-
-watch(debugMode, value => {
-  if (!value) debugOverlayOn.value = false
-})
 
 watch(devPreview, val => {
   if (val && result.value && devReuploading.value) {
@@ -1172,7 +1156,7 @@ function mergeTempToResult() {
 }
 
 async function rerunCheck() {
-  if (devSwitchActive.value) {
+  if (canvasMode.mode === 'select') {
     reportPageRef.value?.runCompare()
     return
   }

@@ -124,10 +124,12 @@ import { getJsonImage } from '../../utils-inner/getJsonImage'
 import { updateConsistencyCheckPage } from '@/api/api'
 import iconDev from '@/assets/icon-dev.png'
 import iconDesign from '@/assets/icon-design.png'
+import { useDebugStore } from '../../../stores/debug'
+
+const debugStore = useDebugStore()
 
 const props = defineProps({
   viewMode:             { type: String,  default: 'upload' },
-  debugMode:            { type: Boolean, default: false },
   deliverables:         { type: Array,   default: () => [] },
   selectedDeliverable:  { type: Object,  default: null },
   pages:                { type: Array,   default: () => [] },

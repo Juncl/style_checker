@@ -18,7 +18,7 @@
 
     <Transition name="inspector-fade">
       <div
-        v-if="isSpacingInspector || (inspectorNode && (displayStyle.length || debugMode || editMode))"
+        v-if="isSpacingInspector || (inspectorNode && (displayStyle.length || debugStore.debugMode || editMode))"
         ref="inspectorRef"
         class="node-inspector"
         :class="{ dragging: isDraggingInspector, 'inspector--design': side === 'design' }"
@@ -34,7 +34,7 @@
           <span class="inspector-name">
             {{ isSpacingInspector ? (highlightPair.label || '间距') : (inspectorNode?.textContent || inspectorNode?.name) }}
           </span>
-          <span v-if="debugMode && !isSpacingInspector" class="inspector-badge">{{ inspectorNode?.rawType || inspectorNode?.type }}</span>
+          <span v-if="debugStore.debugMode && !isSpacingInspector" class="inspector-badge">{{ inspectorNode?.rawType || inspectorNode?.type }}</span>
           <button
             v-if="!isSpacingInspector && editMode"
             class="inspector-add-btn"
@@ -60,7 +60,7 @@
           </template>
           <!-- 节点模式 -->
           <template v-else>
-            <div v-if="debugMode" class="prop-row">
+            <div v-if="debugStore.debugMode" class="prop-row">
               <span class="prop-key">id</span>
               <span class="prop-val">
                 {{ inspectorNode?.id }}
@@ -137,6 +137,9 @@ import { toWebColorDisplay } from '../../utils/tools.ts'
 import { TEXT_STYLE_OPTIONS, CONTAINER_STYLE_OPTIONS } from '../../utils/constants'
 import { validateOverrideInput, getInputPlaceholder, parseOverrideValue } from '../match/overrideValidator'
 import '../../../styles/image-panel.css'
+import { useDebugStore } from '../../../stores/debug'
+
+const debugStore = useDebugStore()
 
 const props = defineProps({
   src:          { type: String,  default: '' },
@@ -152,9 +155,6 @@ const props = defineProps({
   lockedIds:         { type: Object,  default: () => new Set() }, // Set<string>，不参与图片点击
   externalHoveredId: { type: String,  default: null },
   side:              { type: String,  default: 'dev' },   // 'dev' | 'design'
-  debugMode:         { type: Boolean, default: false },
-  debugPipelineVisible: { type: Boolean, default: false },
-  debugVisible: { type: Boolean, default: false },
   debugPairMap:  { type: Object,  default: () => ({}) },
   hoverHighlightPairs: { type: Array, default: () => [] },
   platform:            { type: String, default: 'hmPhone' },
@@ -292,8 +292,8 @@ watch(() => props.highlightPair, (hp) => nextTick(() => {
 }))
 watch(() => props.hoverHighlightPairs, () => nextTick(draw), { deep: true })
 watch(() => [props.canvasW, props.canvasH], () => nextTick(draw))
-watch(() => props.debugPipelineVisible,  () => nextTick(draw))
-watch(() => props.debugVisible,          () => nextTick(draw))
+watch(() => debugStore.debugPipelineOn,  () => nextTick(draw))
+watch(() => debugStore.debugOverlayOn,          () => nextTick(draw))
 watch(() => props.externalHoveredId,     () => nextTick(draw))
 watch(() => props.compareActive, (active) => {
   if (active) {
@@ -659,7 +659,7 @@ function draw() {
   const sy = H / props.canvasH
 
   // Debugger 节点轮廓：显示进入匹配阶段的全部节点
-  if (props.debugPipelineVisible) {
+  if (debugStore.debugPipelineOn) {
     for (const n of props.nodes) {
       if (n.visible === false || !n.rect) continue
       drawNodeRect(ctx, n.rect, sx, sy, 'rgba(255,0,0,0)', '#ff0000', 1, [])
@@ -667,7 +667,7 @@ function draw() {
   }
 
   // Debugger 映射框（同一 pair 的设计侧 / 开发侧使用同一颜色）
-  if (props.debugVisible && props.debugPairMap && Object.keys(props.debugPairMap).length) {
+  if (debugStore.debugOverlayOn && props.debugPairMap && Object.keys(props.debugPairMap).length) {
     for (const n of props.nodes) {
       const meta = props.debugPairMap[n.id]
       if (!meta || n.visible === false || !n.rect) continue
