@@ -699,7 +699,7 @@ onMounted(async () => {
   debugStore.setDebugOverlayOn(false)
 
   // URL 含三参数时提前遮住上传页，避免等待 API 期间闪现
-  if (route.query.deliverableId && route.query.pageId && route.query.versionId) {
+  if (route.query.deliverableId && route.query.pageId) {
     loading.value = true
   }
 
@@ -714,7 +714,7 @@ onMounted(async () => {
     console.error('初始化加载失败', e)
     ElMessage.warning(e?.message ?? '加载失败，请重试')
     if (e.clearUrl) {
-      removeUrlParams(['deliverableId', 'pageId', 'versionId'])
+      removeUrlParams(['deliverableId', 'pageId'])
     }
     return
   }
@@ -926,7 +926,7 @@ async function submitRerunVersion() {
 
     const dId = workingDeliverable.value?.id
     if (dId && versionId) {
-      setUrlParams({ deliverableId: String(dId), pageId: String(pageId), versionId: String(versionId) })
+      setUrlParams({ deliverableId: String(dId), pageId: String(pageId) })
     }
     // 保存后给当前 diffs 注入 _problemId，确保非问题标记能取到 id
     if (result.value?.diffs) {
@@ -977,7 +977,7 @@ async function onSave() {
 
     const dId = workingDeliverable.value?.id
     if (dId && versionId) {
-      setUrlParams({ deliverableId: String(dId), pageId: String(pageId), versionId: String(versionId) })
+      setUrlParams({ deliverableId: String(dId), pageId: String(pageId) })
     }
     // 清空人工 diff 列表，隐藏存储按钮
     manualDiffs.value = []
@@ -1408,7 +1408,7 @@ async function onSelectPage(page) {
     await loadHistoryVersion(version, deviceType)
     const dId = workingDeliverable.value?.id
     if (dId && page.id && version.id) {
-      setUrlParams({ deliverableId: String(dId), pageId: String(page.id), versionId: String(version.id) })
+      setUrlParams({ deliverableId: String(dId), pageId: String(page.id) })
     }
   } catch (e) {
     console.error('加载历史版本失败', e)
@@ -1423,7 +1423,7 @@ async function onHistoryView(item) {
   const pId = workingPage.value?.id
   if (!dId || !pId) return
   workingVersionId.value = item.id ? String(item.id) : null
-  setUrlParams({ deliverableId: String(dId), pageId: String(pId), versionId: String(item.id) })
+  setUrlParams({ deliverableId: String(dId), pageId: String(pId) })
   loading.value = true
   try {
     await loadHistoryVersion(item, workingPage.value?.deviceType ?? platformStore.currentPlatform)
@@ -1516,7 +1516,7 @@ async function submitResult() {
 
     // 步骤 7：更新 URL
     if (deliverableId && pageId && versionId) {
-      setUrlParams({ deliverableId: String(deliverableId), pageId: String(pageId), versionId: String(versionId) })
+      setUrlParams({ deliverableId: String(deliverableId), pageId: String(pageId) })
     }
     reportCompareResult()
   } catch (e) {

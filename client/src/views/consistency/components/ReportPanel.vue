@@ -174,7 +174,7 @@ function handleSave() {
 
 function handleShare() {
   const href = window.location.href
-  if (!href.includes('deliverableId=') || !href.includes('pageId=') || !href.includes('versionId=')) {
+  if (!href.includes('deliverableId=') || !href.includes('pageId=')) {
     ElMessage.warning('当前页面暂无分享链接，请先完成上传对比')
     return
   }

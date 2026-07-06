@@ -14,7 +14,7 @@ type PlatformKey = 'hmPhone' | 'hmWatch' | 'web'
  *   2. mountPixso         — 挂载 Pixso 渲染器
  *   3. detectIframe       — iframe 环境检测
  *   4. restorePlatform    — 读取平台缓存，返回给调用方
- *   5. loadDeliverable    — URL 含 deliverableId/pageId/versionId 时拉取预存结果
+ *   5. loadDeliverable    — URL 含 deliverableId/pageId 时拉取预存结果，versionId 可选
  *   6. handleTransferCode — URL 含 url + randomCode 时回填传送码并清除参数
  */
 export async function initApp(route: RouteLocationNormalizedLoaded): Promise<{ platform: PlatformKey; deliverable: LoadedDeliverable; stopListenFn: (() => void) | null }> {

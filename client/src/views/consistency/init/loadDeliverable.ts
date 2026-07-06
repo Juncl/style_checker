@@ -19,7 +19,7 @@ export async function loadDeliverable(route: RouteLocationNormalizedLoaded): Pro
   const urlPageId        = route.query.pageId as string
   const urlVersionId     = route.query.versionId as string
 
-  if (!urlDeliverableId || !urlPageId || !urlVersionId) return null
+  if (!urlDeliverableId || !urlPageId) return null
 
   const [deliverableList, pageList] = await Promise.all([
     getConsistencyCheckDeliverables(),
@@ -44,9 +44,11 @@ export async function loadDeliverable(route: RouteLocationNormalizedLoaded): Pro
     throw new Error('该页面暂无版本记录')
   }
 
-  const currentVersion = versionList.find((v: any) => String(v.id) === String(urlVersionId))
+  const currentVersion = urlVersionId
+    ? versionList.find((v: any) => String(v.id) === String(urlVersionId))
+    : versionList[0]
   if (!currentVersion) {
-    throw new Error(`找不到版本 ${urlVersionId}`)
+    throw new Error(urlVersionId ? `找不到版本 ${urlVersionId}` : '该页面暂无版本记录')
   }
 
   // 页面访问打点（通过链接进入）
@@ -56,7 +58,7 @@ export async function loadDeliverable(route: RouteLocationNormalizedLoaded): Pro
     extend: {
       deliverableId: urlDeliverableId,
       pageId: urlPageId,
-      versionId: urlVersionId,
+      versionId: String(currentVersion.id),
       platform: currentPage.deviceType ?? 'hmPhone',
       isFrom: inIframe() ? 'hiscenario' : 'octo',
     },
@@ -70,6 +72,6 @@ export async function loadDeliverable(route: RouteLocationNormalizedLoaded): Pro
     versionList,
     currentVersion,
     deviceType:    currentPage.deviceType ?? 'hmPhone',
-    urlVersionId,
+    urlVersionId: String(currentVersion.id),
   }
 }
