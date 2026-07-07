@@ -286,7 +286,7 @@ function mergeCheckResult({ tempPairs, tempDiffs, existingPairs, existingDiffs, 
 
     for (let i = 0; i < diffs.length; i++) {
       const d = diffs[i]
-      if (d.property !== nd.property) continue
+      if (mode === 'edit' && d.property !== nd.property) continue
 
       const sameDesignId = hasId(d.designNodeId) && hasId(nd.designNodeId) && d.designNodeId === nd.designNodeId
       const sameArkuiId = hasId(d.arkuiNodeId) && hasId(nd.arkuiNodeId) && d.arkuiNodeId === nd.arkuiNodeId

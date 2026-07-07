@@ -311,6 +311,7 @@ export interface ManualStyleDiff {
   designNodeId:  string | null
   arkuiNodeId:   string | null
   _isManual:     true
+  diffSource:    string
   textContent:   string
   designName?:   string
 }

@@ -248,7 +248,11 @@ function diffOpacity(diffs, ctx, dv, av) {
 
 function diffBorderRadius(diffs, ctx, designNode, arkuiNode, dv, av) {
   if (!dv && !av) return
-  if (normalizedNodeType(arkuiNode) === 'circle' || normalizedNodeType(designNode) === 'ellipse') return
+  if (normalizedNodeType(arkuiNode) === 'circle' || normalizedNodeType(designNode) === 'ellipse') {
+    if (normalizedNodeType(arkuiNode) === 'circle' && arkuiNode?.style) delete arkuiNode.style.borderRadius
+    if (normalizedNodeType(designNode) === 'ellipse' && designNode?.style) delete designNode.style.borderRadius
+    return
+  }
   if (normalizedNodeType(arkuiNode) === 'symbolglyph') return
   // 软豁免：开发侧 image 类型且开发侧无圆角值 → 跳过（Image 圆角由 clip 父节点裁剪实现，自身不设）
   if (normalizedNodeType(arkuiNode) === 'image' && !av) return

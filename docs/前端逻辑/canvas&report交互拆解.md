@@ -371,7 +371,7 @@ temp 状态不随选择变化自动清除。清除只通过以下方式：
 点击按钮触发 `mergeTempToResult()`，内部调用统一的 `mergeCheckResult({ mode: 'select' })`：
 
 1. **pairs 合并**（`mergePairs`）：双向覆盖去交集，temp 覆盖 existing
-2. **diffs 合并**：对于每条 temp diff，找到 existing diffs 中同 property 且 (同 designId 或 同 arkuiId) 的条目：
+2. **diffs 合并**（select 模式特有）：冲突条件为 (同 designId 或 同 arkuiId)，**不限 property**。命中后分级处理：
    - 非 `_isManual` → 删除
    - `_isManual` 且节点仍在 newPairs 中 → 删除
    - `_isManual` 且节点不在 newPairs 中 → 清空两侧 id 保留
