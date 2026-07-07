@@ -148,7 +148,7 @@ Float bar 通过给两侧 `ImagePanel` 传入 `boxSelectMode`（select 时为 tr
 |---|---|
 | `ImagePanel.vue` | Inspector 模板/定位、`confirmExtra`、`cancelExtra`、`deleteRow`、`extra-change` |
 | `overrideValidator.ts` | `validateOverrideInput`、`getInputPlaceholder`、`parseOverrideValue` |
-| `ConsistencyView.vue` | `onSaveManualStyle`、`onRemoveManualStyle`、`upsertManualDiff`、`removeManualDiffByMatch`、`applyExtraOverride` |
+| `ConsistencyView.vue` | `onSaveManualStyle`、`onRemoveManualStyle`、`upsertManualDiff`、`removeDiff`、`applyExtraOverride` |
 | `compareNodes.ts` | `generateManualDiff` |
 | `ReportPage.vue` | `devExtraOverride`/`designExtraOverride`、`getActiveOverrides` |
 | `constants.ts` | `TEXT_STYLE_OPTIONS`、`CONTAINER_STYLE_OPTIONS` |
@@ -170,7 +170,7 @@ edit 模式由 float bar 的圆形按钮（edit）触发：点击一次通过 `c
 
 **显示条件**（满足任一即可）：
 - 间距模式：`highlightPair.type === 'spacing'` 且 value 非 null
-- 节点模式：`inspectorNode` 非 null，且 (`displayStyle` 非空 或 `debugMode` 开 或 **`editMode` 开**)
+- 节点模式：`inspectorNode` 非 null，且 (`displayStyle` 非空 或 `hasManualStyle` 有内容 或 `debugMode` 开 或 **`editMode` 开**)
 
 关键：`editMode=true` 时，即使节点无算法 diff、`displayStyle` 为空，Inspector 仍会显示。这是为确保用户始终可访问人工标注功能。
 
@@ -216,13 +216,13 @@ edit 模式由 float bar 的圆形按钮（edit）触发：点击一次通过 `c
 |---|---|---|
 | `ConsistencyView.vue` | 1033-1084 | `onSaveManualStyle` |
 | `ConsistencyView.vue` | 1086-1112 | `onRemoveManualStyle` |
-| `compareNodes.ts` | 361-386 | `generateManualDiff` |
-| `ConsistencyView.vue` | 263-284 | `upsertManualDiff` |
-| `ConsistencyView.vue` | 286-290 | `removeManualDiffByMatch` |
-| `ConsistencyView.vue` | 292-323 | `mergedDiffs` computed |
-| `ConsistencyView.vue` | 325-328 | watch `result.value` 清空 `manualDiffs` |
+| `compareNodes.ts` | 361-387 | `generateManualDiff`（已含 `diffSource: 'edit-diff'`） |
+| `ConsistencyView.vue` | 276-320 | `mergeCheckResult`（统一 diff/pairs 合并函数，edit/select 两模式共用） |
+| `ConsistencyView.vue` | 322-380 | `rebuildEditDiffs`（select 合并后从 `node.manualStyle` 重建 edit-diff） |
+| `ConsistencyView.vue` | 383-395 | `upsertManualDiff`（edit 模式调用 `mergeCheckResult` mode='edit'） |
+| `ConsistencyView.vue` | 397-403 | `removeDiff` |
 
-**关键前提**：Inspector 显示的属性条目全部来自节点自身的 `style` 对象（`displayStyle` 遍历 `inspectorNode.style`），diff 报告仅通过 `styleDiffs` prop 提供差异标记，不提供属性值。因此联动的前提是 `selectedPair` 中包含完整节点对象（含 `type`、`style`、`textContent`、`rect` 等），仅有 id 的空壳无法驱动 Inspector。
+**关键前提**：Inspector 显示的属性条目全部来自节点自身的 `style` 对象（`displayStyle` 遍历 `inspectorNode.style`），diff 报告仅通过 `styleDiffs` prop 提供差异标记，不提供属性值。已保存的人工属性 `manualStyle` 在 Inspector 中以只读行展示。因此联动的前提是 `selectedPair` 中包含完整节点对象（含 `type`、`style`、`textContent`、`rect` 等），仅有 id 的空壳无法驱动 Inspector。
 
 edit 模式下修改 Inspector 属性后，右侧差异列表实时同步更新，形成"标注 → 出卡 → 联动"的闭环：
 
@@ -233,7 +233,7 @@ edit 模式下修改 Inspector 属性后，右侧差异列表实时同步更新�
 | 节点有匹配对 | `generateManualDiff(pair, key, platform)` 检测双侧 `manualStyle[key]` → `upsertManualDiff()` | 仅标注侧显示值，**未标注侧显示"—"**；双侧标注时做真实对比；两侧值相等则生成 `_isResolved=true` 卡片 |
 | 节点无匹配对 | 直接构造单侧 diff → `upsertManualDiff()` | 修改侧显示值，对侧显示"—"，对侧 `nodeId` 为 null |
 
-`upsertManualDiff` 以 `(property, designNodeId, arkuiNodeId)` 三元组去重（同组覆盖）。最终 `mergedDiffs` 将 `manualDiffs` 与算法 diff 合并：人工卡片同三元组时覆盖算法卡片，新增时追加。
+`upsertManualDiff` 调用统一的 `mergeCheckResult({ mode: 'edit' })`，以 `(property, designNodeId, arkuiNodeId)` 三元组去重（同组覆盖）。构造的 diff 均携带 `_isManual: true` 和 `diffSource: 'edit-diff'`。`mergedDiffs` computed 简化为 `tempResultStore.tempDiffs ?? result.value?.diffs ?? []`。
 
 **差异卡片 → 画布 + Inspector 联动**：点击人工差异卡片时，`onDiffSelect` 查找对应匹配对：
 - **有匹配对的节点**：pair 查找命中 → `selectedPair` 获得双侧完整节点 → 两侧画布同时高亮，两侧 Inspector 分别展示对应节点属性
@@ -241,9 +241,9 @@ edit 模式下修改 Inspector 属性后，右侧差异列表实时同步更新�
 
 人工卡片与算法卡片遵循完全相同的 §六 双向联动机制，无差别。
 
-**删除 → 移除差异卡片**：`deleteRow()` 后 → `onRemoveManualStyle()` 删除 `manualStyle[key]`，重新调用 `generateManualDiff()` 判断两侧是否仍有差异。若一致则 `removeManualDiffByMatch()` 移除卡片；若仍有差异则更新卡片。
+**删除 → 移除差异卡片**：`deleteRow()` 后 → `onRemoveManualStyle()` 删除 `manualStyle[key]`，重新调用 `generateManualDiff()` 判断两侧是否仍有差异。若一致则 `removeDiff()` 移除卡片；若仍有差异则更新卡片。
 
-**数据复位**：`watch(() => result.value)` 触发时（加载新 case 或全量重跑完成）自动 `manualDiffs.value = []`，人工标注的 `manualStyle` 保留在节点树中但 diff 列表回归算法结果。
+**数据复位**：`watch(() => result.value)` 触发时（加载新 case 或全量重跑完成）自动 `tempResultStore.clear()`。人工标注的 `manualStyle` 保留在节点树中，select 合并后通过 `rebuildEditDiffs` 自动重建 edit-diff。
 
 ### 3.4 全量重跑中的 manualStyle 传递
 
@@ -271,7 +271,7 @@ edit 模式下点击"重新对比"触发 `rerunCheck()`（default/edit 分支，
 | `ReportPage.vue` | `onDevNodeClick`、`onDesignNodeClickLocal`、`onDevBgClick`、`onDesignBgClick`、`onDevBoxSelect`、`onDesignBoxSelect`、`runCompare`、`runBoxCompare`、`clearCompare`、`clearSelectState`、`selectBranchMode`、`effectiveDevSelectedId` 等 |
 | `stores/index.ts` | `useSelectNodesStore`（`devNodes`/`designNodes`、`isBatchMode`、`clearAll`） |
 | `ImagePanel.vue` | `onBoxStart`、`onBoxMove`、`onBoxEnd`、`finishBox`、`canHoverInSel`、`rectsIntersect` |
-| `ConsistencyView.vue` | `mergeTempToResult` |
+| `ConsistencyView.vue` | `mergeTempToResult`、`mergedDiffs`、`effectivePairs`、`mergeCheckResult`、`rebuildEditDiffs` |
 | `compareNodes.ts` | `compareNodeStyles` |
 | `normalizeSelection.ts` | `normalizeSelection` |
 
@@ -338,14 +338,14 @@ select 模式下点击"重新对比"按钮 → `ConsistencyView.rerunCheck()` �
 **单节点模式**（两侧各 1 个节点）：
 1. 从 `devExtraOverride` / `designExtraOverride` 读取 Inspector 中 pending 行的人工覆盖值
 2. 调用 `compareNodeStyles(designNode, devNode, overrides)` 前端本地对比
-3. 结果存入 `pendingDiffs`（临时），通过 `emit('temp-diffs', diffs)` 传入父组件 `ConsistencyView`
-4. `ConsistencyView` 以 `tempDiffs` 覆盖传给 `ReportPanel`，优先展示临时结果
+3. 结果存入 `pendingDiffs`（临时），通过 `tempResultStore.setResult()` 写入全局 store
+4. `ConsistencyView` 通过 `mergedDiffs` computed 读取 store 中的临时结果，优先展示
 5. 同时 `compareActive=true`，canvas 在选中区外绘制白色遮罩，突出对比区域
 
 **批量模式**（任一侧 ≥ 2 个节点）：
 1. 调用 `normalizeSelection()` 归一化选中节点的 rect
 2. 调用后端 `matchNodes(designNodes, devNodes, canvas, platform, 'part')` API 做局部匹配+比对
-3. 结果同样通过 `pendingDiffs` / `tempDiffs` 临时展示
+3. 结果每条 diff 标记 `_isManual: true` 和 `diffSource: 'select-diff'`，通过 `tempResultStore.setResult()` 写入全局 store，供 `mergedDiffs` computed 读取临时展示
 
 ### 4.4 状态清理
 
@@ -358,23 +358,25 @@ temp 状态不随选择变化自动清除。清除只通过以下方式：
 
 - **点击画布空白区域**：`onDevBgClick()` / `onDesignBgClick()` → `selectNodesStore.clearDevNodes()` / `clearDesignNodes()` +（若 tempPairs 分支）`clearCompare()` + `emit('clear-pair')`
 - **退出 select 模式**：`clearSelectState()` → `selectNodesStore.clearAll()` + `clearCompare()`
-- **「添加到分析结果」按钮**：`mergeTempToResult()` → 合并 temp-diffs/temp-pairs 到正式结果 → 清除 temp
+- **「添加到分析结果」按钮**：`mergeTempToResult()` → 合并 temp diffs/pairs 到正式结果 → 清除 temp
 
 ### 4.5 「添加到分析结果」合并逻辑
 
 | 文件 | 行号 | 说明 |
 |---|---|---|
-| `ConsistencyView.vue` | 1126-1172 | `mergeTempToResult` |
+| `ConsistencyView.vue` | 276-320 | `mergeCheckResult` 统一合并函数 |
+| `ConsistencyView.vue` | 322-370 | `rebuildEditDiffs` |
+| `ConsistencyView.vue` | 1231-1260 | `mergeTempToResult` |
 
-点击按钮触发 `mergeTempToResult()`：
+点击按钮触发 `mergeTempToResult()`，内部调用统一的 `mergeCheckResult({ mode: 'select' })`：
 
-1. **diffs 合并**：以 temp 涉及的任一侧节点 id 为键，删除正式 diff 中对应的全部条目，用 temp 替换
-2. **pairs 合并（双向覆盖去交集）**：
-   - 先遍历 arkui 侧覆盖：`arkuiMap[id] = pair`
-   - 再遍历 design 侧覆盖：`designMap[id] = pair`
-   - 取交集：只保留同时出现在两侧且 design-arkui 对应一致的 pair
-3. 合并完成后清空 `tempDiffs` / `tempPairs` / `pendingDiffs`，回到 select-select
-4. 存储按钮检测到 diffs 中有 `_isManual` 标记后自动解禁
+1. **pairs 合并**（`mergePairs`）：双向覆盖去交集，temp 覆盖 existing
+2. **diffs 合并**：对于每条 temp diff，找到 existing diffs 中同 property 且 (同 designId 或 同 arkuiId) 的条目：
+   - 非 `_isManual` → 删除
+   - `_isManual` 且节点仍在 newPairs 中 → 删除
+   - `_isManual` 且节点不在 newPairs 中 → 清空两侧 id 保留
+3. **重建 edit-diff**（`rebuildEditDiffs`）：遍历所有节点的 `manualStyle`，根据当前 `newPairs` 重新生成 edit-diff（`diffSource: 'edit-diff'`）。与 existing 中已有条目按三元组去重后，补回最终 diffs
+4. 合并完成后清空 `tempDiffs` / `tempPairs` / `pendingDiffs`，回到 select-select
 
 ### 4.6 temp-diff 双向联动
 
@@ -382,8 +384,9 @@ temp 状态不随选择变化自动清除。清除只通过以下方式：
 |---|---|---|
 | `ReportPage.vue` | 373-377 | `selectBranchMode` computed |
 | `ReportPage.vue` | 382-387 | `effectiveDevSelectedId`/`effectiveDevInspectorNode`/`effectiveDevStyleDiffs` 及 design 侧 |
-| `ConsistencyView.vue` | 240-241 | `tempDiffs`/`tempPairs` ref |
-| `ConsistencyView.vue` | 243 | `effectivePairs` computed |
+| `ConsistencyView.vue` | 350 | `mergedDiffs` computed（`tempResultStore.tempDiffs ?? result.value?.diffs ?? []`） |
+| `ConsistencyView.vue` | 224 | `effectivePairs` computed（`tempResultStore.tempPairs ?? result.value?.pairs ?? []`） |
+| `stores/index.ts` | 108-126 | `useTempResultStore`（`tempDiffs`/`tempPairs` computed + `setResult`/`clear`） |
 
 select 模式下重新对比后产生 temp 状态（`pendingDiffs` 非 null），此时画布和报告需要与正式 diff 保持一致的联动行为。
 
@@ -399,16 +402,15 @@ select 模式下重新对比后产生 temp 状态（`pendingDiffs` 非 null）�
 #### 数据传递路径
 
 ```
-ReportPage.runCompare()
-  ├─ emit('temp-diffs', diffs)    // diff 列表展示
-  └─ emit('temp-pairs', tempPairs) // diff 卡片点击时查找匹配对
+ReportPage.runCompare() / runBoxCompare()
+  └─ tempResultStore.setResult(diffs, tempPairs)
          ↓
 ConsistencyView
-  ├─ tempDiffs → mergedDiffs → DiffReport 展示
-  ├─ tempPairs → onDiffSelect 优先查找
+  ├─ mergedDiffs computed → 读 tempResultStore.tempDiffs → DiffReport 展示
+  ├─ effectivePairs computed → 读 tempResultStore.tempPairs → onDiffSelect 优先查找
   └─ onDiffSelect:
-       tempPairs 非空 → 仅在 tempPairs 查找（命中联动，未命中忽略）
-       tempPairs 为空 → 走正式 pairs 查找
+       effectivePairs 非空 → 在 tempPairs 查找（命中联动，未命中忽略）
+       effectivePairs 为空 → 走正式 pairs 查找
          ↓
 ImagePanel
   └─ effectiveDevSelectedId / effectiveDevInspectorNode / effectiveDevStyleDiffs
@@ -476,7 +478,7 @@ ImagePanel
          ├─ onDiffSelect(diff) → activeDiff + selectedPair
          ├─ clear-pair → selectedPair = null
          ├─ Hover → hoveredArkuiNodeId / hoveredDesignNodeId
-         ├─ temp-diffs → 中转给 ReportPanel
+          ├─ mergedDiffs → DiffReport 展示（读 tempResultStore 或 result.diffs）
          ├─ save-manual-style → 写入 manualStyle + 生成人工 diff
          ├─ remove-manual-style → 移除 manualStyle + 删除人工 diff
          └─ rerun
@@ -670,17 +672,16 @@ edit 模式下用户对节点新增的人工属性（`manualStyle`），通过 R
 
 | 文件 | 行号 | 说明 |
 |---|---|---|
-| `ConsistencyView.vue` | 162 | 模板 `:has-manual-edits="manualDiffs.length > 0"` |
+| `ConsistencyView.vue` | 139 | 模板 `:has-manual-edits="hasManualInReport"` |
 | `ReportPanel.vue` | 132 | `hasManualEdits` prop |
-| `ConsistencyView.vue` | 325-328 | watch `result.value` 清空 `manualDiffs` |
+| `ConsistencyView.vue` | 226-231 | `hasManualInReport` computed |
 
 ```
-hasManualEdits = manualDiffs.length > 0
+hasManualInReport = diffs 中存在 _isManual 标记 || nodeManualAttr 有内容
 ```
 
-- 用户在 edit 模式下新增人工属性并点"确定"确认 → `onSaveManualStyle()` 写入 `node.manualStyle` 并调用 `upsertManualDiff()` 生成人工差异卡片 → `manualDiffs` 长度 > 0 → 存储按钮显示
-- 点击存储成功后 `manualDiffs.value = []` → 按钮自动隐藏
-- 刷新页面或加载历史版本后 `manualDiffs` 被 `watch(() => result.value)` 清空 → 按钮隐藏，直到用户再次新增人工标注
+- 用户在 edit 模式下新增人工属性并点"确定"确认 → `onSaveManualStyle()` 写入 `node.manualStyle` 并生成人工差异卡片 → `hasManualInReport` 为 true → 存储按钮显示
+- 点击存储成功后节点保有 `manualStyle`，故 `nodeManualAttr` 仍有内容 → 按钮保持显示，直到切换到其他页面刷新
 
 ### 7.5.2 存储数据流
 
@@ -695,7 +696,7 @@ ReportPanel handleSave() → emit('save')
   → ConsistencyView.onSave()
     → nodeManualAttr (computed) 从节点树收集 manualStyle
         结构: { dev: { nodeId: { key: val } }, design: { nodeId: { key: val } } }
-    → buildProblems(result, { diffs: mergedDiffs, nodeManualAttr })
+    → buildProblems(result, { diffs: mergedDiffs.value, nodeManualAttr })
       → nodeMatchs = JSON.stringify({
           matchedPairIds: [[arkuiId, designId], ...],
           nodeManualAttr: { dev: {...}, design: {...} }
@@ -704,7 +705,6 @@ ReportPanel handleSave() → emit('save')
     → addConsistencyCheckPage({ id: pageId, problems, nodeMatchs, ... })
       → 追加新版本到后端
     → 刷新版本列表 + 更新 URL versionId
-    → manualDiffs.value = []（隐藏存储按钮）
 ```
 
 关键点：
@@ -744,7 +744,7 @@ ReportPanel handleSave() → emit('save')
 关键点：
 - 回写发生在 `result.value` 赋值之前，确保节点进入响应式系统时已携带 `manualStyle`
 - 旧版本（无 `nodeManualAttr` 字段）不受影响，`_nodeManualAttr` 为 `null`，回写逻辑跳过
-- 加载后 `manualDiffs` 被 `watch(() => result.value)` 清空，存储按钮隐藏，但节点 Inspector 中仍显示已保存的人工属性行
+- 加载后 `tempResultStore.clear()`，但节点 Inspector 中仍显示已保存的人工属性行
 
 ---
 
@@ -754,13 +754,13 @@ ReportPanel handleSave() → emit('save')
 |---|---|---|
 | `components/ImagePanel.vue` | canvas 绘制、点选框选事件、坐标转换、命中检测、对比激活遮罩、edit 模式人工属性编辑 UI | `getCanvasCoords:L336-344`, `hitNodesAt:L347-363`, `findHitNode:L365-367`, `isHiddenTextNode:L391-395`, `onCanvasClick:L399-434`, `onCanvasDblClick:L437-448`, `onMouseMove:L450-469`, `onBoxStart:L487-501`, `onBoxMove:L503-531`, `onBoxEnd:L533-535`, `draw:L629-782`, `confirmExtra:L1243-1262` |
 | `components/ReportPage.vue` | 两侧面板协调、float bar 模式开关、select 模式状态管理、`runCompare`、`pendingDiffs`、人工覆盖传递 | `canvasMode:L328`, `selectNodesStore:L333`, `currentDevNodes:L348`, `clearCompare:L389-392`, `clearSelectState:L394-398`, `onDevBoxSelect:L428-429`, `onDevNodeClick:L436-443`, `onDevBgClick:L456-463`, `runCompare:L473-527`, `runBoxCompare:L529-600`, `selectBranchMode:L373-377`, `effectiveDevSelectedId:L382-387`, `getActiveOverrides:L681-686` |
-| `ConsistencyView.vue` | 全局 `selectedPair` / `activeDiff`，事件路由，`tempDiffs` 中转，`rerunCheck` 分流，人工 `manualStyle` 写入与 diff 生成，`nodeManualAttr` computed 收集与存储/回显 | `selectedPair:L230`, `activeDiff:L229`, `tempDiffs:L240`, `tempPairs:L241`, `devSwitchActive:L239`, `rerunCheck:L1174-1217`, `onSaveManualStyle:L1033-1084`, `onRemoveManualStyle:L1086-1112`, `upsertManualDiff:L263-284`, `mergedDiffs:L292-323`, `nodeManualAttr:L247-261`, `onSave:L973-1018`, `buildProblems:L984`, `mergeTempToResult:L1126-1172`, `onDiffSelect:L1619-1645`, `activePairForDiff:L384-390`, `hoverPairForDiff:L392-398`, `computeSpacingMarks:L436-496`, `loadHistoryVersion:L1311-1415`, `preprocessVersion:L344-367`, `canRerun:L423-427`, `applyExtraOverride:L1114-1123`, `onDesignNodeClick:L1219-1230`, `onArkuiNodeClick:L1232-1243` |
+| `ConsistencyView.vue` | 全局 `selectedPair` / `activeDiff`，事件路由，`tempDiffs` 中转，`rerunCheck` 分流，人工 `manualStyle` 写入与 diff 生成，`mergeCheckResult` 统一合并，`rebuildEditDiffs` 重建，`nodeManualAttr` computed 收集与存储/回显 | `selectedPair:L230`, `activeDiff:L229`, `tempDiffs:L240`, `tempPairs:L241`, `devSwitchActive:L239`, `rerunCheck:L1174-1217`, `onSaveManualStyle:L1033-1084`, `onRemoveManualStyle:L1086-1112`, `mergeCheckResult:L276-320`, `rebuildEditDiffs:L322-370`, `upsertManualDiff:L383-395`, `removeDiff:L397-403`, `mergedDiffs:L405`, `nodeManualAttr:L233-247`, `onSave:L973-1018`, `buildProblems:L984`, `mergeTempToResult:L1231-1260`, `onDiffSelect:L1619-1645`, `activePairForDiff:L384-390`, `hoverPairForDiff:L392-398`, `computeSpacingMarks:L436-496`, `loadHistoryVersion:L1311-1415`, `preprocessVersion:L344-367`, `canRerun:L423-427`, `applyExtraOverride:L1114-1123`, `onDesignNodeClick:L1219-1230`, `onArkuiNodeClick:L1232-1243` |
 | `components/ReportPanel.vue` | 右侧差异面板，`mergedDiffs` 展示，「存储」按钮状态控制与 emit，「重新对比」按钮 | rerun 按钮:`L19-24`, save 按钮:`L6-14`, `DiffReport` 使用:`L47-58`, `hasManualEdits` prop:`L132`, `canRerun` prop:`L124` |
 | `components/DiffReport.vue` | 差异列表点选、hover、精准/模糊 Tab 切换、高亮联动、滚动定位 | Props:`L187-195`, Emits:`L196`, `filteredDiffs:L263-286`, `selectItem:L369-378`, `isDiffMatchPair:L290-296`, `activeDiffKeys:L298-305`, `hoverDiffKeys:L307-314`, `matchMode:L211`, watch activePair→scroll:`L318-340` |
 | `components/NodeTree.vue` | 节点树展示、节点选中与锁定 | emit `select` / `toggle-lock`:`L121` |
 | `views/utils/tools.ts` | `isSelectableNode`、`resolveSelectableNode`、`buildProblems`、`isInteractiveImageNode` 等工具函数 | `isSelectableNode:L191-199`, `resolveSelectableNode:L219-245`, `buildProblems:L69-92`, `isHiddenFrameworkTextNode:L166-168`, `isOcrHiddenTextNode:L171-175` |
 | `views/utils/constants.ts` | `TEXT_STYLE_OPTIONS` / `CONTAINER_STYLE_OPTIONS`（edit 模式人工属性选项） | `TEXT_STYLE_OPTIONS:L26-35`, `CONTAINER_STYLE_OPTIONS:L37-46` |
-| `match/compareNodes.ts` | 前端本地节点样式对比（`compareNodeStyles`）、人工 diff 生成（`generateManualDiff`） | `compareNodeStyles:L219-253`, `generateManualDiff:L361-386` |
+| `match/compareNodes.ts` | 前端本地节点样式对比（`compareNodeStyles`）、人工 diff 生成（`generateManualDiff`） | `compareNodeStyles:L219-253`, `generateManualDiff:L361-387` |
 | `match/overrideValidator.ts` | 人工覆盖值校验与解析（edit 模式 Inspector 输入校验） | `validateOverrideInput:L47-109`, `getInputPlaceholder:L158-160`, `parseOverrideValue:L168-200` |
 | `match/normalizeSelection.ts` | select 模式批量框选时归一化选中节点的 rect | 全文件 |
 
