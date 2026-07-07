@@ -14,6 +14,8 @@ import {
   hasBackgroundColor,
 } from '../../utils/nodeVisibility.js'
 import { isCanvasRoot } from '../../utils/deduplicateRootNodes.js'
+import { makePair } from '../matchStrategies.js'
+import { computeIoU } from '../../utils/matchGeometry.js'
 import { comparePaths } from '../../utils/pathOrder.js'
 
 export function matchNodes(designNodes, devNodes, options = {}) {
@@ -22,6 +24,32 @@ export function matchNodes(designNodes, devNodes, options = {}) {
   if (nodeNumStatus !== 'part') {
     designNodes = [...designNodes].filter(n => !isCanvasRoot(n, canvasWidth, canvasHeight))
     devNodes    = [...devNodes].filter(n => !isCanvasRoot(n, canvasWidthVp, canvasHeightVp))
+  }
+
+  // part 模式下双方各仅 1 个节点，直接配对，跳过所有 Pass
+  if (nodeNumStatus === 'part' && designNodes.length === 1 && devNodes.length === 1) {
+    const pair = makePair(designNodes[0], devNodes[0], 'con-part', {
+      iou: computeIoU(designNodes[0].normRect, devNodes[0].normRect),
+      confidence: 'high',
+      isAnchor: true,
+    })
+    return {
+      pairs: [pair],
+      unmatchedDesign: [],
+      unmatchedArkui: [],
+      comparableDesignCount: designNodes.filter(isComparableOutputNode).length,
+      comparableArkuiCount: devNodes.filter(isComparableOutputNode).length,
+      regions: {
+        design: [],
+        arkui: [],
+        pairs: [],
+      },
+      textMatch: {
+        textHmMapPix: null,
+        textHmMapPixCredible: null,
+        textHmMapPixDetail: null,
+      },
+    }
   }
 
   const usedDev = new Set()

@@ -56,6 +56,32 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     arkuiNodes = arkuiNodes.filter(n => !isCanvasRoot(n, canvasWidthVp, canvasHeightVp))
   }
 
+  // part 模式下双方各仅 1 个节点，直接配对，跳过所有 Pass
+  if (nodeNumStatus === 'part' && designNodes.length === 1 && arkuiNodes.length === 1) {
+    const pair = makePair(designNodes[0], arkuiNodes[0], 'con-part', {
+      iou: computeIoU(designNodes[0].normRect, arkuiNodes[0].normRect),
+      confidence: 'high',
+      isAnchor: true,
+    })
+    return {
+      pairs: [pair],
+      unmatchedDesign: [],
+      unmatchedArkui: [],
+      comparableDesignCount: designNodes.filter(isComparableOutputNode).length,
+      comparableArkuiCount: arkuiNodes.filter(isComparableOutputNode).length,
+      regions: {
+        design: [],
+        arkui: [],
+        pairs: [],
+      },
+      textMatch: {
+        textHmMapPix: null,
+        textHmMapPixCredible: null,
+        textHmMapPixDetail: null,
+      },
+    }
+  }
+
   const usedArkui = new Set()
   const pairs = []
   const matchedDesignIds = new Set()

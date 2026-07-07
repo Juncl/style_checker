@@ -88,7 +88,7 @@
             >
               <span class="prop-key">{{ rowLabel(row.key) }}</span>
               <span class="prop-val">{{ row.rawValue }}</span>
-              <button class="extra-action-btn extra-delete-btn" title="删除" @click.stop="deleteRow(row.key)">
+              <button v-if="editMode" class="extra-action-btn extra-delete-btn" title="删除" @click.stop="deleteRow(row.key)">
             <svg viewBox="0 0 16 16" width="12" height="12" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                 </svg>
@@ -192,14 +192,6 @@ const boxRect    = ref(null)        // { x, y, w, h } 当前框（画布坐标�
 const boxHitIds  = ref(new Set())   // 当前框内命中的节点 id
 const frozenMaskRects = ref(null)  // 进入 tempPairs 时快照的遮盖区域，之后不变
 let   suppressClick = false         // 框选完成后阻止下一次 click 事件
-
-// select 模式下 store 选中节点变化时，清除内部 boxHitIds 并重绘，让高亮由 prop 接管
-watch(() => props.selectedNodeIds, () => {
-  if (boxHitIds.value.size > 0) {
-    boxHitIds.value = new Set()
-  }
-  draw()
-})
 
 // 本地同步记录当前选中 id，用于双击下钻
 // 不能直接用 props.selectedId：dblclick 触发时 Vue 响应式更新尚未完成
@@ -417,15 +409,12 @@ function onCanvasClick(e) {
     const hit = findHitNode(coords.px, coords.py)
     if (hit) {
       e.stopPropagation()
-      // 基于 store 中的选中节点列表做增删（不再依赖 boxHitIds，它会被 watch 清空）
-      const currentIds = new Set(props.selectedNodeIds || [])
-      if (currentIds.has(hit.id)) {
-        currentIds.delete(hit.id)
-      } else {
-        currentIds.add(hit.id)
-      }
-      const selectedNodes = props.nodes.filter(n => currentIds.has(n.id))
-      emit('box-select', selectedNodes)
+      const next = new Set(boxHitIds.value)
+      if (next.has(hit.id)) next.delete(hit.id)
+      else next.add(hit.id)
+      boxHitIds.value = next
+      draw()
+      emit('box-select', props.nodes.filter(n => boxHitIds.value.has(n.id)))
     }
     return
   }
@@ -712,8 +701,8 @@ function draw() {
     if (n) drawNodeRect(ctx, n.rect, sx, sy, 'rgba(224,33,40,0.10)', '#E02128', 1, [4, 3])
   }
 
-  // 选中节点（红色实线 + 红色背景）—— select 模式下由框选高亮统一绘制，跳过此背景
-  if (props.selectedId && !props.boxSelectMode) {
+  // 选中节点（红色实线 + 红色背景）
+  if (props.selectedId) {
     const n = props.nodes.find(n => n.id === props.selectedId)
     if (n) drawNodeRect(ctx, n.rect, sx, sy, 'rgba(224,33,40,0.20)', '#E02128', 1, [])
   }
@@ -744,17 +733,11 @@ function draw() {
     }
   }
 
-  // 框选/选中节点高亮（红色实线，无背景；对比激活时不绘制）
-  if (!props.compareActive) {
-    // 拖拽中：仅实时框选结果；非拖拽中：store 驱动 + boxHitIds 残留（Ctrl+click 过渡期）
-    const ids = boxDrag.value !== null
-      ? boxHitIds.value
-      : new Set([...(props.selectedNodeIds || []), ...boxHitIds.value])
-    if (ids.size > 0) {
-      for (const n of props.nodes) {
-        if (ids.has(n.id) && n.rect) {
-          drawNodeRect(ctx, n.rect, sx, sy, 'rgba(0,0,0,0)', '#E02128', 1.5, [])
-        }
+  // 框选命中节点高亮（红色实线，无背景；对比激活时不绘制）
+  if (boxHitIds.value.size > 0 && !props.compareActive) {
+    for (const n of props.nodes) {
+      if (boxHitIds.value.has(n.id) && n.rect) {
+        drawNodeRect(ctx, n.rect, sx, sy, 'rgba(0,0,0,0)', '#E02128', 1.5, [])
       }
     }
   }

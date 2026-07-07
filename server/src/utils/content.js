@@ -16,4 +16,5 @@ export const MATCH_TYPE_PASS = {
   'text-区域兜底': { pass: 'Pass 4',     desc: '跨区域剩余文本全局兜底，score ≥ 0.60 接受' },
   'con-交叠':      { pass: 'Pass 5.3',   desc: '容器节点 IoU 匹配，无装饰 > 0.60，有装饰 > 0.40' },
   'con-视觉':      { pass: 'Pass 6',     desc: '视觉节点（图标/图片/形状）IoU > 0.55' },
+  'con-part':      { pass: 'Part',      desc: 'part 模式：双方各仅 1 个节点，直接配对' },
 }

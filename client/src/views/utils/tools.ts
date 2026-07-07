@@ -1,3 +1,5 @@
+import { ref } from 'vue'
+
 // 生成时间字符串，格式：2026年6月3号 12:00:00
 export function formatDateTime(date: Date): string {
   const y = date.getFullYear(), m = date.getMonth() + 1, d = date.getDate()
@@ -298,4 +300,16 @@ export function confidenceTagType(c: string): string {
   if (c === 'medium') return 'warning'
   if (c === 'low')    return 'info'
   return 'info'
+}
+
+/** 防抖异步调用：返回 loading ref 和 run 包装函数，loading 期间自动阻止重复调用 */
+export function useDebounceLoading() {
+  const loading = ref(false)
+  async function run<T>(fn: () => Promise<T>): Promise<T | undefined> {
+    if (loading.value) return
+    loading.value = true
+    try { return await fn() }
+    finally { loading.value = false }
+  }
+  return { loading, run }
 }

@@ -128,6 +128,7 @@ const props = defineProps({
   mergedDiffs:       { type: Array,              default: () => [] },
   reportCanvasMode:  { type: String,             default: 'default' },
   hasManualEdits:    { type: Boolean,            default: false },
+  savingLoading:     { type: Boolean,            default: false },
 })
 
 const emit = defineEmits([
@@ -148,7 +149,7 @@ function onTempDiffAction() {
 const rightTab = ref('diff')
 const treeSide = ref('design')
 
-const isSaveDisabled = computed(() => !props.hasManualEdits)
+const isSaveDisabled = computed(() => !props.hasManualEdits || props.savingLoading)
 const isSaveVisible  = computed(() => props.hasManualEdits)
 const showShareDialog  = ref(false)
 const showHistoryPanel = ref(false)

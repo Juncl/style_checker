@@ -1,10 +1,10 @@
 <template>
   <AppLayout>
     <!-- loading 遮罩，覆盖整个 app-body -->
-    <div v-if="loading" class="center-placeholder-wrapper">
+    <div v-if="loading || saveDebounce.loading.value || rerunDebounce.loading.value || caseDebounce.loading.value || uploadDebounce.loading.value || historyDebounce.loading.value" class="center-placeholder-wrapper">
       <div class="center-placeholder">
         <OctoLoading :size="48" />
-        <p>加载中</p>
+        <p>{{ saveDebounce.loading.value ? '存储中' : historyDebounce.loading.value ? '加载中' : rerunDebounce.loading.value ? '对比中' : caseDebounce.loading.value ? '加载中' : uploadDebounce.loading.value ? '上传中' : '加载中' }}</p>
       </div>
     </div>
 
@@ -136,7 +136,8 @@
         :close-history-key="closeHistoryKey"
         :merged-diffs="mergedDiffs"
         :report-canvas-mode="canvasMode.mode"
-        :has-manual-edits="manualDiffs.length > 0"
+        :has-manual-edits="hasManualInReport"
+        :saving-loading="saveDebounce.loading.value"
         @diff-select="onDiffSelect"
         @diff-hover="hoveredDiffPair = $event"
         @design-node-click="onDesignNodeClick"
@@ -177,6 +178,7 @@ import { ADMIN_BASE_URL } from '../../api/adminEnv.ts'
 import {
   formatDateTime, fileToBase64, fileToText, buildProblems, adaptLegacyProblem, jsonToFile, resolveImageFile,
   isBlankLikeNode, isInteractiveImageNode, isSelectableNode, resolveSelectableNode, getUserAccount, inIframe,
+  useDebounceLoading,
 } from '../utils/tools.ts'
 import { initApp } from './init/index'
 import { UXLINT_CHECKLIST_EVENT } from './init/detectIframe'
@@ -193,7 +195,7 @@ import ReportPage from './components/ReportPage.vue'
 import UploadPanel from './components/UploadPanel.vue'
 import ReportPanel from './components/ReportPanel.vue'
 import '../../styles/app.css'
-import { CASE_NAMES_BY_PLATFORM, DEBUG_COLORS } from '../utils/constants'
+import { CASE_NAMES_BY_PLATFORM, DEBUG_COLORS, TEXT_STYLE_OPTIONS, CONTAINER_STYLE_OPTIONS } from '../utils/constants'
 import { reportInteraction } from '../utils-inner/report'
 import { useCanvasModeStore, useSelectionStore, usePlatformStore, useTempResultStore } from '../../stores'
 import { useDebugStore } from '../../stores/debug'
@@ -212,9 +214,21 @@ const debugStore = useDebugStore()
 const selectionStore = useSelectionStore()
 const rerunLoading      = ref(false)
 const reportPageRef     = ref(null)
+
+const saveDebounce = useDebounceLoading()
+const rerunDebounce = useDebounceLoading()
+const caseDebounce = useDebounceLoading()
+const uploadDebounce = useDebounceLoading()
+const historyDebounce = useDebounceLoading()
 /** 当前可用的匹配对：temp 激活时用 tempPairs，否则用正式 pairs */
 const effectivePairs    = computed(() => tempResultStore.tempPairs ?? result.value?.pairs ?? [])
 const manualDiffs       = ref([])   // 人工覆盖产生的差异卡片
+const builtinStyleKeys   = new Set([...TEXT_STYLE_OPTIONS.map(o => o.value), ...CONTAINER_STYLE_OPTIONS.map(o => o.value)])
+const hasManualInReport  = computed(() => {
+  return (result.value?.diffs ?? []).some(d => d._isManual)
+    || Object.keys(nodeManualAttr.value.dev).length > 0
+    || Object.keys(nodeManualAttr.value.design).length > 0
+})
 
 // 从节点树上收集所有人工覆盖属性，结构：{ dev: { id: { key: val } }, design: { id: { key: val } } }
 const nodeManualAttr = computed(() => {
@@ -244,6 +258,20 @@ function upsertManualDiff(newDiff) {
   } else {
     manualDiffs.value.push(newDiff)
   }
+  // 同步写入 result.value.diffs，保持终态一致
+  if (result.value?.diffs) {
+    const rIdx = result.value.diffs.findIndex(d =>
+      d.property === newDiff.property &&
+      d.designNodeId === newDiff.designNodeId &&
+      d.arkuiNodeId === newDiff.arkuiNodeId
+    )
+    if (rIdx >= 0) {
+      result.value.diffs[rIdx] = newDiff
+    } else {
+      result.value.diffs.push(newDiff)
+    }
+  }
+  manualDiffs.value = []
   console.log('[manual-diff] 生成卡片:', JSON.stringify({
     property:   newDiff.property,
     _isManual:  newDiff._isManual,
@@ -260,6 +288,11 @@ function removeManualDiffByMatch(designId, arkuiId, property) {
   manualDiffs.value = manualDiffs.value.filter(d =>
     !(d.property === property && d.designNodeId === designId && d.arkuiNodeId === arkuiId)
   )
+  if (result.value?.diffs) {
+    result.value.diffs = result.value.diffs.filter(d =>
+      !(d.property === property && d.designNodeId === designId && d.arkuiNodeId === arkuiId)
+    )
+  }
 }
 
 const mergedDiffs = computed(() => {
@@ -290,7 +323,8 @@ const mergedDiffs = computed(() => {
       merged.push(md)
     }
   }
-  console.log('[merged-diffs] 合并后总条数:', merged.length, '其中算法:', base.length, '人工:', manual.length)
+  const manualCount = merged.filter(d => d._isManual).length
+  console.log('[merged-diffs] 合并后总条数:', merged.length, '其中算法:', merged.length - manualCount, '人工:', manualCount)
   console.log('[merged-diffs] 全部diff:', JSON.parse(JSON.stringify(merged)))
   return merged
 })
@@ -942,18 +976,19 @@ async function submitRerunVersion() {
 
 // 存储按钮：仅存档当前人工标注和合并后的 diff，不重跑算法
 async function onSave() {
-  const pageId = workingPage.value?.id
-  if (!pageId || pageId === '__new__') return
-  try {
-    const now = formatDateTime(new Date())
-    const [devBase64, designBase64, devJsonStr, designJsonStr] = await Promise.all([
+  await saveDebounce.run(async () => {
+    const pageId = workingPage.value?.id
+    if (!pageId || pageId === '__new__') return
+    try {
+      const now = formatDateTime(new Date())
+      const [devBase64, designBase64, devJsonStr, designJsonStr] = await Promise.all([
       fileToBase64(uploadFiles.value.arkuiImage),
       fileToBase64(uploadFiles.value.designImage),
       fileToText(uploadFiles.value.arkuiJson),
       fileToText(uploadFiles.value.designJson),
     ])
     const { problems, nodeMatchs } = buildProblems(result.value, {
-      diffs: mergedDiffs.value,
+      diffs: result.value?.diffs ?? [],
       nodeManualAttr: nodeManualAttr.value,
     })
     await addConsistencyCheckPage({
@@ -985,7 +1020,8 @@ async function onSave() {
   } catch (e) {
     console.error('存储失败', e)
     ElMessage.error('存储失败')
-  }
+    }
+  })
 }
 
 // pairs[].design / pairs[].arkui 替换为 allNodes 里的同一对象引用，
@@ -1011,6 +1047,25 @@ function onSaveManualStyle({ side, nodeId, key, parsedValue }) {
   const otherSide = side === 'design' ? 'arkui' : 'design'
   const pairs = result.value?.pairs ?? []
   const pair = pairs.find(p => p[mySide]?.id === nodeId)
+
+  // 非内置 key：直接用用户填写值创建 diff，不通过 generateManualDiff
+  if (!builtinStyleKeys.has(key)) {
+    const diff = {
+      property: key,
+      [`${mySide}Value`]:    formatStyleValue(key, parsedValue, platformStore.currentPlatform),
+      [`${otherSide}Value`]: '—',
+      severity: 'warning',
+      confidence: 'high',
+      [`${mySide}NodeId`]:    nodeId,
+      [`${otherSide}NodeId`]: pair?.[otherSide]?.id ?? null,
+      _isManual: true,
+      textContent: node.textContent ?? node.name ?? '',
+      designName: pair?.design?.name ?? node.name,
+    }
+    upsertManualDiff(diff)
+    if (pair) selectionStore.select(pair)
+    return
+  }
 
   if (pair) {
     const manualDiff = generateManualDiff(pair, key, platformStore.currentPlatform)
@@ -1093,14 +1148,21 @@ function applyExtraOverride(nodes, override) {
 function mergeTempToResult() {
   if (!tempResultStore.tempDiffs || !tempResultStore.tempPairs || !result.value) return
 
-  // 合并 diffs：temp 涉及的任一侧节点 id，删掉正式 diff 中对应的全部条目，用 temp 替换
+  // 合并 diffs：排除正式 diff 中与 temp 重叠的非人工条目，保留人工编辑
   const tempDesignIds = new Set(tempResultStore.tempDiffs.map(d => d.designNodeId).filter(Boolean))
   const tempArkuiIds  = new Set(tempResultStore.tempDiffs.map(d => d.arkuiNodeId).filter(Boolean))
   const filteredDiffs = (result.value.diffs ?? []).filter(d =>
-    !tempDesignIds.has(d.designNodeId) && !tempArkuiIds.has(d.arkuiNodeId)
+    d._isManual || (!tempDesignIds.has(d.designNodeId) && !tempArkuiIds.has(d.arkuiNodeId))
   )
-  const mergedDiffsArr = [...filteredDiffs, ...tempResultStore.tempDiffs]
-  console.log('[mergeTemp] 删除正式diff:', (result.value.diffs ?? []).length - filteredDiffs.length, '覆盖temp-diff:', tempResultStore.tempDiffs.length)
+  // temp 条目不覆盖已成人工编辑的同三元组条目
+  const manualKeys = new Set(
+    (result.value.diffs ?? []).filter(d => d._isManual).map(d => `${d.property}|${d.designNodeId}|${d.arkuiNodeId}`)
+  )
+  const newTempDiffs = tempResultStore.tempDiffs.filter(d =>
+    !manualKeys.has(`${d.property}|${d.designNodeId}|${d.arkuiNodeId}`)
+  )
+  const mergedDiffsArr = [...filteredDiffs, ...newTempDiffs]
+  console.log('[mergeTemp] 删除正式diff:', (result.value.diffs ?? []).length - filteredDiffs.length, '覆盖temp-diff:', newTempDiffs.length, '跳过人工key数:', manualKeys.size)
 
   // 合并 pairs：双向覆盖去交集
   const arkuiMap = new Map()
@@ -1128,7 +1190,7 @@ function mergeTempToResult() {
   result.value = {
     ...result.value,
     diffs: mergedDiffsArr,
-    pairs: mergedPairs,
+    pairs: resolvePairsToNodes(mergedPairs, result.value.allDesignNodes, result.value.allArkuiNodes),
   }
 
   // 清除 temp 状态，回到 select-select
@@ -1139,17 +1201,18 @@ function mergeTempToResult() {
 
 async function rerunCheck() {
   if (canvasMode.mode === 'select') {
-    await reportPageRef.value?.runCompare()
+    await rerunDebounce.run(() => reportPageRef.value?.runCompare())
     return
   }
   if (!result.value) {
     ElMessage.warning('没有可用的数据，请重新上传')
     return
   }
-  activeDiff.value    = null
-  selectionStore.clear()
-  rerunLoading.value  = true
-  try {
+  await rerunDebounce.run(async () => {
+    activeDiff.value    = null
+    selectionStore.clear()
+    rerunLoading.value  = true
+    try {
     // 将人工覆盖的属性值 patch 到对应节点的副本上，再送入重跑
     const activeOverrides = reportPageRef.value?.getActiveOverrides?.() ?? {}
     const patchedDesignNodes = applyExtraOverride(result.value.allDesignNodes, activeOverrides.design)
@@ -1179,6 +1242,7 @@ async function rerunCheck() {
   } finally {
     rerunLoading.value = false
   }
+  })
 }
 
 function onDesignNodeClick(nodeId) {
@@ -1212,13 +1276,14 @@ function nodeDiffsFor(key, nodeId) {
 }
 
 async function selectCase(id) {
-  selectedCase.value  = id
-  activeDiff.value    = null
-  selectionStore.clear()
-  loading.value       = true
-  result.value        = null
-  revokeBlobUrls()
-  try {
+  await caseDebounce.run(async () => {
+    selectedCase.value  = id
+    activeDiff.value    = null
+    selectionStore.clear()
+    loading.value       = true
+    result.value        = null
+    revokeBlobUrls()
+    try {
     const data = await checkCase(id, platformStore.currentPlatform)
     // 案例选择打点
     reportInteraction({
@@ -1263,6 +1328,7 @@ async function selectCase(id) {
   }
   catch (e) { ElMessage.error(`分析失败：${e.response?.data?.error || e.message}`) }
   finally    { loading.value = false }
+  })
 }
 
 async function loadHistoryVersion(rawVersion, deviceType) {
@@ -1419,7 +1485,8 @@ async function onSelectPage(page) {
 }
 
 async function onHistoryView(item) {
-  const dId = workingDeliverable.value?.id
+  await historyDebounce.run(async () => {
+    const dId = workingDeliverable.value?.id
   const pId = workingPage.value?.id
   if (!dId || !pId) return
   workingVersionId.value = item.id ? String(item.id) : null
@@ -1433,6 +1500,7 @@ async function onHistoryView(item) {
   } finally {
     loading.value = false
   }
+  })
 }
 
 async function submitResult() {
@@ -1525,9 +1593,10 @@ async function submitResult() {
 }
 
 async function runUpload(platform) {
-  selectedCase.value  = ''
-  activeDiff.value    = null
-  selectionStore.clear()
+  await uploadDebounce.run(async () => {
+    selectedCase.value  = ''
+    activeDiff.value    = null
+    selectionStore.clear()
   loading.value       = true
   result.value        = null
   if (platform && platform !== platformStore.currentPlatform) {
@@ -1547,6 +1616,7 @@ async function runUpload(platform) {
     submitResult()
   } catch (e) { ElMessage.error(`分析失败：${e.response?.data?.error || e.message}`) }
   finally     { loading.value = false }
+  })
 }
 
 function reportCompareResult() {
