@@ -501,6 +501,7 @@ async function runCompare() {
     const diffs = (result.diffs ?? []).map(d => ({
       ...d,
       _isManual: true,
+      diffSource: 'select-diff',
     }))
     pendingDiffs.value = diffs
     const tempPairs = (result.pairs ?? []).map(p => {

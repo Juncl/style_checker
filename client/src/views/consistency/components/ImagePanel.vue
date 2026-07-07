@@ -18,7 +18,7 @@
 
     <Transition name="inspector-fade">
       <div
-        v-if="isSpacingInspector || (inspectorNode && (displayStyle.length || debugStore.debugMode || editMode))"
+        v-if="isSpacingInspector || (inspectorNode && (displayStyle.length || hasManualStyle || debugStore.debugMode || editMode))"
         ref="inspectorRef"
         class="node-inspector"
         :class="{ dragging: isDraggingInspector, 'inspector--design': side === 'design' }"
@@ -1138,6 +1138,11 @@ function toInspectorStyle(left, top) {
 }
 
 // ── 样式格式化 ──────────────────────────────────────────────────────────────
+
+const hasManualStyle = computed(() => {
+  const ms = props.inspectorNode?.manualStyle
+  return ms && typeof ms === 'object' && Object.keys(ms).length > 0
+})
 
 const displayStyle = computed(() => {
   const s = props.inspectorNode?.style

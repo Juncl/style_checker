@@ -380,6 +380,7 @@ export function generateManualDiff(
     designNodeId:  pair.design?.id ?? null,
     arkuiNodeId:   pair.arkui?.id ?? null,
     _isManual:     true,
+    diffSource:    'edit-diff',
     textContent:   (pair.design?.textContent ?? pair.design?.name ?? pair.arkui?.textContent ?? ''),
     designName:    pair.design?.name,
   }
