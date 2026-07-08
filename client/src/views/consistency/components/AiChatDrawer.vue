@@ -4,10 +4,14 @@
       <div ref="messagesEl" class="ai-messages">
         <div v-if="messages.length === 0 && !streaming" class="ai-empty">
           <div class="ai-empty-icon">
-            <img src="@/assets/svg/octo-logo.svg" width="44" height="44" />
+            <img :src="octoAi" width="120" height="120" />
           </div>
-          <p class="ai-empty-title">AI 检视助手</p>
-          <p class="ai-empty-hint">上传设计稿与实现截图，AI 将自动对比分析差异</p>
+          <p class="ai-empty-title">一致性检查</p>
+          <div class="ai-empty-desc">
+            <p>模糊比对：上传开发图 + 设计图</p>
+            <p>精准检查：上传 JSON + 设计图链接/传送码</p>
+            <p class="ai-empty-link" @click="openGuide">查看指南</p>
+          </div>
         </div>
 
         <div
@@ -20,7 +24,7 @@
             <div class="ai-msg-thumbs">
               <div v-for="(imgSrc, j) in msg.images" :key="j" class="ai-msg-thumb-wrap">
                 <img :src="imgSrc" class="ai-msg-thumb" :alt="j === 0 ? '设计稿' : '实现图'" />
-                <span class="ai-msg-thumb-label">{{ j === 0 ? '设计稿' : '实现图' }}</span>
+                <span class="ai-msg-thumb-label">{{ j === 0 ? '开发' : '设计' }}</span>
               </div>
             </div>
             <div v-if="msg.content" class="ai-msg-bubble ai-msg-bubble--user">{{ msg.content }}</div>
@@ -77,17 +81,20 @@
             <button
               class="ai-upload-btn"
               :class="{ 'ai-upload-btn--filled': !!slot }"
-              :title="i === 0 ? '上传设计稿图片' : '上传实现截图'"
+              :title="i === 0 ? '上传开发截图' : '上传设计稿'"
               @click="triggerUpload(i)"
             >
               <template v-if="slot">
                 <img :src="slot.preview" class="ai-upload-preview" />
+                <button class="ai-upload-clear" @click.stop="removeImg(i)" title="删除图片">
+                  <img :src="clearImg" width="12" height="12" />
+                </button>
               </template>
               <template v-else>
                 <svg viewBox="0 0 12 12" width="14" height="14" fill="none">
                   <path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
                 </svg>
-                <span class="ai-upload-label">{{ i === 0 ? '设计稿' : '实现图' }}</span>
+                <span class="ai-upload-label">{{ i === 0 ? '开发' : '设计' }}</span>
               </template>
             </button>
             <span v-if="i === 0" class="ai-switch-icon">
@@ -102,7 +109,7 @@
           ref="inputEl"
           v-model="inputText"
           class="ai-textarea"
-          :placeholder="placeholder"
+          :placeholder="'开发/设计框内支持图&图对比，及上传Json文件和传送码'"
           rows="3"
           :disabled="streaming"
           @keydown="onKeydown"
@@ -128,13 +135,15 @@
 import { ref, computed, nextTick, watch, onUnmounted } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import clearImg from '@/assets/svg/clear-img.svg'
+import octoAi from '@/assets/svg/octo-ai.svg'
 
 marked.setOptions({ breaks: true })
 
 const props = defineProps({
   open: { type: Boolean, default: false },
 })
-defineEmits(['close'])
+const emit = defineEmits(['close', 'report-ready'])
 
 function renderMd(content) {
   return DOMPurify.sanitize(marked.parse(content || ''))
@@ -190,14 +199,25 @@ const canSend = computed(() => {
   return hasBothImgs.value || inputText.value.trim().length > 0
 })
 
-const placeholder = computed(() => {
-  if (!hasHistory.value) return hasBothImgs.value ? '补充说明（可选），Enter 发送…' : '请先上传设计稿和实现图'
-  return hasBothImgs.value ? '补充说明（可选），Enter 发送…' : '继续追问（Enter 发送）…'
-})
-
 function clearMessages() {
   if (streaming.value) return
   messages.value = []
+}
+
+async function scheduleDiffParse(markdown, savedImgs) {
+  try {
+    const diffResp = await fetch('/devlint/api/img/checker/diff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ markdown }),
+    })
+    const diffData = await diffResp.json()
+    emit('report-ready', {
+      ...diffData,
+      designImg: savedImgs[0],
+      devImg: savedImgs[1],
+    })
+  } catch { /* 解析失败不影响聊天功能 */ }
 }
 
 function scrollToBottom() {
@@ -263,6 +283,10 @@ function removeImg(i) {
   imgSlots.value = slots
 }
 
+function openGuide() {
+  window.open('https://octo.hdesign.huawei.com/helpCenter/projectType/121/495/1271')
+}
+
 async function sendMessage() {
   if (streaming.value) return
   // 首轮：必须有两张图；追问：有图或有文字即可
@@ -272,6 +296,7 @@ async function sendMessage() {
   if (hasHistory.value && !hasImgs && !text) return
 
   const currentImgSrcs = hasImgs ? imgSlots.value.map(s => s.preview) : []
+  const savedImgs      = [...currentImgSrcs]
 
   messages.value.push({
     role: 'user',
@@ -388,6 +413,12 @@ async function sendMessage() {
         thinkContent: streamingThink.value || null,
         thinkCollapsed: true,
       })
+
+      // 流式结束后，将完整 Markdown 发到 server 转成 diff JSON
+      const markdown = streamingMain.value
+      if (savedImgs.length === 2 && markdown) {
+        scheduleDiffParse(markdown, savedImgs)
+      }
     }
   } catch (e) {
     if (e.name !== 'AbortError') {
@@ -458,11 +489,13 @@ function parseThinkBuffer() {
   flex: 1;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: 8px; padding: 32px 20px; text-align: center;
+  gap: 6px; padding: 40px 0; text-align: center;
 }
 .ai-empty-icon   { opacity: 0.9; }
 .ai-empty-title  { font-size: 32px; font-weight: 700; color: rgba(0, 0, 0, 0.90); margin: 0; }
-.ai-empty-hint   { font-size: 14px; font-weight: 500; color: rgba(0, 0, 0, 0.60); line-height: 22px; margin: 0; }
+.ai-empty-desc   { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.ai-empty-desc p { font-size: 14px; font-weight: 400; color: rgba(0, 0, 0, 0.60); line-height: 22px; margin: 0; }
+.ai-empty-link   { color: var(--octo-primary) !important; cursor: pointer; }
 
 .ai-msg          { display: flex; max-width: 92%; }
 .ai-msg--user    { align-self: flex-end; flex-direction: column; align-items: flex-end; }
@@ -655,7 +688,8 @@ function parseThinkBuffer() {
   padding-bottom: 4px;
 }
 .ai-upload-btn {
-  width: 52px; height: 64px; padding: 0;
+  position: relative;
+  width: 48px; height: 60px; padding: 0;
   border: 0.5px solid rgba(223, 223, 223, 1);
   border-radius: 2px;
   background: rgba(0, 0, 0, 0.04);
@@ -664,13 +698,22 @@ function parseThinkBuffer() {
   cursor: pointer;
   transition: background 150ms ease, border-color 150ms ease;
 }
-.ai-upload-btn:nth-child(1) { transform: rotate(-4deg); }
-.ai-upload-btn:nth-child(2) { transform: rotate(3deg); }
+.ai-upload-btn:first-child { transform: rotate(-5deg); }
+.ai-upload-btn:last-child  { transform: rotate(5deg); }
 .ai-upload-btn:hover { background: rgba(0, 0, 0, 0.07); border-color: rgba(0, 103, 209, 0.4); }
 .ai-upload-btn--filled { background: rgba(82, 196, 26, 0.06); }
 
 .ai-upload-label { font-size: 8px; color: rgba(0, 0, 0, 0.40); line-height: 1; font-weight: 400; }
 .ai-upload-preview { width: 100%; height: 100%; object-fit: cover; border-radius: 1px; display: block; }
+.ai-upload-clear {
+  position: absolute; top: -4px; right: -4px;
+  width: 12px; height: 12px; padding: 0;
+  border: none; background: transparent;
+  cursor: pointer; display: flex;
+  align-items: center; justify-content: center;
+  transition: opacity 150ms ease;
+}
+.ai-upload-clear:hover { opacity: 0.7; }
 .ai-switch-icon {
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   color: rgba(0, 0, 0, 0.60);

@@ -1,48 +1,26 @@
 # AI 检视
 
-> ⚠️ **实验功能**：当前 AI 检视为实验性功能，仅在 debugger 模式下可用，不影响主流程。
+> 实验功能：当前 AI 检视为实验性功能，不影响主流程。
 
-通过 server 代理调用大模型 VLM API，对设计稿与开发实现截图进行视觉样式差异分析。前端无需直接暴露 API Key，也无需处理跨域问题。
+通过 server 代理调用大模型 VLM API，对设计稿与开发实现截图进行视觉样式差异分析。API Key 不暴露给前端。
+
+> 前端实现详情见 [docs/前端逻辑/AI图图对比.md](前端逻辑/AI图图对比.md)
 
 ---
 
 ## 架构
 
 ```
-前端 AiChatDrawer          Server (3012)                    VLM API
-  POST /api/img/checker  ──→  注入系统 Prompt              ──→  POST VLM_API_URL
-  （流式接收文字帧）            toGLMMessages() 格式转换
-                               透传 SSE 流 ────────────────────────────────────→ 前端实时渲染 Markdown
+Server (3012)                              VLM API
+POST /api/img/checker  ──→  注入系统 Prompt →  POST VLM_API_URL
+              toGLMMessages() 格式转换（仅外网）
+              透传 SSE 流 ───────────────────────→ 响应流式返回
 ```
 
-- API Key 存储在 `server/src/config/constants.js`（`VLM_CONFIG`），前端不可见
+- API Key 存储在 `server/src/config/constants.js`（`VLM_CONFIG`）
 - 流式（SSE）和非流式均支持；AI 检视功能固定使用流式
-- 系统 Prompt **始终注入**（不再按是否有图片条件切换），VLM 模型由 `VLM_CONFIG[DEV_ENV].model` 决定
-
----
-
-## 前端入口
-
-### 开启方式
-
-URL 加 `?debugger=1` 进入 debugger 模式，左上角开发侧图标变为可点击状态，点击后左侧滑出 AI 检视侧边栏，同时挤压中间 `center-panel`。
-
-### 侧边栏功能（`AiChatDrawer.vue`）
-
-| 区域 | 功能 |
-|---|---|
-| 输入区左侧两个按钮 | 分别上传「设计稿」和「实现图」两张截图（`accept="image/*"`），两图都必须上传后才能发送 |
-| 图片缩略图 | 上传后按钮内显示缩略图，带"设计稿/实现图"标注 |
-| 文本输入框 | 两图齐全时 placeholder 变为"补充说明（可选）"，Enter 发送，Shift+Enter 换行 |
-| 发送按钮 | `canSend = !streaming && hasBothImgs`，仅当两图都上传且不在流式中时可点击 |
-| 清空按钮 | 清空所有对话历史（仅文本，不影响图片槽位） |
-| 关闭按钮 | 收起侧边栏，恢复 center-panel 宽度 |
-
-### 使用场景
-
-**必须同时上传两图**（设计稿 + 实现图），可选填补充说明文字。发送后后台注入系统 Prompt，AI 流式输出 Markdown 分析报告，在对话框内渲染展示。
-
-> ℹ️ 与早期版本不同，当前版本 AI 结果仅在侧边栏对话框内展示，**不会自动合并进 diff 报告栏**。`markdownToDiffReport()` 已实现 Markdown → diff JSON 的转换，供后续接入使用。
+- 系统 Prompt **有图片时注入**，纯文字追问（无图）直接透传，不注入 Prompt
+- VLM 模型由 `VLM_CONFIG[DEV_ENV].model` 决定
 
 ---
 
@@ -108,7 +86,7 @@ URL 加 `?debugger=1` 进入 debugger 模式，左上角开发侧图标变为可
 
 ### ⚪ 缺失 / 多余元素
 | # | 类型 | 元素 | 位置 | 说明 |
-|---|---|---|---|---|
+|---|---|---|---|---|---|
 ```
 
 **"修改建议"列约束**：只给最终正确答案，简短目标值或动作（如"改为 18px""改为 #0067D1""圆角统一为 8px""去掉模糊"），禁止整句长分析或解释原因。
@@ -123,24 +101,33 @@ URL 加 `?debugger=1` 进入 debugger 模式，左上角开发侧图标变为可
 POST /api/img/checker
   ↓
 handleImgCheck({ model, messages, stream, ...rest })
-  ├─ 注入系统 Prompt（始终，无条件）：
-  │    messages 头部插入 { role: 'system', content: [{ type: 'input_text', text: IMG_CHECKER_SYSTEM_PROMPT }] }
-  ├─ toGLMMessages()（仅 DEV_ENV==='OUT' 时）：转换 content 格式适配 GLM
+  ├─ 有图片时 → 注入系统 Prompt：
+  │    messages 头部插入 { role: 'system', content: [{ type: 'text', text: IMG_CHECKER_SYSTEM_PROMPT }] }
+  │    纯文字追问（无图片）→ 不注入 Prompt，直接透传
+  ├─ toGLMMessages()（仅 DEV_ENV === 'OUT' 时）：转换 content 格式适配 GLM
+  │    system content 转为纯字符串；input_text → text；image_url 展开
   └─ callAI({ model, messages, stream })：axios POST 到 VLM_API_URL，Bearer token 鉴权
   ↓
 stream 模式：
-  result（axios stream）直接 pipe(res)，实时透传 SSE 帧给前端
+  result（axios stream）直接 pipe(res)，实时透传 SSE 帧给调用方
   ↓
 （流结束，无后处理）
 ```
+
+### 请求中断
+
+路由层通过 `AbortController` 监听客户端断开（`req.on('close')`）：
+- 调用方断开连接时，终止对 VLM API 的调用并销毁 stream
+- 防止已断开连接的请求继续消耗 token
 
 ### 关键函数
 
 | 函数 | 位置 | 职责 |
 |---|---|---|
 | `handleImgCheck()` | `server/src/AIChecker/imgCheck.js` | 注入 Prompt、格式转换、调用 VLM |
+| `messagesHaveImage()` | `server/src/AIChecker/imgCheck.js` | 检测 messages 中是否有图片，决定是否注入 Prompt |
 | `callAI()` | `server/src/AIChecker/imgCheck.js` | axios HTTP 请求，Bearer token 鉴权 |
-| `toGLMMessages()` | `server/src/AIChecker/imgCheck.js` | 外网环境 messages 格式转换（input_text→text，image_url 展开） |
+| `toGLMMessages()` | `server/src/AIChecker/imgCheck.js` | 外网环境 messages 格式转换（input_text→text，image_url 展开，system→纯字符串） |
 | `markdownToDiffReport()` | `server/src/AIChecker/imgCheck.js` | Markdown 报告 → diff JSON（已实现，暂未接入路由） |
 | `IMG_CHECKER_SYSTEM_PROMPT` | `server/src/AIChecker/systemPrompts.js` | 系统 Prompt 常量 |
 
@@ -169,6 +156,7 @@ stream 模式：
       severity: 'error'|'warning',  // 明显→error，轻微→warning
       suggestion: string,     // 简短修改建议（目标值/动作）
       description: string,    // 同 suggestion（兼容 diff 报告 description 字段）
+      nodeType: null,
       textContent: string|null,  // 从『』中提取的文本内容
       designName: string,     // 元素描述（设计侧）
       arkuiName: string,      // 元素描述（开发侧）
@@ -206,39 +194,11 @@ stream 模式：
 
 ---
 
-## 前端数据流
-
-文件：`client/src/views/consistency/components/AiChatDrawer.vue`
-
-```
-AiChatDrawer.sendMessage()
-  ↓
-构建 apiMessages：
-  historyText（历史仅保留文字，不含图片 base64）
-  + currentContent（两图 base64 + 补充文字）
-  ↓
-fetch('/devlint/api/img/checker', { stream: true })
-  ↓
-读取 SSE 帧：
-  delta.reasoning_content  → streamingThink（思考过程，可折叠）
-  delta.content            → 解析 <think> 标签 → streamingMain（Markdown 正文）
-  [DONE]                   → 结束，push assistant 消息到 messages
-  ↓
-Markdown 渲染（marked + DOMPurify）展示在对话气泡中
-```
-
-**Think 块处理**：
-- 若 delta 有 `reasoning_content` 字段（模型推理内容）→ 直接累积到 `streamingThink`
-- 若正文中含 `<think>…</think>` 标签（通过 `rawBuffer` 解析）→ 拆分为思考/正文两部分
-- 流结束后，Think 块自动折叠（600ms 延迟）
-
-**历史管理**：多轮对话时，历史消息仅保留文字内容，图片不存入历史，避免重复传大体积 base64。
-
----
-
 ## 接口说明
 
 ### `POST /api/img/checker`
+
+路由：`check.js` 中 `router.post('/img/checker', ...)`，挂载在 `/api` 下。
 
 **请求体（JSON）：**
 
@@ -249,7 +209,7 @@ Markdown 渲染（marked + DOMPurify）展示在对话气泡中
 | `stream` | boolean | 否 | 是否流式输出（SSE），AI 检视固定传 `true` |
 | 其他参数 | — | 否 | `temperature`、`top_p`、`max_tokens` 等，透传给 VLM |
 
-**携带图片的消息格式：**
+**请求消息格式示例：**
 
 ```json
 [
@@ -264,15 +224,39 @@ Markdown 渲染（marked + DOMPurify）展示在对话气泡中
 ]
 ```
 
-**外网（DEV_ENV==='OUT'）时**，后台 `toGLMMessages()` 将 `input_text` 转为 `text`，`image_url` 展开为 GLM 标准格式。
+### 后台处理后的消息格式
 
-**流式响应帧：**
+后台有图片时会注入系统 Prompt：
+
+```json
+[
+  {
+    "role": "system",
+    "content": [{ "type": "text", "text": "你是一个资深的UI设计师..." }]
+  },
+  {
+    "role": "user",
+    "content": [
+      { "type": "image_url", "image_url": { "url": "data:image/png;base64,..." } },
+      { "type": "image_url", "image_url": { "url": "data:image/png;base64,..." } },
+      { "type": "input_text", "text": "补充说明或留空" }
+    ]
+  }
+]
+```
+
+外网（`DEV_ENV === 'OUT'`）时，`toGLMMessages()` 将 `input_text` 转为 `text`，`image_url` 展开为 GLM 标准格式，`system` content 转为纯字符串。
+
+### 流式响应帧
 
 | 帧内容 | 触发时机 | 说明 |
 |---|---|---|
-| `{"choices":[{"delta":{"reasoning_content":"..."}}]}` | 模型推理时 | 思考过程内容 |
-| `{"choices":[{"delta":{"content":"..."}}]}` | 逐字生成时 | Markdown 正文帧 |
+| `{"choices":[{"delta":{"reasoning_content":"..."}}]}` | 模型推理时 | 独立思考字段 |
+| `{"choices":[{"delta":{"reasoning":"..."}}]}` | 模型推理时 | 备选思考字段名 |
+| `{"choices":[{"delta":{"content":"..."}}]}` | 逐字生成时 | Markdown 正文帧（可能含 `<think>` 标签） |
 | `data: [DONE]` | AI 输出完毕 | 标准结束标志 |
+
+`delta` 中可能同时出现 `reasoning_content` 和 `reasoning` 两种字段名；部分模型把思考过程放在 `content` 的 `<think>…</think>` 标签中而非独立字段。
 
 ---
 
@@ -282,7 +266,7 @@ VLM 配置集中在 `server/src/config/constants.js` 的 `VLM_CONFIG`，按 `DEV
 
 | 场景 | 模型/地址来源 |
 |---|---|
-| 外网（`DEV_ENV==='OUT'`） | `VLM_CONFIG.OUT`：GLM 系列，`toGLMMessages()` 做格式转换 |
-| 内网（`DEV_ENV!=='OUT'`） | `VLM_CONFIG[DEV_ENV]`：内网 VLM，messages 格式直接透传 |
+| 外网（`DEV_ENV === 'OUT'`） | `VLM_CONFIG.OUT`：GLM 系列，`toGLMMessages()` 做格式转换 |
+| 内网（`DEV_ENV !== 'OUT'`） | `VLM_CONFIG[DEV_ENV]`：内网 VLM，messages 格式直接透传 |
 
 后续如需切换为其他厂商 API，只需修改 `server/src/AIChecker/imgCheck.js` 中的 `callAI()` 实现，接口签名 `{ model, messages, stream, ...rest }` 保持不变。

@@ -8,10 +8,11 @@
       </div>
     </div>
 
-    <!-- 中间主区 -->
-    <main class="center-panel up-board ai-main-wrap">
-      <!-- AI 侧边面板（在布局流中推挤画布） -->
-      <AiChatDrawer :open="aiChatOpen" @close="aiChatOpen = false" />
+    <!-- AI 侧边面板（与 main 同级，在布局流中推挤画布） -->
+    <AiChatDrawer :open="aiChatOpen" @close="aiChatOpen = false" @report-ready="onAiReportReady" />
+
+    <!-- 中间主区（正常模式） -->
+    <main v-show="!showAiReport" class="center-panel up-board ai-main-wrap">
 
       <!-- 触发按钮（悬浮，随面板展开同步移动） -->
       <button
@@ -110,8 +111,8 @@
       </div>
     </main>
 
-    <!-- 右侧面板 -->
-    <aside class="right-panel up-right-panel" style="position: relative;">
+    <!-- 右侧面板（正常模式） -->
+    <aside v-show="!showAiReport" class="right-panel up-right-panel" style="position: relative;">
       <UploadPanel
         v-if="!result"
         :loading="loading"
@@ -148,6 +149,23 @@
         @save="onSave"
       />
     </aside>
+
+    <!-- AI 报告视图（替换正常 main+aside） -->
+    <AiReportView
+      v-show="showAiReport"
+      :report-data="aiReportData"
+      :design-nodes="aiDesignNodes"
+      :dev-nodes="aiDevNodes"
+      :design-selected-id="aiDesignSelectedId"
+      :dev-selected-id="aiDevSelectedId"
+      :design-hover-id="aiDesignHoverId"
+      :dev-hover-id="aiDevHoverId"
+      :active-pair="aiActivePair"
+      :hover-pair="aiHoverPair"
+      :platform="platformStore.currentPlatform"
+      @select="onAiDiffSelect"
+      @diff-hover="onAiDiffHover"
+    />
 
     <div
       id="pixso_render"
@@ -189,6 +207,7 @@ import { generateManualDiff, formatStyleValue, readStyleValue } from './match/co
 import { savePlatform } from './init/restorePlatform'
 import AppLayout from './components/AppLayout.vue'
 import AiChatDrawer from './components/AiChatDrawer.vue'
+import AiReportView from './components/AiReportView.vue'
 import ConsistencyTabbar from './components/ConsistencyTabbar.vue'
 import UploadPage from './components/UploadPage.vue'
 import ReportPage from './components/ReportPage.vue'
@@ -210,6 +229,50 @@ const result          = ref(null)
 const activeDiff      = ref(null)
 const uploadPageRef   = ref(null)
 const aiChatOpen      = ref(false)
+const aiReportData    = ref(null)
+const showAiReport    = computed(() => aiReportData.value && aiChatOpen.value)
+
+function onAiReportReady(data) {
+  aiReportData.value = data
+}
+
+// ── AI 报告联动状态 ──────────────────────────────────────────────────────────
+const aiActivePair = ref(null)
+const aiHoverPair  = ref(null)
+
+const aiDesignNodes = computed(() => (aiReportData.value?.diffs ?? [])
+  .filter(d => d.designRect)
+  .map(d => ({
+    id: d.designNodeId,
+    name: d.designName || d.textContent || '',
+    type: 'container',
+    textContent: d.textContent || null,
+    rect: d.designRect,
+    visible: true,
+  })))
+
+const aiDevNodes = computed(() => (aiReportData.value?.diffs ?? [])
+  .filter(d => d.arkuiRect)
+  .map(d => ({
+    id: d.arkuiNodeId,
+    name: d.arkuiName || d.textContent || '',
+    type: 'container',
+    textContent: d.textContent || null,
+    rect: d.arkuiRect,
+    visible: true,
+  })))
+
+const aiDesignSelectedId = computed(() => aiActivePair.value?.designNodeId ?? null)
+const aiDevSelectedId     = computed(() => aiActivePair.value?.arkuiNodeId ?? null)
+const aiDesignHoverId    = computed(() => aiHoverPair.value?.designNodeId ?? null)
+const aiDevHoverId       = computed(() => aiHoverPair.value?.arkuiNodeId ?? null)
+
+function onAiDiffSelect(diff) {
+  aiActivePair.value = { designNodeId: diff.designNodeId, arkuiNodeId: diff.arkuiNodeId }
+}
+function onAiDiffHover(pair) {
+  aiHoverPair.value = pair
+}
 const debugStore = useDebugStore()
 const selectionStore = useSelectionStore()
 const rerunLoading      = ref(false)
@@ -1005,6 +1068,7 @@ async function onReplaceDesign({ designJson, designImage }) {
   uploadFiles.value = next
   blobUrls.value = { ...blobUrls.value, design: URL.createObjectURL(designImage) }
   selectedCase.value = ''
+  designReuploading.value = true
   await triggerDesignPreview(next)
 }
 
@@ -1279,28 +1343,41 @@ async function rerunCheck() {
     selectionStore.clear()
     rerunLoading.value  = true
     try {
+    // 当前画布渲染的节点：重新上传过则用新解析结果，否则用现有 result
+    const curDesignNodes = designPreview.value?.nodes ?? result.value.allDesignNodes
+    const curArkuiNodes  = devPreview.value?.nodes    ?? result.value.allArkuiNodes
+    const curCanvas = {
+      design: designPreview.value?.canvas ?? result.value.canvas.design,
+      arkui:  devPreview.value?.canvas    ?? result.value.canvas.arkui,
+    }
+
     // 将人工覆盖的属性值 patch 到对应节点的副本上，再送入重跑
     const activeOverrides = reportPageRef.value?.getActiveOverrides?.() ?? {}
-    const patchedDesignNodes = applyExtraOverride(result.value.allDesignNodes, activeOverrides.design)
-    const patchedArkuiNodes  = applyExtraOverride(result.value.allArkuiNodes,  activeOverrides.dev)
+    const patchedDesignNodes = applyExtraOverride(curDesignNodes, activeOverrides.design)
+    const patchedArkuiNodes  = applyExtraOverride(curArkuiNodes,  activeOverrides.dev)
 
     const matchResult = await matchNodes(
       patchedDesignNodes,
       patchedArkuiNodes,
-      result.value.canvas,
+      curCanvas,
       platformStore.currentPlatform,
       'all',
     )
     result.value = {
       ...result.value,
+      canvas:               curCanvas,
+      allDesignNodes:       curDesignNodes,
+      allArkuiNodes:        curArkuiNodes,
       diffs:                matchResult.diffs,
-      pairs:                resolvePairsToNodes(matchResult.pairs, result.value.allDesignNodes, result.value.allArkuiNodes),
+      pairs:                resolvePairsToNodes(matchResult.pairs, curDesignNodes, curArkuiNodes),
       unmatchedDesignNodes: matchResult.unmatchedDesignNodes,
       unmatchedArkuiNodes:  matchResult.unmatchedArkuiNodes,
       stats:                matchResult.stats,
     }
     devReuploading.value    = false
     designReuploading.value = false
+    devPreview.value        = null
+    designPreview.value     = null
     ElMessage.success('重新对比完成')
     submitRerunVersion()
   } catch (e) {
@@ -1738,10 +1815,8 @@ function onDiffSelect(diff) {
 </script>
 
 <style>
-/* main 改为 flex row，AI 面板和画布并排 */
+/* AI 面板已移至 main 同级，main 恢复为 center-panel 默认的 flex column */
 .ai-main-wrap {
-  display: flex !important;
-  flex-direction: row !important;
   position: relative;
 }
 
@@ -1773,14 +1848,12 @@ function onDiffSelect(diff) {
   justify-content: center;
   color: #777777;
   padding: 0;
-  transition: left 220ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
-              background 150ms ease, color 150ms ease, border-color 150ms ease;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+  /* 面板开合时 toggle 随 main 整体移动（由父级 flex 推挤驱动），无需 left 过渡 */
 }
 .ai-sidebar-toggle:hover {
   background: #f5f5f5;
   color: #191919;
 }
-.ai-sidebar-toggle--open {
-  left: 374px;
-}
+
 </style>

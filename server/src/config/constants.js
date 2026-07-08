@@ -11,7 +11,7 @@ export const VLM_CONFIG = {
   OUT: {
     model: 'glm-4.6v',
     url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-    apikey: 'Bearer ee9949a9ddea4f019772e2d3abbf15bf.DpNYbrsH5iYt85cT',
+    apikey: 'Bearer 03dc01533f9a4fc295395e001b94a3d8.ZpV2HqWgNKOzfUq9',
   },
   INNER: {
     model: 'Qwen3.5-27B-Claude-4.6',

@@ -20,7 +20,7 @@ import { compareAll }  from '../comparators/styleComparator.js'
 import { compareSpatialRelations } from '../comparators/spatialComparator.js'
 import { getPlatform, resolvePlatform } from '../config/platforms.js'
 import { buildDumpTree } from '../parsers/arkui/1-buildDumpTree.js'
-import { handleImgCheck } from '../AIChecker/imgCheck.js'
+import { handleImgCheck, markdownToDiffReport } from '../AIChecker/imgCheck.js'
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage() })
@@ -641,6 +641,18 @@ router.post('/check/match-nodes', async (req, res) => {
     })
   } catch (err) {
     console.error(err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── AI 图片检查：Markdown 报告 → diff JSON 解析 ───────────────────────────────
+router.post('/img/checker/diff', (req, res) => {
+  try {
+    const { markdown } = req.body
+    if (!markdown) return res.status(400).json({ error: '缺少 markdown 参数' })
+    const report = markdownToDiffReport(markdown)
+    res.json(report)
+  } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })

@@ -104,6 +104,16 @@ function extractTextContent(elementCell = '') {
   return m ? m[1].trim() : null
 }
 
+// 从"元素"列提取归一化坐标，格式: (设:x,y,w,h;实:x,y,w,h)
+function extractRects(elementCell = '') {
+  const m = elementCell.match(/设:\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*;\s*实:\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/)
+  if (!m) return { designRect: null, arkuiRect: null }
+  return {
+    designRect: { x: +m[1], y: +m[2], w: +m[3], h: +m[4] },
+    arkuiRect:  { x: +m[5], y: +m[6], w: +m[7], h: +m[8] },
+  }
+}
+
 const EMPTY_VALUES = new Set(['', '-', '—', '无', 'N/A', 'n/a', '/'])
 function normVal(v) {
   const s = (v ?? '').toString().trim()
@@ -111,22 +121,25 @@ function normVal(v) {
 }
 
 // 解析一张差异表（明显/轻微）为 diff 数组
-function parseDiffTable(rows, severity) {
+// diffIdx: 当前全局 diff 序号（引用传递），每生成一条 diff 自增
+function parseDiffTable(rows, severity, diffIdx) {
   const diffs = []
   for (const cells of rows) {
     // 期望列：# | 元素 | 属性 | 设计侧 | 开发做成 | 修改建议
     if (cells.length < 5) continue
     const [, element, propLabel, designValue, arkuiValue, suggestion = ''] = cells
     const property = PROP_LABEL_TO_KEY[(propLabel || '').replace(/\s/g, '')]
-    if (!property) continue // 非受控属性标签，跳过（避免脏数据）
+    if (!property) continue
     const sug = (suggestion || '').trim()
+    const rects = extractRects(element)
+    const idx = diffIdx.val++
     diffs.push({
       property,
       designValue: normVal(designValue),
       arkuiValue: normVal(arkuiValue),
       severity,
-      suggestion: sug,        // 设计师视角的简短修改建议（目标值/动作）
-      description: sug,        // 兼容 diff 报告的 description 字段
+      suggestion: sug,
+      description: sug,
       nodeType: null,
       textContent: extractTextContent(element),
       designName: element.trim(),
@@ -137,25 +150,31 @@ function parseDiffTable(rows, severity) {
       topologyScore: null,
       regionScore: null,
       source: 'ai',
+      designNodeId: `ai-d-${idx}`,
+      arkuiNodeId:  `ai-a-${idx}`,
+      designRect: rects.designRect,
+      arkuiRect:  rects.arkuiRect,
     })
   }
   return diffs
 }
 
 // 解析缺失/多余表 → { unmatchedDesignNodes, unmatchedArkuiNodes }
-function parseMissingExtraTable(rows) {
+function parseMissingExtraTable(rows, diffIdx) {
   const unmatchedDesignNodes = []
   const unmatchedArkuiNodes = []
   for (const cells of rows) {
     // 期望列：# | 类型 | 元素 | 位置 | 说明
     if (cells.length < 3) continue
     const [, kind, element] = cells
+    const rects = extractRects(element)
+    const idx = diffIdx.val++
     const node = {
-      id: null,
+      id: `ai-u-${idx}`,
       name: (element || '').trim(),
       type: null,
       textContent: extractTextContent(element),
-      rect: null,
+      rect: rects.designRect || null,
     }
     if ((kind || '').includes('缺失')) unmatchedDesignNodes.push(node)
     else if ((kind || '').includes('多余')) unmatchedArkuiNodes.push(node)
@@ -180,6 +199,7 @@ export function markdownToDiffReport(markdown = '') {
   let overallLevel = null
   let score = null
   let stats = {}
+  const diffIdx = { val: 0 }
 
   for (let i = 0; i < lines.length; i++) {
     const t = lines[i].trim()
@@ -194,13 +214,13 @@ export function markdownToDiffReport(markdown = '') {
 
     if (/明显差异/.test(t)) {
       const { rows } = extractTableRows(lines, i + 1)
-      diffs = diffs.concat(parseDiffTable(rows, 'error'))
+      diffs = diffs.concat(parseDiffTable(rows, 'error', diffIdx))
     } else if (/轻微差异/.test(t)) {
       const { rows } = extractTableRows(lines, i + 1)
-      diffs = diffs.concat(parseDiffTable(rows, 'warning'))
+      diffs = diffs.concat(parseDiffTable(rows, 'warning', diffIdx))
     } else if (/缺失|多余/.test(t)) {
       const { rows } = extractTableRows(lines, i + 1)
-      const r = parseMissingExtraTable(rows)
+      const r = parseMissingExtraTable(rows, diffIdx)
       unmatchedDesignNodes = unmatchedDesignNodes.concat(r.unmatchedDesignNodes)
       unmatchedArkuiNodes = unmatchedArkuiNodes.concat(r.unmatchedArkuiNodes)
     } else if (/元素匹配概览/.test(t)) {
