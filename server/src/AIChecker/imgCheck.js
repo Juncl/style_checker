@@ -73,6 +73,8 @@ const PROP_LABEL_TO_KEY = {
   投影: 'shadow',
   内边距: 'padding',
   间距: 'itemSpacing',
+  缺失: 'missing',
+  多余: 'extra',
 }
 
 // 提取 Markdown 表格：返回从某个标题行之后、连续以 | 开头的表格数据行（已去掉表头与分隔行）
@@ -104,17 +106,33 @@ function extractTextContent(elementCell = '') {
   return m ? m[1].trim() : null
 }
 
-// 从"元素"列提取归一化坐标，格式: (设:x,y,w,h;实:x,y,w,h)
+// 从"元素"列提取归一化坐标
+// 支持格式：(设:x,y,w,h;实:x,y,w,h) — 英文标点 + 中文标点容错
+// 也支持仅设计侧 (设:x,y,w,h) 或仅实现侧 (实:x,y,w,h)（缺失/多余节点）
 function extractRects(elementCell = '') {
-  const m = elementCell.match(/设:\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*;\s*实:\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/)
-  if (!m) return { designRect: null, arkuiRect: null }
-  return {
-    designRect: { x: +m[1], y: +m[2], w: +m[3], h: +m[4] },
-    arkuiRect:  { x: +m[5], y: +m[6], w: +m[7], h: +m[8] },
+  // 中文全角标点 → 英文半角，统一处理
+  const norm = String(elementCell)
+    .replace(/[：]/g, ':')
+    .replace(/[；]/g, ';')
+    .replace(/[，]/g, ',')
+    .replace(/[（）]/g, m => m === '（' ? '(' : ')')
+
+  // 单个坐标块的正则（设:x,y,w,h 或 实:x,y,w,h）
+  const BLOCK = /([设实]):\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*/g
+  const blocks = [...norm.matchAll(BLOCK)]
+
+  let designRect = null
+  let arkuiRect = null
+  for (const m of blocks) {
+    const rect = { x: +m[2], y: +m[3], w: +m[4], h: +m[5] }
+    if (m[1] === '设') designRect = rect
+    else if (m[1] === '实') arkuiRect = rect
   }
+
+  return { designRect, arkuiRect }
 }
 
-const EMPTY_VALUES = new Set(['', '-', '—', '无', 'N/A', 'n/a', '/'])
+const EMPTY_VALUES = new Set(['', '-', '—', '无', 'N/A', 'n/a', '/', '（空）', '--', '---', '未设置', '无填充', '无描边', '无圆角', '无阴影', '无模糊'])
 function normVal(v) {
   const s = (v ?? '').toString().trim()
   return EMPTY_VALUES.has(s) ? '—' : s
@@ -126,24 +144,34 @@ function parseDiffTable(rows, severity, diffIdx) {
   const diffs = []
   for (const cells of rows) {
     // 期望列：# | 元素 | 属性 | 设计侧 | 开发做成 | 修改建议
-    if (cells.length < 5) continue
-    const [, element, propLabel, designValue, arkuiValue, suggestion = ''] = cells
-    const property = PROP_LABEL_TO_KEY[(propLabel || '').replace(/\s/g, '')]
+    // 兼容 5 列（无修改建议）和 6 列
+    if (cells.length < 4) continue
+    const numCell    = cells[0]  // # 列
+    const element    = cells[1] || ''
+    const propLabel  = cells[2] || ''
+    const designVal  = cells[3] || ''
+    const arkuiVal   = cells[4] || ''
+    const suggestion = cells[5] || ''  // 可能不存在
+
+    const property = PROP_LABEL_TO_KEY[propLabel.replace(/\s/g, '')]
     if (!property) continue
-    const sug = (suggestion || '').trim()
+
     const rects = extractRects(element)
+    // 序号可能是数字或纯文字标记，跳过非数字行
+    const seqNum = parseInt(numCell, 10)
+
     const idx = diffIdx.val++
     diffs.push({
       property,
-      designValue: normVal(designValue),
-      arkuiValue: normVal(arkuiValue),
+      designValue: normVal(designVal),
+      arkuiValue: normVal(arkuiVal),
       severity,
-      suggestion: sug,
-      description: sug,
+      suggestion: suggestion.trim() || normVal(arkuiVal),
+      description: suggestion.trim() || normVal(arkuiVal),
       nodeType: null,
       textContent: extractTextContent(element),
-      designName: element.trim(),
-      arkuiName: element.trim(),
+      designName: element.replace(/\s*\([设实]:[^)]+\)?/g, '').trim(),
+      arkuiName: element.replace(/\s*\([设实]:[^)]+\)?/g, '').trim(),
       matchType: 'ai-visual',
       confidence: severity === 'warning' ? 'low' : 'high',
       iou: null,
@@ -159,34 +187,60 @@ function parseDiffTable(rows, severity, diffIdx) {
   return diffs
 }
 
-// 解析缺失/多余表 → { unmatchedDesignNodes, unmatchedArkuiNodes }
+// 解析缺失/多余表 → 构建单侧 diff 数组
+// 缺失（设计有、实现无）：designNodeId 有值，arkuiNodeId = null
+// 多余（实现有、设计无）：designNodeId = null，arkuiNodeId 有值
 function parseMissingExtraTable(rows, diffIdx) {
-  const unmatchedDesignNodes = []
-  const unmatchedArkuiNodes = []
+  const diffs = []
   for (const cells of rows) {
-    // 期望列：# | 类型 | 元素 | 位置 | 说明
+    // 期望列：# | 类型 | 元素 | 说明（旧格式还有"位置"列）
     if (cells.length < 3) continue
-    const [, kind, element] = cells
+    const kind     = (cells[1] || '').trim()
+    const element  = (cells[2] || '').trim()
+    const descCol  = cells.slice(3).find(c => c.trim()) || ''
+    const isMissing = kind.includes('缺失')
+    const isExtra   = kind.includes('多余')
+    if (!isMissing && !isExtra) continue
+
     const rects = extractRects(element)
     const idx = diffIdx.val++
-    const node = {
-      id: `ai-u-${idx}`,
-      name: (element || '').trim(),
-      type: null,
+    const name = element.replace(/\s*\([设实]:[^)]+\)?/g, '').trim()
+
+    diffs.push({
+      property: isMissing ? 'missing' : 'extra',
+      designValue: normVal(isMissing ? (name || element) : '—'),
+      arkuiValue:  normVal(isExtra   ? (name || element) : '—'),
+      severity: 'error',
+      suggestion: (descCol || kind).trim(),
+      description: (descCol || kind).trim(),
+      nodeType: null,
       textContent: extractTextContent(element),
-      rect: rects.designRect || null,
-    }
-    if ((kind || '').includes('缺失')) unmatchedDesignNodes.push(node)
-    else if ((kind || '').includes('多余')) unmatchedArkuiNodes.push(node)
+      designName: isMissing ? (name || element) : '',
+      arkuiName: isExtra ? (name || element) : '',
+      matchType: isMissing ? '缺失' : '多余',
+      confidence: 'high',
+      iou: null,
+      topologyScore: null,
+      regionScore: null,
+      source: 'ai',
+      designNodeId: isMissing ? `ai-u-${idx}` : null,
+      arkuiNodeId:  isExtra   ? `ai-u-${idx}` : null,
+      designRect: isMissing ? rects.designRect : null,
+      arkuiRect:  isExtra   ? rects.arkuiRect  : null,
+    })
   }
-  return { unmatchedDesignNodes, unmatchedArkuiNodes }
+  return diffs
 }
 
 /**
  * 把 VLM 输出的 Markdown 报告转为与 diff 报告一致的 JSON。
  * @param {string} markdown VLM 返回的完整 Markdown 文本
  * @returns {{ markdown:string, overallLevel:string|null, score:number|null,
- *   stats:object, diffs:Array, unmatchedDesignNodes:Array, unmatchedArkuiNodes:Array }}
+ *   stats:object, diffs:Array, unmatchedDesignNodes:Array, unmatchedArkuiNodes:Array,
+ *   designNodes:Array, devNodes:Array, pairMap:Object }}
+ * diffs 中包含 matchType='缺失'|'多余' 的单侧 diff（designNodeId/arkuiNodeId 其一为 null）。
+ * designNodes/devNodes 为从 diffs 去重构建的画布渲染节点列表。
+ * pairMap 为 { [designNodeId]: { arkuiNodeId } } 跨侧高亮映射。
  */
 export function markdownToDiffReport(markdown = '') {
   // 去掉思维链 <think>…</think>
@@ -218,11 +272,9 @@ export function markdownToDiffReport(markdown = '') {
     } else if (/轻微差异/.test(t)) {
       const { rows } = extractTableRows(lines, i + 1)
       diffs = diffs.concat(parseDiffTable(rows, 'warning', diffIdx))
-    } else if (/缺失|多余/.test(t)) {
+    } else if (/缺失|多余/.test(t) && !/元素匹配/.test(t)) {
       const { rows } = extractTableRows(lines, i + 1)
-      const r = parseMissingExtraTable(rows, diffIdx)
-      unmatchedDesignNodes = unmatchedDesignNodes.concat(r.unmatchedDesignNodes)
-      unmatchedArkuiNodes = unmatchedArkuiNodes.concat(r.unmatchedArkuiNodes)
+      diffs = diffs.concat(parseMissingExtraTable(rows, diffIdx))
     } else if (/元素匹配概览/.test(t)) {
       const { rows } = extractTableRows(lines, i + 1)
       const row = rows[0]
@@ -243,7 +295,57 @@ export function markdownToDiffReport(markdown = '') {
   const warningCount = diffs.filter(d => d.severity === 'warning').length
   stats = { ...stats, errorCount, warningCount, infoCount: 0, score }
 
-  return { markdown: clean, overallLevel, score, stats, diffs, unmatchedDesignNodes, unmatchedArkuiNodes }
+  // ── 从 diffs 构建渲染节点列表 + 匹配对映射 ──
+  const reportStructs = buildReportStructures(diffs)
+
+  return {
+    markdown: clean, overallLevel, score, stats, diffs,
+    unmatchedDesignNodes, unmatchedArkuiNodes,
+    ...reportStructs,
+  }
+}
+
+/**
+ * 从 diffs 数组构建画布渲染所需的节点列表和匹配对映射。
+ * - designNodes / devNodes：去重后的节点，type 由 textContent 推断
+ * - pairMap：designNodeId → { arkuiNodeId }，供画布跨侧联动高亮
+ */
+function buildReportStructures(diffs) {
+  const designNodes = []
+  const devNodes = []
+  const seenDesign = new Set()
+  const seenArkui = new Set()
+  const pairMap = {}
+
+  for (const d of diffs) {
+    if (d.designNodeId && d.designRect && !seenDesign.has(d.designNodeId)) {
+      seenDesign.add(d.designNodeId)
+      designNodes.push({
+        id: d.designNodeId,
+        name: d.designName || d.textContent || '',
+        type: d.textContent ? 'text' : 'container',
+        textContent: d.textContent || null,
+        rect: d.designRect,
+        visible: true,
+      })
+    }
+    if (d.arkuiNodeId && d.arkuiRect && !seenArkui.has(d.arkuiNodeId)) {
+      seenArkui.add(d.arkuiNodeId)
+      devNodes.push({
+        id: d.arkuiNodeId,
+        name: d.arkuiName || d.textContent || '',
+        type: d.textContent ? 'text' : 'container',
+        textContent: d.textContent || null,
+        rect: d.arkuiRect,
+        visible: true,
+      })
+    }
+    if (d.designNodeId && d.arkuiNodeId) {
+      pairMap[d.designNodeId] = { arkuiNodeId: d.arkuiNodeId }
+    }
+  }
+
+  return { designNodes, devNodes, pairMap }
 }
 
 // 将前端 messages 格式转换为 GLM 标准格式（仅外网使用）

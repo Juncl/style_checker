@@ -154,8 +154,6 @@
     <AiReportView
       v-show="showAiReport"
       :report-data="aiReportData"
-      :design-nodes="aiDesignNodes"
-      :dev-nodes="aiDevNodes"
       :design-selected-id="aiDesignSelectedId"
       :dev-selected-id="aiDevSelectedId"
       :design-hover-id="aiDesignHoverId"
@@ -239,28 +237,6 @@ function onAiReportReady(data) {
 // ── AI 报告联动状态 ──────────────────────────────────────────────────────────
 const aiActivePair = ref(null)
 const aiHoverPair  = ref(null)
-
-const aiDesignNodes = computed(() => (aiReportData.value?.diffs ?? [])
-  .filter(d => d.designRect)
-  .map(d => ({
-    id: d.designNodeId,
-    name: d.designName || d.textContent || '',
-    type: 'container',
-    textContent: d.textContent || null,
-    rect: d.designRect,
-    visible: true,
-  })))
-
-const aiDevNodes = computed(() => (aiReportData.value?.diffs ?? [])
-  .filter(d => d.arkuiRect)
-  .map(d => ({
-    id: d.arkuiNodeId,
-    name: d.arkuiName || d.textContent || '',
-    type: 'container',
-    textContent: d.textContent || null,
-    rect: d.arkuiRect,
-    visible: true,
-  })))
 
 const aiDesignSelectedId = computed(() => aiActivePair.value?.designNodeId ?? null)
 const aiDevSelectedId     = computed(() => aiActivePair.value?.arkuiNodeId ?? null)

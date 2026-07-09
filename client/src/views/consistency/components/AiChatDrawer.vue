@@ -353,8 +353,11 @@ async function sendMessage() {
       return {
         role: m.role,
         content: [
-          ...m.images.map(src => ({ type: 'image_url', image_url: { url: src } })),
           { type: 'input_text', text: m.content },
+          { type: 'text', text: '图片1: 开发实现图' },
+          { type: 'image_url', image_url: { url: m.images[0] } },
+          { type: 'text', text: '图片2: 设计基准图' },
+          { type: 'image_url', image_url: { url: m.images[1] } },
         ],
       }
     }
@@ -363,10 +366,13 @@ async function sendMessage() {
 
   // 有图：携带图片 + 文字（注入 prompt 由后端决定）
   // 无图：纯文字追问（后端不注入 prompt）
-  const currentContent = hasImgs
+    const currentContent = hasImgs
     ? [
-        ...currentImgSrcs.map(src => ({ type: 'image_url', image_url: { url: src } })),
         { type: 'input_text', text: text || '请对比两张图' },
+        { type: 'text', text: '图片1: 开发实现图' },
+        { type: 'image_url', image_url: { url: currentImgSrcs[0] } },
+        { type: 'text', text: '图片2: 设计基准图' },
+        { type: 'image_url', image_url: { url: currentImgSrcs[1] } },
       ]
     : [{ type: 'input_text', text }]
 

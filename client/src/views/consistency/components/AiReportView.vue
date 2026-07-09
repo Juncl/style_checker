@@ -25,7 +25,7 @@
             side="dev"
             :platform="platform"
             :style-diffs="[]"
-            :debug-pair-map="{}"
+            :debug-pair-map="pairMap"
           />
         </div>
         <div class="ai-report-images-sep"></div>
@@ -40,7 +40,7 @@
             side="design"
             :platform="platform"
             :style-diffs="[]"
-            :debug-pair-map="{}"
+            :debug-pair-map="pairMap"
           />
         </div>
       </div>
@@ -55,6 +55,7 @@
         :active-pair="activePair"
         :hover-pair="hoverPair"
         :platform="platform"
+        fuzzy-only
         @select="(diff) => $emit('select', diff)"
         @diff-hover="(pair) => $emit('diff-hover', pair)"
       />
@@ -63,15 +64,14 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import ImagePanel from './ImagePanel.vue'
 import DiffReport from './DiffReport.vue'
 import iconDev from '@/assets/icon-dev.png'
 import iconDesign from '@/assets/icon-design.png'
 
-defineProps({
+const props = defineProps({
   reportData:          { type: Object, default: null },
-  designNodes:         { type: Array, default: () => [] },
-  devNodes:            { type: Array, default: () => [] },
   designSelectedId:    { type: String, default: null },
   devSelectedId:       { type: String, default: null },
   designHoverId:       { type: String, default: null },
@@ -82,6 +82,10 @@ defineProps({
 })
 
 defineEmits(['select', 'diff-hover'])
+
+const designNodes = computed(() => props.reportData?.designNodes ?? [])
+const devNodes    = computed(() => props.reportData?.devNodes    ?? [])
+const pairMap     = computed(() => props.reportData?.pairMap     ?? {})
 </script>
 
 <style scoped>

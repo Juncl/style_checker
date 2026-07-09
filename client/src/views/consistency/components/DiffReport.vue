@@ -12,8 +12,9 @@
       <div class="match-mode-slider" :style="sliderStyle"></div>
       <button
         ref="preciseTabRef"
-        :class="['match-mode-tab', { active: matchMode === 'precise' }]"
-        @click="matchMode = 'precise'"
+        :class="['match-mode-tab', { active: matchMode === 'precise', 'match-mode-tab--disabled': fuzzyOnly }]"
+        :disabled="fuzzyOnly"
+        @click="!fuzzyOnly && (matchMode = 'precise')"
       >精准检查</button>
       <div class="fuzzy-tab-wrap" ref="fuzzyTabWrapRef">
         <button
@@ -194,6 +195,7 @@ const props = defineProps({
   hoverPair:  { type: Object,  default: null },
   versionId:  { type: [Number, String], default: null },
   platform:   { type: String,  default: 'hmPhone' },
+  fuzzyOnly:  { type: Boolean, default: false },
 })
 const emit = defineEmits(['select', 'diff-hover'])
 
@@ -204,13 +206,13 @@ const ISSUE_GROUPS = [
   { key: 'borderWidth', label: '描边宽度' }, { key: 'borderRadius', label: '圆角' }, { key: 'shadow', label: '阴影' },
   { key: 'backdropBlur', label: '模糊' },
   { key: 'opacity', label: '不透明度' }, { key: 'padding', label: '内边距' },
-  { key: 'spacing', label: '间距' }, { key: 'fontSize.scale', label: '字体缩放' }, { key: 'other', label: '其它' },
+  { key: 'spacing', label: '间距' }, { key: 'fontSize.scale', label: '字体缩放' }, { key: 'missing', label: '缺失' }, { key: 'extra', label: '多余' }, { key: 'other', label: '其它' },
 ]
 
 const hasNoDiffs = computed(() => props.diffs.length === 0)
 
 const activeIssue      = ref('all')
-const matchMode        = ref('precise')  // 'precise'=高中置信 | 'fuzzy'=高中低
+const matchMode        = ref(props.fuzzyOnly ? 'fuzzy' : 'precise')  // 'precise'=高中置信 | 'fuzzy'=高中低
 const questionHovered  = ref(false)
 const preciseTabRef    = ref(null)
 const fuzzyTabWrapRef  = ref(null)
@@ -241,9 +243,15 @@ watch(() => props.diffs, (diffs) => {
 
 const isHighOrMedium = d => d.confidence === 'high' || d.confidence === 'medium'
 const visibleDiffs = computed(() => {
-  const list = matchMode.value === 'fuzzy'
-    ? props.diffs.filter(d => !isHighOrMedium(d))
-    : props.diffs.filter(d => isHighOrMedium(d))
+  let list
+  if (props.fuzzyOnly) {
+    // AI 报告：所有差异项都归入模糊比对
+    list = matchMode.value === 'fuzzy' ? props.diffs.slice() : []
+  } else {
+    list = matchMode.value === 'fuzzy'
+      ? props.diffs.filter(d => !isHighOrMedium(d))
+      : props.diffs.filter(d => isHighOrMedium(d))
+  }
   return list.filter(d => {
     if (!d._isResolved) return true
     return issueKey(d.property) === 'other'
@@ -477,6 +485,8 @@ function issueKey(property = '') {
   if (p === 'opacity') return 'opacity'
   if (p === 'padding') return 'padding'
   if (p === 'itemSpacing' || p.startsWith('spacing.')) return 'spacing'
+  if (p === 'missing') return 'missing'
+  if (p === 'extra')   return 'extra'
   return 'other'
 }
 function issueLabel(property) {
@@ -615,6 +625,11 @@ function issueLabel(property) {
 
 .match-mode-tab.active {
   color: var(--octo-primary);
+}
+
+.match-mode-tab--disabled {
+  color: var(--octo-text-disabled);
+  cursor: not-allowed;
 }
 
 /* ── 卡片列表 ── */
