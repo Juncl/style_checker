@@ -9,28 +9,28 @@
     </div>
 
     <!-- AI 侧边面板（与 main 同级，在布局流中推挤画布） -->
-    <AiChatDrawer :open="aiChatOpen" @close="aiChatOpen = false" @report-ready="onAiReportReady" />
+    <AiChatDrawer :open="aiChatOpen" @close="aiChatOpen = false" @report-ready="onAiReportReady" @reset-report="aiReportData = null" />
+
+    <!-- 触发按钮（悬浮，随面板展开同步移动） -->
+    <button
+      class="ai-sidebar-toggle"
+      :class="{ 'ai-sidebar-toggle--open': aiChatOpen }"
+      title="AI 检视助手"
+      @click="aiChatOpen = !aiChatOpen"
+    >
+      <svg viewBox="0 0 6 10" width="6" height="10" fill="none">
+        <path
+          :d="aiChatOpen ? 'M5 1L1 5L5 9' : 'M1 1L5 5L1 9'"
+          stroke="currentColor"
+          stroke-width="1.2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </button>
 
     <!-- 中间主区（正常模式） -->
     <main v-show="!showAiReport" class="center-panel up-board ai-main-wrap">
-
-      <!-- 触发按钮（悬浮，随面板展开同步移动） -->
-      <button
-        class="ai-sidebar-toggle"
-        :class="{ 'ai-sidebar-toggle--open': aiChatOpen }"
-        title="AI 检视助手"
-        @click="aiChatOpen = !aiChatOpen"
-      >
-        <svg viewBox="0 0 6 10" width="6" height="10" fill="none">
-          <path
-            :d="aiChatOpen ? 'M5 1L1 5L5 9' : 'M1 1L5 5L1 9'"
-            stroke="currentColor"
-            stroke-width="1.2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </button>
 
       <!-- 画布内容区（被 AI 面板推挤） -->
       <div class="ai-canvas-area">
@@ -230,7 +230,7 @@ const activeDiff      = ref(null)
 const uploadPageRef   = ref(null)
 const aiChatOpen      = ref(false)
 const aiReportData    = ref(null)
-const showAiReport    = computed(() => aiReportData.value && aiChatOpen.value)
+const showAiReport    = computed(() => !!aiReportData.value)
 
 function onAiReportReady(data) {
   aiReportData.value = data
@@ -268,7 +268,9 @@ const aiDesignHoverId    = computed(() => aiHoverPair.value?.designNodeId ?? nul
 const aiDevHoverId       = computed(() => aiHoverPair.value?.arkuiNodeId ?? null)
 
 function onAiDiffSelect(diff) {
-  aiActivePair.value = { designNodeId: diff.designNodeId, arkuiNodeId: diff.arkuiNodeId }
+  aiActivePair.value = diff
+    ? { designNodeId: diff.designNodeId, arkuiNodeId: diff.arkuiNodeId }
+    : null
 }
 function onAiDiffHover(pair) {
   aiHoverPair.value = pair
@@ -1815,12 +1817,7 @@ function onDiffSelect(diff) {
 </script>
 
 <style>
-/* AI 面板已移至 main 同级，main 恢复为 center-panel 默认的 flex column */
-.ai-main-wrap {
-  position: relative;
-}
-
-/* 画布内容区：占剩余空间，垂直 flex column */
+/* ── 画布内容区：占剩余空间，垂直 flex column ── */
 .ai-canvas-area {
   flex: 1;
   min-width: 0;
@@ -1848,12 +1845,15 @@ function onDiffSelect(diff) {
   justify-content: center;
   color: #777777;
   padding: 0;
-  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
-  /* 面板开合时 toggle 随 main 整体移动（由父级 flex 推挤驱动），无需 left 过渡 */
+  transition: left 220ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              background 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 .ai-sidebar-toggle:hover {
   background: #f5f5f5;
   color: #191919;
+}
+.ai-sidebar-toggle--open {
+  left: 374px;
 }
 
 </style>

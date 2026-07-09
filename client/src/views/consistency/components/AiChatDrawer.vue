@@ -73,6 +73,20 @@
       </div>
 
 
+      <!-- 容器 31823：精准检查提示（AI 对话完毕、/img/checker/diff 解析完成后出现） -->
+      <div v-if="showPrecisionTip" class="ai-precision-tip">
+        <div class="ai-precision-tip-title">
+          <svg class="ai-precision-tip-icon" viewBox="0 0 24 24" width="14" height="14" fill="none">
+            <circle cx="12" cy="12" r="10" fill="currentColor"/>
+            <path d="M12 6.5V13" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+            <circle cx="12" cy="16.5" r="1" fill="#fff"/>
+          </svg>
+          <span class="ai-precision-tip-title-text">精准检查提示</span>
+        </div>
+        <p class="ai-precision-tip-desc">图片对比结果仅作为参考，如需精准参数对比，请上传【JSON文件】和【设计稿传送码/链接】</p>
+        <p class="ai-precision-tip-link" @click="resetAll">需要精准检查</p>
+      </div>
+
       <!-- 输入区 -->
       <div class="ai-input-wrap">
       <div class="ai-input-area">
@@ -143,7 +157,7 @@ marked.setOptions({ breaks: true })
 const props = defineProps({
   open: { type: Boolean, default: false },
 })
-const emit = defineEmits(['close', 'report-ready'])
+const emit = defineEmits(['close', 'report-ready', 'reset-report'])
 
 function renderMd(content) {
   return DOMPurify.sanitize(marked.parse(content || ''))
@@ -185,6 +199,7 @@ const fileInput1              = ref(null)
 
 let userScrolledThink = false
 
+const showPrecisionTip = ref(false)
 const imgSlots    = ref([null, null])
 const hasBothImgs = computed(() => imgSlots.value.every(s => s))
 // 是否已有对话历史（至少有一条 assistant 回复，说明第一轮已完成）
@@ -204,6 +219,18 @@ function clearMessages() {
   messages.value = []
 }
 
+// 「需要精准检查」：清除对话历史与 AI 报告，关闭报告页并收起对话面板
+function resetAll() {
+  abortCurrentRequest()
+  streaming.value        = false
+  messages.value         = []
+  inputText.value        = ''
+  imgSlots.value         = [null, null]
+  showPrecisionTip.value = false
+  emit('reset-report')
+  emit('close')
+}
+
 async function scheduleDiffParse(markdown, savedImgs) {
   try {
     const diffResp = await fetch('/devlint/api/img/checker/diff', {
@@ -214,9 +241,10 @@ async function scheduleDiffParse(markdown, savedImgs) {
     const diffData = await diffResp.json()
     emit('report-ready', {
       ...diffData,
-      designImg: savedImgs[0],
-      devImg: savedImgs[1],
+      devImg: savedImgs[0],
+      designImg: savedImgs[1],
     })
+    showPrecisionTip.value = true
   } catch { /* 解析失败不影响聊天功能 */ }
 }
 
@@ -613,6 +641,49 @@ function parseThinkBuffer() {
   30% { transform: translateY(-4px); opacity: 1; }
 }
 
+
+/* ── 容器 31823：精准检查提示 ── */
+.ai-precision-tip {
+  flex-shrink: 0;
+  margin: 0 24px 16px 24px;
+  padding: 16px 16px 12px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: linear-gradient(90deg, #FFF4EC 0%, #FFFFFF 49.85%);
+}
+.ai-precision-tip-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  margin-bottom: 6px;
+}
+.ai-precision-tip-icon {
+  flex-shrink: 0;
+  color: #F4840C;
+}
+.ai-precision-tip-title-text {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 22px;
+  color: rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+.ai-precision-tip-desc {
+  margin: 0;
+  font-size: 13.7px;
+  font-weight: 400;
+  line-height: 22px;
+  color: rgba(0, 0, 0, 0.9);
+}
+.ai-precision-tip-link {
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+  color: var(--octo-primary, #0067D1);
+  cursor: pointer;
+}
 
 /* ── 输入区 ── */
 .ai-input-wrap {
