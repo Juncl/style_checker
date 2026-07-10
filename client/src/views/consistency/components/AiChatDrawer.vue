@@ -20,14 +20,14 @@
           :class="['ai-msg', `ai-msg--${msg.role}`]"
         >
           <!-- 带图片的用户消息 -->
-          <div v-if="msg.images && msg.images.length" class="ai-msg-with-imgs">
-            <div class="ai-msg-thumbs">
-              <div v-for="(imgSrc, j) in msg.images" :key="j" class="ai-msg-thumb-wrap">
-                <img :src="imgSrc" class="ai-msg-thumb" :alt="j === 0 ? '设计稿' : '实现图'" />
-                <span class="ai-msg-thumb-label">{{ j === 0 ? '开发' : '设计' }}</span>
+          <div v-if="msg.images && msg.images.length" class="ai-msg-img-bubble">
+            <div class="ai-msg-img-files">
+              <div v-for="(imgSrc, j) in msg.images" :key="j" class="ai-msg-img-file">
+                <img :src="imgSrc" class="ai-msg-img-file-thumb" />
+                <span class="ai-msg-img-file-name">{{ getImageFileName(j, imgSrc) }}</span>
               </div>
             </div>
-            <div v-if="msg.content" class="ai-msg-bubble ai-msg-bubble--user">{{ msg.content }}</div>
+            <div v-if="msg.content" class="ai-msg-img-text">{{ msg.content }}</div>
           </div>
           <!-- assistant 消息 -->
           <template v-else-if="msg.role === 'assistant'">
@@ -61,13 +61,15 @@
                 <path d="M2 4L6 8L10 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
               <span>思考过程</span>
-              <span v-if="!thinkDone" class="ai-think-badge">思考中</span>
             </button>
             <div ref="thinkBodyEl" class="ai-think-body" @scroll.passive="onThinkScroll">{{ streamingThink }}</div>
           </div>
           <div class="ai-msg-bubble ai-msg-streaming">
             <template v-if="streamingMain">{{ streamingMain }}</template>
-            <span v-else class="ai-typing"><i></i><i></i><i></i></span>
+            <span v-else class="ai-thinking-status">
+              <img :src="aiThinking" class="ai-thinking-icon" width="22" height="22" alt="" />
+              <span class="ai-thinking-text">思考中...</span>
+            </span>
           </div>
         </div>
       </div>
@@ -151,16 +153,23 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import clearImg from '@/assets/svg/clear-img.svg'
 import octoAi from '@/assets/svg/octo-ai.svg'
+import aiThinking from '@/assets/svg/ai-thinking.svg'
 
 marked.setOptions({ breaks: true })
 
 const props = defineProps({
   open: { type: Boolean, default: false },
 })
-const emit = defineEmits(['close', 'report-ready', 'reset-report'])
+const emit = defineEmits(['close', 'report-ready', 'reset-report', 'loading-start', 'loading-end'])
+
+function fixTableFormat(md) {
+  return md
+    .replace(/(\|[^\n]+\|)\n{2,}(\|[-\s|:]+\|)/g, '$1\n$2')
+    .replace(/(\|[-\s|:]+\|)\n{2,}(\|[^\n]+\|)/g, '$1\n$2')
+}
 
 function renderMd(content) {
-  return DOMPurify.sanitize(marked.parse(content || ''))
+  return DOMPurify.sanitize(marked.parse(fixTableFormat(content || '')))
 }
 
 // ── 请求中止 ─────────────────────────────────────────────────────────────────
@@ -171,12 +180,9 @@ function abortCurrentRequest() {
   if (currentAbortController) {
     currentAbortController.abort()
     currentAbortController = null
+    emit('loading-end')
   }
 }
-
-watch(() => props.open, (val) => {
-  if (!val) abortCurrentRequest()
-})
 
 onUnmounted(() => {
   abortCurrentRequest()
@@ -219,6 +225,13 @@ function clearMessages() {
   messages.value = []
 }
 
+function getImageFileName(index, dataUrl) {
+  const prefix = index === 0 ? '开发截图' : '设计截图'
+  const match = dataUrl.match(/^data:image\/(\w+);/)
+  const ext = match ? `.${match[1]}` : '.png'
+  return prefix + ext
+}
+
 // 「需要精准检查」：清除对话历史与 AI 报告，关闭报告页并收起对话面板
 function resetAll() {
   abortCurrentRequest()
@@ -246,6 +259,7 @@ async function scheduleDiffParse(markdown, savedImgs) {
     })
     showPrecisionTip.value = true
   } catch { /* 解析失败不影响聊天功能 */ }
+  emit('loading-end')
 }
 
 function scrollToBottom() {
@@ -383,6 +397,8 @@ async function sendMessage() {
 
   currentAbortController = new AbortController()
 
+  if (hasImgs) emit('loading-start')
+
   try {
     const response = await fetch('/devlint/api/img/checker', {
       method: 'POST',
@@ -451,13 +467,14 @@ async function sendMessage() {
       // 流式结束后，将完整 Markdown 发到 server 转成 diff JSON
       const markdown = streamingMain.value
       if (savedImgs.length === 2 && markdown) {
-        scheduleDiffParse(markdown, savedImgs)
+        await scheduleDiffParse(markdown, savedImgs)
       }
     }
   } catch (e) {
     if (e.name !== 'AbortError') {
       messages.value.push({ role: 'assistant', content: `⚠️ 请求失败：${e.message}` })
     }
+    emit('loading-end')
   } finally {
     currentAbortController        = null
     streaming.value               = false
@@ -558,12 +575,6 @@ function parseThinkBuffer() {
   transition: transform 200ms ease;
 }
 .ai-think-block--collapsed .ai-think-chevron { transform: rotate(-90deg); }
-.ai-think-badge {
-  margin-left: auto;
-  font-size: 10px; color: #999999;
-  background: rgba(0, 0, 0, 0.06);
-  padding: 1px 5px; border-radius: 3px;
-}
 .ai-think-body {
   padding: 0 10px 8px 10px;
   font-size: 12px; line-height: 21px;
@@ -583,7 +594,7 @@ function parseThinkBuffer() {
 .ai-msg-bubble {
   padding: 12px; border-radius: 16px;
   font-size: 14px; line-height: 22px;
-  word-break: break-word; white-space: pre-wrap;
+  word-break: break-word;
 }
 .ai-msg--user .ai-msg-bubble, .ai-msg-bubble--user {
   background: rgba(10, 89, 247, 0.08); color: rgba(0, 0, 0, 0.9);
@@ -594,57 +605,94 @@ function parseThinkBuffer() {
 }
 
 /* ── Markdown 渲染 ── */
-.ai-msg-md { max-width: 100%; overflow-x: auto; }
-.ai-msg-md :deep(h1), .ai-msg-md :deep(h2) {
-  font-size: 13px; font-weight: 700; color: #191919;
-  margin: 6px 0 2px; padding-bottom: 3px; border-bottom: 1px solid #e0e4ea;
-}
-.ai-msg-md :deep(h3) { font-size: 12px; font-weight: 600; color: #333; margin: 4px 0 2px; }
-.ai-msg-md :deep(p)  { margin: 2px 0; line-height: 1.65; }
-.ai-msg-md :deep(strong) { font-weight: 600; color: #191919; }
-.ai-msg-md :deep(ul), .ai-msg-md :deep(ol) { padding-left: 16px; margin: 2px 0; }
-.ai-msg-md :deep(li) { margin: 1px 0; line-height: 1.6; }
+.ai-msg-md :deep(h1),
+.ai-msg-md :deep(h2) { font-size: 15px; margin: 14px 0 8px; }
+.ai-msg-md :deep(h3) { font-size: 14px; margin: 6px 0 2px; }
+.ai-msg-md :deep(p)  { margin: 2px 0; }
 .ai-msg-md :deep(table) {
-  width: 100%; border-collapse: collapse; font-size: 11px;
-  margin: 6px 0; display: block; overflow-x: auto;
+  width: 100%; border-collapse: collapse; font-size: 12px;
+  margin: 6px 0;
 }
-.ai-msg-md :deep(th) {
-  background: #e6f2fd; color: #0067D1; font-weight: 600;
-  padding: 5px 8px; border: 1px solid #c8dff7; white-space: nowrap; text-align: left;
-}
-.ai-msg-md :deep(td) { padding: 4px 8px; border: 1px solid #dde3ea; vertical-align: top; line-height: 1.5; }
-.ai-msg-md :deep(tr:nth-child(even) td) { background: #f8fafc; }
+.ai-msg-md :deep(th),
+.ai-msg-md :deep(td) { padding: 4px 8px; border: 1px solid #dde3ea; vertical-align: top; }
+.ai-msg-md :deep(th) { text-align: left; }
+.ai-msg-md :deep(ul),
+.ai-msg-md :deep(ol) { padding-left: 16px; margin: 2px 0; }
+.ai-msg-md :deep(li) { margin: 1px 0; }
 .ai-msg-md :deep(code) {
-  background: #e8ecf0; border-radius: 3px; padding: 1px 4px; font-size: 11px; font-family: monospace;
+  background: #e8ecf0; border-radius: 3px; padding: 1px 4px; font-size: 12px; font-family: monospace;
 }
 .ai-msg-md :deep(pre) { background: #e8ecf0; border-radius: 6px; padding: 8px 10px; overflow-x: auto; margin: 6px 0; }
 .ai-msg-md :deep(pre code) { background: none; padding: 0; }
 
 /* 带图片的用户消息 */
-.ai-msg-with-imgs { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-.ai-msg-thumbs   { display: flex; gap: 6px; }
-.ai-msg-thumb-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.ai-msg-thumb {
-  width: 72px; height: 72px; object-fit: cover;
-  border-radius: 8px; border: 1px solid rgba(0,0,0,0.08);
+.ai-msg-img-bubble {
+  padding: 12px;
+  border-radius: 16px;
+  border-bottom-right-radius: 2px;
+  background: rgba(10, 89, 247, 0.08);
+  color: rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 240px;
 }
-.ai-msg-thumb-label {
-  font-size: 10px; color: #777777;
-  background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 3px;
+.ai-msg-img-text {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+  color: rgba(25, 25, 25, 1);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ai-msg-img-files {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 120px;
+}
+.ai-msg-img-file {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  position: relative;
+}
+.ai-msg-img-file-thumb {
+  width: 24px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.ai-msg-img-file-name {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 20px;
+  color: rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* 流式打字点 */
-.ai-typing { display: inline-flex; gap: 4px; align-items: center; height: 16px; }
-.ai-typing i {
-  display: inline-block; width: 5px; height: 5px;
-  border-radius: 50%; background: #999;
-  animation: ai-bounce 1.2s infinite; font-style: normal;
+/* 流式思考中状态 */
+.ai-thinking-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
 }
-.ai-typing i:nth-child(2) { animation-delay: 0.2s; }
-.ai-typing i:nth-child(3) { animation-delay: 0.4s; }
-@keyframes ai-bounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.7; }
-  30% { transform: translateY(-4px); opacity: 1; }
+.ai-thinking-icon {
+  width: 22px; height: 22px;
+  flex-shrink: 0;
+}
+.ai-thinking-text {
+  font-size: 14px;
+  line-height: 22px;
+  color: rgba(0, 0, 0, 0.6);
 }
 
 

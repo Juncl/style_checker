@@ -9,7 +9,7 @@
     </div>
 
     <!-- AI 侧边面板（与 main 同级，在布局流中推挤画布） -->
-    <AiChatDrawer :open="aiChatOpen" @close="aiChatOpen = false" @report-ready="onAiReportReady" @reset-report="aiReportData = null" />
+    <AiChatDrawer :open="aiChatOpen" @close="aiChatOpen = false" @report-ready="onAiReportReady" @reset-report="aiReportData = null" @loading-start="aiLoading = true" @loading-end="aiLoading = false" />
 
     <!-- 触发按钮（悬浮，随面板展开同步移动） -->
     <button
@@ -29,8 +29,17 @@
       </svg>
     </button>
 
-    <!-- 中间主区（正常模式） -->
-    <main v-show="!showAiReport" class="center-panel up-board ai-main-wrap">
+    <div class="ai-center-wrapper">
+      <!-- AI 分析中遮罩 -->
+      <div v-if="aiLoading" class="center-placeholder-wrapper">
+        <div class="center-placeholder">
+          <OctoLoading :size="48" />
+          <p>生成中...</p>
+        </div>
+      </div>
+
+      <!-- 中间主区（正常模式） -->
+      <main v-show="!showAiReport" class="center-panel up-board ai-main-wrap">
 
       <!-- 画布内容区（被 AI 面板推挤） -->
       <div class="ai-canvas-area">
@@ -164,6 +173,7 @@
       @select="onAiDiffSelect"
       @diff-hover="onAiDiffHover"
     />
+    </div>
 
     <div
       id="pixso_render"
@@ -228,6 +238,7 @@ const activeDiff      = ref(null)
 const uploadPageRef   = ref(null)
 const aiChatOpen      = ref(false)
 const aiReportData    = ref(null)
+const aiLoading       = ref(false)
 const showAiReport    = computed(() => !!aiReportData.value)
 
 function onAiReportReady(data) {
@@ -1793,6 +1804,14 @@ function onDiffSelect(diff) {
 </script>
 
 <style>
+/* ── AI 分析加载 + 主区/右侧面板包装 ── */
+.ai-center-wrapper {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  position: relative;
+}
+
 /* ── 画布内容区：占剩余空间，垂直 flex column ── */
 .ai-canvas-area {
   flex: 1;

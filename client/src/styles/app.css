@@ -240,7 +240,6 @@ body {
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(2px);
   z-index: 100;
-  pointer-events: none;
 }
 
 /* 图片对比区域 */
