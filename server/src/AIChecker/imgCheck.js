@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { IMG_CHECKER_SYSTEM_PROMPT } from './systemPrompts.js'
 import { DEV_ENV, VLM_CONFIG } from '../config/constants.js'
+import { compressImage } from './compressImage.js'
 
 const { model: DEFAULT_MODEL, url: VLM_API_URL, apikey: VLM_AUTH } = VLM_CONFIG[DEV_ENV]
 
@@ -24,8 +25,37 @@ export async function handleImgCheck({ model = DEFAULT_MODEL, messages, stream, 
     messages = [{ role: 'system', content: [{ type: 'text', text: IMG_CHECKER_SYSTEM_PROMPT }] }, ...messages]
   }
 
+  // 压缩所有 image_url 中的图片
+  await compressMessagesImages(messages)
+
   const finalMessages = DEV_ENV === 'OUT' ? toGLMMessages(messages) : messages
   return callAI({ model, messages: finalMessages, stream, ...rest })
+}
+
+async function compressMessagesImages(messages) {
+  let totalBefore = 0
+  let totalAfter = 0
+  for (const msg of messages) {
+    if (!Array.isArray(msg.content)) continue
+    for (const part of msg.content) {
+      if (part.type === 'image_url') {
+        const url = part.image_url?.url ?? part.image_url ?? part.url
+        if (url) {
+          totalBefore += url.length
+          const compressed = await compressImage(url)
+          totalAfter += compressed.length
+          if (part.image_url) {
+            part.image_url.url = compressed
+          } else {
+            part.url = compressed
+          }
+        }
+      }
+    }
+  }
+  if (totalBefore > 0) {
+    console.log(`[图片压缩] 合计  压缩前: ${totalBefore.toLocaleString()} 字符  →  压缩后: ${totalAfter.toLocaleString()} 字符  |  缩减 ${((1 - totalAfter / totalBefore) * 100).toFixed(1)}%`)
+  }
 }
 
 async function callAI({ model, messages, stream, ...rest }) {

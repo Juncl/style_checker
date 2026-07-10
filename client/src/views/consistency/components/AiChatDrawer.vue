@@ -92,7 +92,7 @@
       <!-- 输入区 -->
       <div class="ai-input-wrap">
       <div class="ai-input-area">
-        <div class="ai-upload-btns">
+        <div v-if="!hasSentImgs" class="ai-upload-btns">
           <template v-for="(slot, i) in imgSlots" :key="i">
             <button
               class="ai-upload-btn"
@@ -125,7 +125,7 @@
           ref="inputEl"
           v-model="inputText"
           class="ai-textarea"
-          :placeholder="'开发/设计框内支持图&图对比，及上传Json文件和传送码'"
+          :placeholder="'开发/设计框内支持图&图对比'"
           rows="3"
           :disabled="streaming"
           @keydown="onKeydown"
@@ -210,6 +210,7 @@ const imgSlots    = ref([null, null])
 const hasBothImgs = computed(() => imgSlots.value.every(s => s))
 // 是否已有对话历史（至少有一条 assistant 回复，说明第一轮已完成）
 const hasHistory  = computed(() => messages.value.some(m => m.role === 'assistant'))
+const hasSentImgs = computed(() => messages.value.some(m => m.images?.length))
 
 // 发送条件：
 //   无历史（首轮）→ 必须有两张图
@@ -375,7 +376,8 @@ async function sendMessage() {
         ],
       }
     }
-    return { role: m.role, content: [{ type: 'input_text', text: m.content }] }
+    const textType = m.role === 'assistant' ? 'text' : 'input_text'
+    return { role: m.role, content: [{ type: textType, text: m.content }] }
   })
 
   // 有图：携带图片 + 文字（注入 prompt 由后端决定）
@@ -649,7 +651,7 @@ function parseThinkBuffer() {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: 120px;
+  width: fit-content;
 }
 .ai-msg-img-file {
   display: flex;
