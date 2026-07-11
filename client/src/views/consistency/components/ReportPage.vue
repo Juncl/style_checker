@@ -126,7 +126,7 @@
     <section class="up-col up-col--dev">
 
       <div
-        :class="['up-stage', devReuploading && !devPreview && !devPreviewLoading ? '' : 'up-stage--report']"
+        :class="['up-stage', devReuploading && !devPreview ? '' : 'up-stage--report']"
         @click="devReuploading ? undefined : selectionStore.clear()"
       >
         <!-- 重新上传模式 -->
@@ -197,7 +197,7 @@
     <!-- 设计侧 -->
     <section class="up-col up-col--design">
       <div
-        :class="['up-stage', designReuploading && !designPreview && !designPreviewLoading ? '' : 'up-stage--report']"
+        :class="['up-stage', designReuploading && !designPreview ? '' : 'up-stage--report']"
         @click="designReuploading ? undefined : selectionStore.clear()"
       >
         <!-- 重新上传模式 -->

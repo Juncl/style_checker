@@ -1,5 +1,5 @@
 <template>
-  <div :class="['ai-side-panel', { 'ai-side-panel--open': open }]">
+  <div ref="panelEl" :class="['ai-side-panel', { 'ai-side-panel--open': open }]">
       <!-- 消息列表 -->
       <div ref="messagesEl" class="ai-messages">
         <div v-if="messages.length === 0 && !streaming" class="ai-empty">
@@ -201,6 +201,7 @@ const thinkDone               = ref(false)
 const streamingThinkCollapsed = ref(false)
 const messagesEl              = ref(null)
 const thinkBodyEl             = ref(null)
+const panelEl                 = ref(null)
 const fileInput0              = ref(null)
 const fileInput1              = ref(null)
 
@@ -317,7 +318,7 @@ function onFileChange(i, e) {
   const MAX_TOTAL = MAX_TOTAL_IMG_MB * 1024 * 1024
   const otherSize = imgSlots.value[i === 0 ? 1 : 0]?.size ?? 0
   if (file.size + otherSize > MAX_TOTAL) {
-    ElMessage.warning(`图片总大小不能超过${MAX_TOTAL_IMG_MB}M`)
+    ElMessage({ message: `图片总大小不能超过${MAX_TOTAL_IMG_MB}M`, type: 'warning', appendTo: panelEl.value ?? undefined, customClass: 'ai-panel-message' })
     e.target.value = ''
     return
   }
@@ -528,6 +529,7 @@ function parseThinkBuffer() {
   display: flex;
   flex-direction: column;
   background: #ffffff;
+  position: relative;
   transition: width 220ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
               box-shadow 220ms ease;
 }
@@ -877,4 +879,12 @@ function parseThinkBuffer() {
 .ai-send-btn:hover:not(:disabled) { opacity: 0.85; }
 .ai-send-btn:disabled { cursor: not-allowed; opacity: 0.4; }
 .ai-send-icon { display: block; }
+</style>
+
+<style>
+/* ElMessage 挂载到对话侧板栏内部时的定位覆盖（非 scoped，作用于动态创建的 message 元素） */
+.ai-panel-message.el-message {
+  position: absolute;
+  top: 16px;
+}
 </style>
