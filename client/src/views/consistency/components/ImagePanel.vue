@@ -35,20 +35,28 @@
             {{ isSpacingInspector ? (highlightPair.label || '间距') : (inspectorNode?.textContent || inspectorNode?.name) }}
           </span>
           <span v-if="debugStore.debugMode && !isSpacingInspector" class="inspector-badge">{{ inspectorNode?.rawType || inspectorNode?.type }}</span>
-          <button
+          <el-tooltip
             v-if="!isSpacingInspector && editMode"
-            class="inspector-add-btn"
-            :disabled="showPendingRow"
-            title="添加自定义对比项"
-            @click.stop="showPendingRow = true"
-            @pointerdown.stop
+            content="备注"
+            placement="top"
+            effect="light"
+            :offset="11"
+            :show-arrow="true"
+            popper-class="inspector-add-tip-popper"
           >
-            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M2.76 10.0501L11.5567 1.25678C12.3433 0.466778 13.62 0.470111 14.4067 1.25678C15.1967 2.04344 15.1967 3.32011 14.4067 4.11011L5.61333 12.9034L1 14.6668L2.76 10.0501Z" stroke="currentColor" stroke-linejoin="round" stroke-width="1"/>
-              <path d="M10.8833 1.92676L13.7333 4.77676" stroke="currentColor" stroke-linecap="square" stroke-width="1"/>
-              <path d="M8.33325 14.8333L14.3333 14.8333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
-            </svg>
-          </button>
+            <button
+              class="inspector-add-btn"
+              :disabled="showPendingRow"
+              @click.stop="showPendingRow = true"
+              @pointerdown.stop
+            >
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2.76 10.0501L11.5567 1.25678C12.3433 0.466778 13.62 0.470111 14.4067 1.25678C15.1967 2.04344 15.1967 3.32011 14.4067 4.11011L5.61333 12.9034L1 14.6668L2.76 10.0501Z" stroke="currentColor" stroke-linejoin="round" stroke-width="1"/>
+                <path d="M10.8833 1.92676L13.7333 4.77676" stroke="currentColor" stroke-linecap="square" stroke-width="1"/>
+                <path d="M8.33325 14.8333L14.3333 14.8333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
+              </svg>
+            </button>
+          </el-tooltip>
         </div>
         <div class="inspector-body">
           <!-- 间距模式 -->
@@ -76,7 +84,7 @@
               <span class="prop-key">{{ item.label }}</span>
               <span :class="['prop-val', item.truncate && 'prop-val--truncate']" :title="item.truncate ? item.val : undefined">
                 <span v-if="item.color" class="color-dot" :style="{ background: item.color }"></span>
-                {{ item.val }}
+                <span class="prop-val-text">{{ item.val }}</span>
               </span>
             </div>
             <!-- 已保存的人工属性行（只读 + 删除按钮） -->
@@ -97,7 +105,7 @@
             <!-- 待确认的新行（编辑中） -->
             <div v-if="showPendingRow" class="extra-edit-panel" @click.stop>
               <div class="prop-row prop-row--extra">
-                <el-select v-model="pendingKey" class="extra-select" popper-class="extra-select-popper" placeholder="属性">
+                <el-select v-model="pendingKey" class="extra-select" popper-class="extra-select-popper" placeholder="请选择">
                   <el-option
                     v-for="opt in extraRowOptions"
                     :key="opt.value"
@@ -110,9 +118,9 @@
                     v-model="pendingValue"
                     class="extra-input"
                     :class="{ 'extra-input--error': extraError }"
-                    :placeholder="getInputPlaceholder(pendingKey)"
+                    :placeholder="'请输入内容'"
                   />
-                  <span v-if="extraError" class="extra-error-tip">{{ extraError }}</span>
+                  <span class="extra-error-tip">{{ extraError }}</span>
                 </div>
               </div>
               <div class="extra-actions">
