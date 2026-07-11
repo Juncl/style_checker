@@ -149,6 +149,7 @@
 
 <script setup>
 import { ref, computed, nextTick, watch, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import clearImg from '@/assets/svg/clear-img.svg'
@@ -206,6 +207,8 @@ const fileInput1              = ref(null)
 let userScrolledThink = false
 
 const showPrecisionTip = ref(false)
+// 两张图片总大小上限（MB），后续可按测试结果调整
+const MAX_TOTAL_IMG_MB = 16
 const imgSlots    = ref([null, null])
 const hasBothImgs = computed(() => imgSlots.value.every(s => s))
 // 是否已有对话历史（至少有一条 assistant 回复，说明第一轮已完成）
@@ -311,10 +314,17 @@ function triggerUpload(i) {
 function onFileChange(i, e) {
   const file = e.target.files?.[0]
   if (!file) return
+  const MAX_TOTAL = MAX_TOTAL_IMG_MB * 1024 * 1024
+  const otherSize = imgSlots.value[i === 0 ? 1 : 0]?.size ?? 0
+  if (file.size + otherSize > MAX_TOTAL) {
+    ElMessage.warning(`图片总大小不能超过${MAX_TOTAL_IMG_MB}M`)
+    e.target.value = ''
+    return
+  }
   const reader = new FileReader()
   reader.onload = ev => {
     const slots = [...imgSlots.value]
-    slots[i] = { preview: ev.target.result }
+    slots[i] = { preview: ev.target.result, size: file.size }
     imgSlots.value = slots
   }
   reader.readAsDataURL(file)
