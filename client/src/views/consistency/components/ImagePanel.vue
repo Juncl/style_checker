@@ -42,6 +42,7 @@
             effect="light"
             :offset="11"
             :show-arrow="true"
+            :disabled="showPendingRow"
             popper-class="inspector-add-tip-popper"
           >
             <button

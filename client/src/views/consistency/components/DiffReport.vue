@@ -206,7 +206,7 @@ const ISSUE_GROUPS = [
   { key: 'borderWidth', label: '描边宽度' }, { key: 'borderRadius', label: '圆角' }, { key: 'shadow', label: '阴影' },
   { key: 'backdropBlur', label: '模糊' },
   { key: 'opacity', label: '不透明度' }, { key: 'padding', label: '内边距' },
-  { key: 'spacing', label: '间距' }, { key: 'fontSize.scale', label: '字体缩放' }, { key: 'missing', label: '缺失' }, { key: 'extra', label: '多余' }, { key: 'other', label: '其它' },
+  { key: 'spacing', label: '间距' }, { key: 'fontSize.scale', label: '字体缩放' }, { key: 'missing', label: '缺失' }, { key: 'extra', label: '多余' }, { key: 'other', label: '其他' },
 ]
 
 const hasNoDiffs = computed(() => props.diffs.length === 0)
@@ -494,7 +494,7 @@ function issueLabel(property) {
   if (property === 'spacing.left') return '横向间距'
   const key = issueKey(property)
   if (key === '__ignored__') return '对齐'
-  return ISSUE_GROUPS.find(g => g.key === key)?.label || '其它'
+  return ISSUE_GROUPS.find(g => g.key === key)?.label || '其他'
 }
 </script>
 
