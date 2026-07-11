@@ -204,7 +204,7 @@ import { ADMIN_BASE_URL } from '../../api/adminEnv.ts'
 import {
   formatDateTime, fileToBase64, fileToText, buildProblems, adaptLegacyProblem, jsonToFile, resolveImageFile,
   isBlankLikeNode, isInteractiveImageNode, isSelectableNode, resolveSelectableNode, getUserAccount, inIframe,
-  useDebounceLoading,
+  useDebounceLoading, computeSpacingMarks,
 } from '../utils/tools.ts'
 import { initApp } from './init/index'
 import { UXLINT_CHECKLIST_EVENT } from './init/detectIframe'
@@ -572,70 +572,6 @@ const designNodes = computed(() => result.value?.allDesignNodes ?? [])
 const allArkuiNodes = computed(() => result.value?.allArkuiNodes ?? [])
 
 // ── hover 实时间距计算 ────────────────────────────────────────────────────────
-
-// rectA/rectB：画布渲染坐标（缩放后），用于计算 spaceRect 位置
-// sizeA/sizeB：展示数值坐标（原始 dp 或 vp），用于计算标注上显示的数字
-function computeSpacingMarks(rectA, rectB, sizeA, sizeB) {
-  if (!rectA || !rectB) return []
-  const a = rectA, b = rectB
-  const sa = sizeA || rectA, sb = sizeB || rectB
-
-  const aContainsB = a.x <= b.x && a.y <= b.y && (a.x + a.w) >= (b.x + b.w) && (a.y + a.h) >= (b.y + b.h)
-  const bContainsA = b.x <= a.x && b.y <= a.y && (b.x + b.w) >= (a.x + a.w) && (b.y + b.h) >= (a.y + a.h)
-  const overlapsH  = a.x < b.x + b.w && b.x < a.x + a.w
-  const overlapsV  = a.y < b.y + b.h && b.y < a.y + a.h
-
-  if (overlapsH && overlapsV && !aContainsB && !bContainsA) return []
-
-  const marks = []
-
-  if (aContainsB || bContainsA) {
-    const p  = aContainsB ? a : b,  sp = aContainsB ? sa : sb
-    const c  = aContainsB ? b : a,  sc = aContainsB ? sb : sa
-    const top    = c.y - p.y,         sTop    = sc.y - sp.y
-    const bottom = (p.y + p.h) - (c.y + c.h), sBottom = (sp.y + sp.h) - (sc.y + sc.h)
-    const left   = c.x - p.x,         sLeft   = sc.x - sp.x
-    const right  = (p.x + p.w) - (c.x + c.w), sRight  = (sp.x + sp.w) - (sc.x + sc.w)
-    if (top    > 0) marks.push({ type: 'spacing', axis: 'vertical',   spaceRect: { x: c.x, y: p.y,        w: c.w, h: top    }, value: String(Math.round(sTop))    })
-    if (bottom > 0) marks.push({ type: 'spacing', axis: 'vertical',   spaceRect: { x: c.x, y: c.y + c.h, w: c.w, h: bottom }, value: String(Math.round(sBottom)) })
-    if (left   > 0) marks.push({ type: 'spacing', axis: 'horizontal', spaceRect: { x: p.x, y: c.y,        w: left,  h: c.h  }, value: String(Math.round(sLeft))   })
-    if (right  > 0) marks.push({ type: 'spacing', axis: 'horizontal', spaceRect: { x: c.x + c.w, y: c.y, w: right, h: c.h  }, value: String(Math.round(sRight))  })
-  } else {
-    if (!overlapsH) {
-      const lR = a.x + a.w <= b.x ? a : b, slR = lR === a ? sa : sb
-      const rR = lR === a ? b : a,           srR = lR === a ? sb : sa
-      const yTop = Math.max(lR.y, rR.y), yBot = Math.min(lR.y + lR.h, rR.y + rR.h)
-      const y = yTop < yBot ? yTop : Math.min(lR.y, rR.y)
-      const h = yTop < yBot ? (yBot - yTop) : Math.max(lR.h, rR.h)
-      const yMid = y + h / 2
-      const sGap = srR.x - (slR.x + slR.w)
-      marks.push({
-        type: 'spacing', axis: 'horizontal',
-        spaceRect: { x: lR.x + lR.w, y, w: rR.x - (lR.x + lR.w), h },
-        capFirst:  { start: Math.min(lR.y, yMid), end: Math.max(lR.y + lR.h, yMid) },
-        capSecond: { start: Math.min(rR.y, yMid), end: Math.max(rR.y + rR.h, yMid) },
-        value: String(Math.round(sGap)),
-      })
-    }
-    if (!overlapsV) {
-      const tR = a.y + a.h <= b.y ? a : b, stR = tR === a ? sa : sb
-      const bR = tR === a ? b : a,           sbR = tR === a ? sb : sa
-      const xLeft = Math.max(tR.x, bR.x), xRight = Math.min(tR.x + tR.w, bR.x + bR.w)
-      const x = xLeft < xRight ? xLeft : Math.min(tR.x, bR.x)
-      const w = xLeft < xRight ? (xRight - xLeft) : Math.max(tR.w, bR.w)
-      const xMid = x + w / 2
-      const sGap = sbR.y - (stR.y + stR.h)
-      marks.push({
-        type: 'spacing', axis: 'vertical',
-        spaceRect: { x, y: tR.y + tR.h, w, h: bR.y - (tR.y + tR.h) },
-        capFirst:  { start: Math.min(tR.x, xMid), end: Math.max(tR.x + tR.w, xMid) },
-        capSecond: { start: Math.min(bR.x, xMid), end: Math.max(bR.x + bR.w, xMid) },
-        value: String(Math.round(sGap)),
-      })
-    }
-  }
-  return marks
-}
 
 const hoverArkuiSpacingMarks = computed(() => {
   const selNode = selectionStore.selectedPair?.arkui

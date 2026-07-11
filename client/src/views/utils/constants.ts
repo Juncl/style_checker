@@ -44,10 +44,3 @@ export const CONTAINER_STYLE_OPTIONS = [
   { value: 'opacity',         label: '不透明度' },
   { value: 'other',           label: '其他' },
 ]
-
-export const FILE_SLOTS = [
-  { key: 'designJson',  label: 'design.json', required: true,  match: (f: File) => /design/i.test(f.name) && f.name.endsWith('.json') },
-  { key: 'arkuiJson',   label: 'arkui.json',  required: true,  match: (f: File) => /arkui/i.test(f.name)  && (f.name.endsWith('.json') || f.name.endsWith('.dump')) },
-  { key: 'designImage', label: 'design 图片', required: false, match: (f: File) => /design/i.test(f.name) && f.type.startsWith('image/') },
-  { key: 'arkuiImage',  label: 'arkui 图片',  required: true,  match: (f: File) => /arkui/i.test(f.name)  && f.type.startsWith('image/') },
-]

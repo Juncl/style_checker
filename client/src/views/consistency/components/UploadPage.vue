@@ -73,10 +73,8 @@ import ImagePanel from './ImagePanel.vue'
 import DevUploadCard from './DevUploadCard.vue'
 import DesignUploadCard from './DesignUploadCard.vue'
 import OctoLoading from './common/OctoLoading.vue'
-import { useDebugStore } from '../../../stores/debug'
 import { usePlatformStore } from '../../../stores'
 
-const debugStore = useDebugStore()
 const platformStore = usePlatformStore()
 
 const props = defineProps({

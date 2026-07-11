@@ -134,31 +134,6 @@ function validateMultiNum(key: string, s: string): ValidateResult {
   return { ok: true }
 }
 
-// ── 输入提示（placeholder）────────────────────────────────────────────────────
-
-const PLACEHOLDER_MAP: Record<string, string> = {
-  fontSize:        '如 14',
-  fontWeight:      '如 400 或 bold',
-  fontColor:       '如 #FF0000',
-  fontFamily:      '如 HarmonyOS Sans',
-  textAlign:       'left / center / right',
-  lineHeight:      '如 20',
-  letterSpacing:   '如 0 或 -0.5',
-  backgroundColor: '如 #FFFFFF 或 #80FFFFFF',
-  opacity:         '0-1，如 0.5',
-  borderRadius:    '如 8 或 8/4/8/4',
-  borderWidth:     '如 1',
-  borderColor:     '如 #CCCCCC',
-  padding:         '如 16 或 8/16/8/16',
-  itemSpacing:     '如 8',
-  shadow:          '如 0 2 4 #00000040',
-  blur:            '如 4',
-}
-
-export function getInputPlaceholder(key: string): string {
-  return PLACEHOLDER_MAP[key] ?? ''
-}
-
 // ── 值解析（字符串 → style 内部格式）────────────────────────────────────────
 
 /**
@@ -220,24 +195,4 @@ export function getNodeStyleRawValue(node: SimpleNode, key: string): any {
   if (key === 'borderWidth') return s.border?.width
   if (key === 'borderColor') return s.border?.color
   return s[key]
-}
-
-// ── 节点 style patch（浅副本，不改原对象）────────────────────────────────────
-
-/**
- * 返回一份 patched style 副本，将 key 对应的字段替换为 parsedVal。
- * 调用方只需将返回值赋给 node.style 的副本，不会修改原始节点。
- */
-export function patchNodeStyle(node: SimpleNode, key: string, parsedVal: any): Record<string, any> {
-  const s = { ...(node.style ?? {}) }
-
-  if (key === 'borderWidth' || key === 'borderColor') {
-    // 嵌套在 style.border 对象里
-    const borderField = key === 'borderWidth' ? 'width' : 'color'
-    s.border = { ...(s.border ?? {}), [borderField]: parsedVal }
-  } else {
-    s[key] = parsedVal
-  }
-
-  return s
 }

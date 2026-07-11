@@ -144,7 +144,7 @@
 import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { toWebColorDisplay } from '../../utils/tools.ts'
 import { TEXT_STYLE_OPTIONS, CONTAINER_STYLE_OPTIONS } from '../../utils/constants'
-import { validateOverrideInput, getInputPlaceholder, parseOverrideValue } from '../match/overrideValidator'
+import { validateOverrideInput, parseOverrideValue } from '../match/overrideValidator'
 import '../../../styles/image-panel.css'
 import { useDebugStore } from '../../../stores/debug'
 
