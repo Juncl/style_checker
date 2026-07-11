@@ -152,7 +152,7 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
   const nearestInDir = (nodes, anchorRect, dir, filter) => {
     let best = null, bestD = Infinity
     for (const n of nodes) {
-      if (relation(n.rect, anchorRect) !== dir) continue
+      if (relation(n.rect, anchorRect, n.type) !== dir) continue
       if (filter && !filter(n)) continue
       const d = dirDist(n.rect, anchorRect, dir)
       if (d < bestD) { bestD = d; best = n }

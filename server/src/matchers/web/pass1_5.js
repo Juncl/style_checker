@@ -8,14 +8,14 @@ import { MatchTools } from '../tools.js'
 export function matchByAnchorContain(anchors, availDev, availDesign, ctx) {
   const consistentWithAnchors = (an, dn) => anchors.every(s => {
     if (s.arkui.id === an.id || s.design.id === dn.id) return true
-    return rectContains(an.rect, s.arkui.rect) === rectContains(dn.rect, s.design.rect)
+    return rectContains(an.rect, s.arkui.rect, an.type) === rectContains(dn.rect, s.design.rect, dn.type)
   })
 
   const candidates = []
   for (const anchor of anchors) {
     const aHm = anchor.arkui, aDe = anchor.design
-    const devAnc = availDev.filter(n => hasVisualDecoration(n) && relation(n.rect, aHm.rect) === 'contain')
-    const designAnc = availDesign.filter(n => hasVisualDecoration(n) && relation(n.rect, aDe.rect) === 'contain')
+    const devAnc = availDev.filter(n => hasVisualDecoration(n) && relation(n.rect, aHm.rect, n.type) === 'contain')
+    const designAnc = availDesign.filter(n => hasVisualDecoration(n) && relation(n.rect, aDe.rect, n.type) === 'contain')
     for (const an of devAnc) {
       let best = null
       for (const dn of designAnc) {

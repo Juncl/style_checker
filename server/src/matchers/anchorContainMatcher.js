@@ -15,14 +15,14 @@ export function matchByAnchorContain(anchors, availArkui, availDesign, ctx) {
   // 双向包含一致性：an/dn 对每个锚点的「包 / 不包」必须两侧完全一致
   const consistentWithAnchors = (an, dn) => anchors.every(s => {
     if (s.arkui.id === an.id || s.design.id === dn.id) return true
-    return rectContains(an.rect, s.arkui.rect) === rectContains(dn.rect, s.design.rect)
+    return rectContains(an.rect, s.arkui.rect, an.type) === rectContains(dn.rect, s.design.rect, dn.type)
   })
 
   const candidates = []
   for (const anchor of anchors) {
     const aHm = anchor.arkui, aDe = anchor.design
-    const arkuiAnc = availArkui.filter(n => hasVisualDecoration(n) && relation(n.rect, aHm.rect) === 'contain')
-    const designAnc = availDesign.filter(n => hasVisualDecoration(n) && relation(n.rect, aDe.rect) === 'contain')
+    const arkuiAnc = availArkui.filter(n => hasVisualDecoration(n) && relation(n.rect, aHm.rect, n.type) === 'contain')
+    const designAnc = availDesign.filter(n => hasVisualDecoration(n) && relation(n.rect, aDe.rect, n.type) === 'contain')
     for (const an of arkuiAnc) {
       let best = null
       for (const dn of designAnc) {

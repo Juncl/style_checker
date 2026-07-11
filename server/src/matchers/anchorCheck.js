@@ -24,7 +24,9 @@ export const EPS = 0.5
 export const center = MatchTools.center
 
 // outer 是否包住 inner（四边都留 EPS 容差，避免浮点误差导致边缘节点漏判）
-export function rectContains(outer, inner) {
+// outerType：包含方（outer）的节点类型；为 'text' 时禁止其作为包含方，直接判不包含
+export function rectContains(outer, inner, outerType) {
+  if (outerType === 'text') return false
   return outer.x <= inner.x + EPS &&
          outer.y <= inner.y + EPS &&
          outer.x + outer.w >= inner.x + inner.w - EPS &&
@@ -51,16 +53,21 @@ const yOverlap = (a, b) => Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) >
  *   'contain_by' 交叠/node面积 ≥ 90%（anchor 包住 node，锚点是大容器时的场景）
  *   'disjoint'   交叠/min(两者面积) ≤ 10%（基本脱离）
  *   'cross'      其余（局部交叠，pass3 视为模糊情况不处理）
+ *
+ * nodeType / anchorType：两侧节点类型。文本类型节点不允许作为包含方——
+ *   node 为 text 时不返回 'contain'（node 包 anchor 被禁），
+ *   anchor 为 text 时不返回 'contain_by'（anchor 包 node 被禁），
+ *   一旦几何上已构成包含却因文本被禁，直接降级为 'disjoint'（脱离），而非 'cross'。
  */
-export function nodeAnchorRelation(nodeRect, anchorRect) {
+export function nodeAnchorRelation(nodeRect, anchorRect, nodeType, anchorType) {
   const ix = Math.max(0, Math.min(nodeRect.x + nodeRect.w, anchorRect.x + anchorRect.w) - Math.max(nodeRect.x, anchorRect.x))
   const iy = Math.max(0, Math.min(nodeRect.y + nodeRect.h, anchorRect.y + anchorRect.h) - Math.max(nodeRect.y, anchorRect.y))
   const inter = ix * iy
   const anchorArea = anchorRect.w * anchorRect.h
   const nodeArea   = nodeRect.w * nodeRect.h
   if (anchorArea <= 0 || nodeArea <= 0) return 'disjoint'
-  if (inter / anchorArea >= 0.9) return 'contain'
-  if (inter / nodeArea   >= 0.9) return 'contain_by'
+  if (inter / anchorArea >= 0.9) return nodeType === 'text' ? 'disjoint' : 'contain'
+  if (inter / nodeArea   >= 0.9) return anchorType === 'text' ? 'disjoint' : 'contain_by'
   if (inter / Math.min(anchorArea, nodeArea) <= 0.1) return 'disjoint'
   return 'cross'
 }
@@ -78,9 +85,11 @@ export function nodeAnchorRelation(nodeRect, anchorRect) {
  *   'up'/'down'          本体脱离 + x 投影有重叠（同列带）
  *   'diagonal'           本体脱离但斜对角
  *   null                 相交但非包含
+ *
+ * nodeType：包含方（node）的节点类型；为 'text' 时禁止其作为包含方，不返回 'contain'。
  */
-export function relation(nodeRect, anchorRect) {
-  if (rectContains(nodeRect, anchorRect)) return 'contain'
+export function relation(nodeRect, anchorRect, nodeType) {
+  if (rectContains(nodeRect, anchorRect, nodeType)) return 'contain'
   if (!rectsDisjoint(nodeRect, anchorRect)) return null
   const nc = center(nodeRect), ac = center(anchorRect)
   if (yOverlap(nodeRect, anchorRect)) return nc.x < ac.x ? 'left' : 'right'
@@ -116,14 +125,14 @@ export function makeAnchorCheck(containSet, dirSet) {
     // 门①：四态包含一致
     for (const s of containSet) {
       if (s.arkui.id === an.id || s.design.id === dn.id) continue
-      if (nodeAnchorRelation(an.rect, s.arkui.rect) !== nodeAnchorRelation(dn.rect, s.design.rect)) return false
+      if (nodeAnchorRelation(an.rect, s.arkui.rect, an.type, s.arkui.type) !== nodeAnchorRelation(dn.rect, s.design.rect, dn.type, s.design.type)) return false
     }
     // 门②：方向不得反向矛盾
     for (const s of dirSet) {
       if (s.arkui.id === an.id || s.design.id === dn.id) continue
-      const ra = relation(an.rect, s.arkui.rect)
+      const ra = relation(an.rect, s.arkui.rect, an.type)
       if (ra === null || ra === 'contain') continue   // 相交或包含，放行
-      const rd = relation(dn.rect, s.design.rect)
+      const rd = relation(dn.rect, s.design.rect, dn.type)
       if (rd === null) return false                   // 一侧脱离、另一侧相交 → 矛盾
       if (rd === OPPOSITE[ra]) return false           // 方向正相反 → 矛盾
     }

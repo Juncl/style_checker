@@ -57,7 +57,7 @@ function computeAnchorEntries(devNode, highPairs) {
     devAnchor:   s.arkui,
     deAnchor:    s.design,
     dist:        euclidDist(devNode, s.arkui),
-    devRelation: nodeAnchorRelation(devNode.rect, s.arkui.rect),
+    devRelation: nodeAnchorRelation(devNode.rect, s.arkui.rect, devNode.type, s.arkui.type),
   }))
   entries.sort((a, b) => a.dist - b.dist)
   return entries
@@ -69,7 +69,7 @@ function isUntrusted(pair, anchorEntries) {
   // 包含一致性：任意一个锚点四态关系不一致 → 不可信
   for (const { devAnchor, deAnchor, devRelation } of anchorEntries) {
     if (devAnchor.id === an.id || deAnchor.id === dn.id) continue
-    if (devRelation !== nodeAnchorRelation(dn.rect, deAnchor.rect)) return true
+    if (devRelation !== nodeAnchorRelation(dn.rect, deAnchor.rect, dn.type, deAnchor.type)) return true
   }
 
   // 方位一致性：八方位差 ≥ 3 的锚点比例 > 50% → 不可信
@@ -101,7 +101,7 @@ function blindMatch(rematchDev, rematchDesign, nodeAnchorData, textMatchResult, 
       const dirDev = octant(cx(devNode), cy(devNode), cx(devAnchor), cy(devAnchor))
       return rematchDesign.filter(dn => {
         if (dn.type !== devNode.type) return false
-        if (nodeAnchorRelation(dn.rect, deAnchor.rect) !== devRelation) return false
+        if (nodeAnchorRelation(dn.rect, deAnchor.rect, dn.type, deAnchor.type) !== devRelation) return false
         const dirDe = octant(cx(dn), cy(dn), cx(deAnchor), cy(deAnchor))
         return octantDist(dirDev, dirDe) < 3
       })
