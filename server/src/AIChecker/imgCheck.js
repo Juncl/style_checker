@@ -5,13 +5,6 @@ import { compressImage } from './compressImage.js'
 
 const { model: DEFAULT_MODEL, url: VLM_API_URL, apikey: VLM_AUTH } = VLM_CONFIG[DEV_ENV]
 
-// 检测 messages 中是否携带图片（任意一条 user 消息含 image_url）
-function messagesHaveImage(messages) {
-  return messages.some(m =>
-    Array.isArray(m.content) && m.content.some(c => c.type === 'image_url')
-  )
-}
-
 export async function handleImgCheck({ model = DEFAULT_MODEL, messages, stream, ...rest }) {
   if (!messages) {
     const err = new Error('缺少参数！')
@@ -19,9 +12,8 @@ export async function handleImgCheck({ model = DEFAULT_MODEL, messages, stream, 
     throw err
   }
 
-  // 有图片 → 注入系统 Prompt（首轮对比或追加新图）
-  // 无图片 → 纯文字追问，直接透传，不注入 Prompt
-  if (messagesHaveImage(messages) && (!messages[0] || messages[0].role !== 'system')) {
+  // 每次对话都注入系统 Prompt
+  if (!messages[0] || messages[0].role !== 'system') {
     messages = [{ role: 'system', content: [{ type: 'text', text: IMG_CHECKER_SYSTEM_PROMPT }] }, ...messages]
   }
 
@@ -67,7 +59,12 @@ async function callAI({ model, messages, stream, ...rest }) {
       'Content-Type': 'application/json',
       'Authorization': VLM_AUTH,
     },
-    data: JSON.stringify({ model, messages, stream, ...rest }),
+    data: JSON.stringify({
+      model,
+      messages,
+      stream,
+      max_output_tokens: 3200
+    }),
     responseType: stream ? 'stream' : 'json',
   })
   return response.data
@@ -107,6 +104,9 @@ const PROP_LABEL_TO_KEY = {
   多余: 'extra',
 }
 
+// 清理元素列中坐标文本的正则（中英文括号 + 裸露坐标块）
+const RECT_CLEANUP_RE = /\s*(?:[（(][^）)]*[）)]|[设实]:[\d.,]+(?:;[设实]:[\d.,]+)?)/g
+
 // 提取 Markdown 表格：返回从某个标题行之后、连续以 | 开头的表格数据行（已去掉表头与分隔行）
 function extractTableRows(lines, startIdx) {
   const rows = []
@@ -141,13 +141,17 @@ function extractTextContent(elementCell = '') {
 // 也支持仅设计侧 (设:x,y,w,h) 或仅实现侧 (实:x,y,w,h)（缺失/多余节点）
 function extractRects(elementCell = '') {
   // 中文全角标点 → 英文半角，统一处理
+  // 同时容错 AI 可能输出的多字标签 → 单字
   const norm = String(elementCell)
     .replace(/[：]/g, ':')
     .replace(/[；]/g, ';')
-    .replace(/[，]/g, ',')
+    .replace(/[，、]/g, ',')
     .replace(/[（）]/g, m => m === '（' ? '(' : ')')
+    .replace(/[．]/g, '.')
+    // 容错多字标签：设计侧/设计/实现侧/实现/开发侧/开发 → 设/实
+    .replace(/(设计侧|设计)\s*:/g, '设:')
+    .replace(/(实现侧|实现|开发侧|开发)\s*:/g, '实:')
 
-  // 单个坐标块的正则（设:x,y,w,h 或 实:x,y,w,h）
   const BLOCK = /([设实]):\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*/g
   const blocks = [...norm.matchAll(BLOCK)]
 
@@ -200,8 +204,8 @@ function parseDiffTable(rows, severity, diffIdx) {
       description: suggestion.trim() || normVal(arkuiVal),
       nodeType: null,
       textContent: extractTextContent(element),
-      designName: element.replace(/\s*\([设实]:[^)]+\)?/g, '').trim(),
-      arkuiName: element.replace(/\s*\([设实]:[^)]+\)?/g, '').trim(),
+      designName: element.replace(RECT_CLEANUP_RE, '').trim(),
+      arkuiName: element.replace(RECT_CLEANUP_RE, '').trim(),
       matchType: 'ai-visual',
       confidence: severity === 'warning' ? 'low' : 'high',
       iou: null,
@@ -234,7 +238,7 @@ function parseMissingExtraTable(rows, diffIdx) {
 
     const rects = extractRects(element)
     const idx = diffIdx.val++
-    const name = element.replace(/\s*\([设实]:[^)]+\)?/g, '').trim()
+    const name = element.replace(RECT_CLEANUP_RE, '').trim()
 
     diffs.push({
       property: isMissing ? 'missing' : 'extra',

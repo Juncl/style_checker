@@ -9,25 +9,7 @@
     </div>
 
     <!-- AI 侧边面板（与 main 同级，在布局流中推挤画布） -->
-    <AiChatDrawer :open="aiChatOpen" @close="aiChatOpen = false" @report-ready="onAiReportReady" @reset-report="aiReportData = null" @loading-start="aiLoading = true" @loading-end="aiLoading = false" />
-
-    <!-- 触发按钮（悬浮，随面板展开同步移动） -->
-    <button
-      class="ai-sidebar-toggle"
-      :class="{ 'ai-sidebar-toggle--open': aiChatOpen }"
-      title="AI 检视助手"
-      @click="aiChatOpen = !aiChatOpen"
-    >
-      <svg viewBox="0 0 6 10" width="6" height="10" fill="none">
-        <path
-          :d="aiChatOpen ? 'M5 1L1 5L5 9' : 'M1 1L5 5L1 9'"
-          stroke="currentColor"
-          stroke-width="1.2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
-    </button>
+    <AiChatDrawer :open="aiChatOpen" @close="aiChatOpen = false" @toggle="aiChatOpen = !aiChatOpen" @report-ready="onAiReportReady" @reset-report="aiReportData = null" @loading-start="aiLoading = true" @loading-end="aiLoading = false" />
 
     <div class="ai-center-wrapper">
       <!-- AI 分析中遮罩 -->
@@ -41,84 +23,84 @@
       <!-- 中间主区（正常模式） -->
       <main v-show="!showAiReport" class="center-panel up-board ai-main-wrap">
 
-      <!-- 画布内容区（被 AI 面板推挤） -->
-      <div class="ai-canvas-area">
-      <ConsistencyTabbar
-        :view-mode="result ? 'report' : 'upload'"
-        :deliverables="deliverables"
-        :selected-deliverable="workingDeliverable"
-        :pages="pages"
-        :selected-page="workingPage"
-        :dev-preview="devPreview"
-        :dev-preview-loading="devPreviewLoading"
-        :design-preview="designPreview"
-        :design-preview-loading="designPreviewLoading"
-        :dev-reuploading="devReuploading"
-        :design-reuploading="designReuploading"
-        @select-deliverable="onSelectDeliverable"
-        @select-page="onSelectPage"
-        @add-page="onAddPage"
-        @clear-dev-preview="clearDevPreview"
-        @clear-design-preview="clearDesignPreview"
-        @recheck-dev="recheckDev"
-        @recheck-design="recheckDesign"
-        @replace-design="onReplaceDesign"
-        @page-renamed="onPageRenamed"
-      />
+        <!-- 画布内容区（被 AI 面板推挤） -->
+        <div class="ai-canvas-area">
+        <ConsistencyTabbar
+          :view-mode="result ? 'report' : 'upload'"
+          :deliverables="deliverables"
+          :selected-deliverable="workingDeliverable"
+          :pages="pages"
+          :selected-page="workingPage"
+          :dev-preview="devPreview"
+          :dev-preview-loading="devPreviewLoading"
+          :design-preview="designPreview"
+          :design-preview-loading="designPreviewLoading"
+          :dev-reuploading="devReuploading"
+          :design-reuploading="designReuploading"
+          @select-deliverable="onSelectDeliverable"
+          @select-page="onSelectPage"
+          @add-page="onAddPage"
+          @clear-dev-preview="clearDevPreview"
+          @clear-design-preview="clearDesignPreview"
+          @recheck-dev="recheckDev"
+          @recheck-design="recheckDesign"
+          @replace-design="onReplaceDesign"
+          @page-renamed="onPageRenamed"
+        />
 
-      <UploadPage
-        v-if="!result"
-        ref="uploadPageRef"
-        :upload-files="uploadFiles"
-        :dev-preview="devPreview"
-        :design-preview="designPreview"
-        :dev-preview-loading="devPreviewLoading"
-        :design-preview-loading="designPreviewLoading"
-        :blob-dev-src="blobUrls.arkui"
-        :blob-design-src="blobUrls.design"
-        @step-picked="onStepPicked"
-      />
+        <UploadPage
+          v-if="!result"
+          ref="uploadPageRef"
+          :upload-files="uploadFiles"
+          :dev-preview="devPreview"
+          :design-preview="designPreview"
+          :dev-preview-loading="devPreviewLoading"
+          :design-preview-loading="designPreviewLoading"
+          :blob-dev-src="blobUrls.arkui"
+          :blob-design-src="blobUrls.design"
+          @step-picked="onStepPicked"
+        />
 
-      <ReportPage
-        v-if="result"
-        ref="reportPageRef"
-        :result="result"
-        :arkui-img-src="arkuiImgSrc"
-        :design-img-src="designImgSrc"
-        :design-nodes="designNodes"
-        :all-arkui-nodes="allArkuiNodes"
-        :arkui-nodes="arkuiNodes"
-        :active-diff="activeDiff"
-        :debug-pair-items="debugPairItems"
-        :debug-pair-map="debugPairMap"
-        :selected-design-diffs="selectedDesignDiffs"
-        :selected-arkui-diffs="selectedArkuiDiffs"
-        :selected-case="selectedCase"
-        :case-names="CASE_NAMES"
-        :dev-reuploading="devReuploading"
-        :design-reuploading="designReuploading"
-        :dev-preview="devPreview"
-        :dev-preview-loading="devPreviewLoading"
-        :design-preview="designPreview"
-        :design-preview-loading="designPreviewLoading"
-        :blob-dev-src="blobUrls.arkui"
-        :blob-design-src="blobUrls.design"
-        :upload-files="uploadFiles"
-        :hovered-arkui-cross-id="hoveredArkuiCrossId"
-        :hovered-design-cross-id="hoveredDesignCrossId"
-        :hover-arkui-spacing-marks="hoverArkuiSpacingMarks"
-        :hover-design-spacing-marks="hoverDesignSpacingMarks"
-        @select-case="selectCase"
-        @arkui-node-click="onArkuiNodeClick"
-        @design-node-click="onDesignNodeClick"
-        @step-picked="onStepPicked"
-        @arkui-hover="onArkuiHover"
-        @design-hover="onDesignHover"
-        @save-manual-style="onSaveManualStyle"
-        @remove-manual-style="onRemoveManualStyle"
-      />
-      </div>
-    </main>
+        <ReportPage
+          v-if="result"
+          ref="reportPageRef"
+          :result="result"
+          :arkui-img-src="arkuiImgSrc"
+          :design-img-src="designImgSrc"
+          :design-nodes="designNodes"
+          :all-arkui-nodes="allArkuiNodes"
+          :arkui-nodes="arkuiNodes"
+          :active-diff="activeDiff"
+          :debug-pair-items="debugPairItems"
+          :debug-pair-map="debugPairMap"
+          :selected-design-diffs="selectedDesignDiffs"
+          :selected-arkui-diffs="selectedArkuiDiffs"
+          :selected-case="selectedCase"
+          :case-names="CASE_NAMES"
+          :dev-reuploading="devReuploading"
+          :design-reuploading="designReuploading"
+          :dev-preview="devPreview"
+          :dev-preview-loading="devPreviewLoading"
+          :design-preview="designPreview"
+          :design-preview-loading="designPreviewLoading"
+          :blob-dev-src="blobUrls.arkui"
+          :blob-design-src="blobUrls.design"
+          :upload-files="uploadFiles"
+          :hovered-arkui-cross-id="hoveredArkuiCrossId"
+          :hovered-design-cross-id="hoveredDesignCrossId"
+          :hover-arkui-spacing-marks="hoverArkuiSpacingMarks"
+          :hover-design-spacing-marks="hoverDesignSpacingMarks"
+          @select-case="selectCase"
+          @arkui-node-click="onArkuiNodeClick"
+          @design-node-click="onDesignNodeClick"
+          @step-picked="onStepPicked"
+          @arkui-hover="onArkuiHover"
+          @design-hover="onDesignHover"
+          @save-manual-style="onSaveManualStyle"
+          @remove-manual-style="onRemoveManualStyle"
+        />
+        </div>
+      </main>
 
     <!-- 右侧面板（正常模式） -->
     <aside v-show="!showAiReport" class="right-panel up-right-panel" style="position: relative;">
@@ -1755,36 +1737,6 @@ function onDiffSelect(diff) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-/* 触发按钮：悬浮定位，随面板宽度过渡同步移动 */
-.ai-sidebar-toggle {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 12px;
-  height: 48px;
-  background: #ffffff;
-  border: 1px solid #DFDFDF;
-  border-left: none;
-  border-radius: 0 4px 4px 0;
-  cursor: pointer;
-  z-index: 101;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #777777;
-  padding: 0;
-  transition: left 220ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
-              background 150ms ease, color 150ms ease, border-color 150ms ease;
-}
-.ai-sidebar-toggle:hover {
-  background: #f5f5f5;
-  color: #191919;
-}
-.ai-sidebar-toggle--open {
-  left: 374px;
 }
 
 </style>

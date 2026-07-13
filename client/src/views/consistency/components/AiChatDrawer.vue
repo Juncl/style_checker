@@ -1,5 +1,6 @@
 <template>
-  <div ref="panelEl" :class="['ai-side-panel', { 'ai-side-panel--open': open }]">
+  <div class="ai-side-panel-outer" :class="{ 'ai-side-panel-outer--resizing': isResizing }" :style="open ? { width: panelWidth + 'px' } : {}">
+    <div ref="panelEl" :class="['ai-side-panel', { 'ai-side-panel--open': open }]">
       <!-- 消息列表 -->
       <div ref="messagesEl" class="ai-messages">
         <div v-if="messages.length === 0 && !streaming" class="ai-empty">
@@ -144,6 +145,25 @@
       <!-- 隐藏的 file input -->
       <input ref="fileInput0" type="file" accept="image/*" style="display:none" @change="e => onFileChange(0, e)" />
       <input ref="fileInput1" type="file" accept="image/*" style="display:none" @change="e => onFileChange(1, e)" />
+
+      <div v-if="open" class="ai-resize-handle" @mousedown="onResizeStart" />
+    </div>
+    <button
+      class="ai-sidebar-toggle"
+      :class="{ 'ai-sidebar-toggle--open': open }"
+      title="AI 检视助手"
+      @click="$emit('toggle')"
+    >
+      <svg viewBox="0 0 6 10" width="6" height="10" fill="none">
+        <path
+          :d="open ? 'M5 1L1 5L5 9' : 'M1 1L5 5L1 9'"
+          stroke="currentColor"
+          stroke-width="1.2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </button>
   </div>
 </template>
 
@@ -161,7 +181,7 @@ marked.setOptions({ breaks: true })
 const props = defineProps({
   open: { type: Boolean, default: false },
 })
-const emit = defineEmits(['close', 'report-ready', 'reset-report', 'loading-start', 'loading-end'])
+const emit = defineEmits(['close', 'report-ready', 'reset-report', 'loading-start', 'loading-end', 'toggle'])
 
 function fixTableFormat(md) {
   return md
@@ -187,6 +207,7 @@ function abortCurrentRequest() {
 
 onUnmounted(() => {
   abortCurrentRequest()
+  if (resizeCleanup) resizeCleanup()
 })
 
 // ── 消息状态 ─────────────────────────────────────────────────────────────────
@@ -204,6 +225,35 @@ const thinkBodyEl             = ref(null)
 const panelEl                 = ref(null)
 const fileInput0              = ref(null)
 const fileInput1              = ref(null)
+const panelWidth              = ref(374)
+const isResizing              = ref(false)
+let resizeCleanup             = null
+
+function onResizeStart(e) {
+  e.preventDefault()
+  isResizing.value = true
+  document.body.style.userSelect = 'none'
+  const startX = e.clientX
+  const startWidth = panelWidth.value
+
+  const onMove = (ev) => {
+    const delta = ev.clientX - startX
+    const maxW = Math.max(374, window.innerWidth / 2.8)
+    panelWidth.value = Math.min(Math.max(startWidth + delta, 374), maxW)
+  }
+
+  const onUp = () => {
+    isResizing.value = false
+    document.body.style.userSelect = ''
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    resizeCleanup = null
+  }
+
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  resizeCleanup = onUp
+}
 
 let userScrolledThink = false
 
@@ -387,13 +437,12 @@ async function sendMessage() {
         ],
       }
     }
-    const textType = m.role === 'assistant' ? 'text' : 'input_text'
-    return { role: m.role, content: [{ type: textType, text: m.content }] }
+
+    return { role: m.role, content: [{ type: "text", text: m.content }] }
   })
 
-  // 有图：携带图片 + 文字（注入 prompt 由后端决定）
-  // 无图：纯文字追问（后端不注入 prompt）
-    const currentContent = hasImgs
+  // 首轮对比：携带图片 + 文字；追问：纯文字
+  const currentContent = hasImgs
     ? [
         { type: 'input_text', text: text || '请对比两张图' },
         { type: 'text', text: '图片1: 开发实现图' },
@@ -401,7 +450,7 @@ async function sendMessage() {
         { type: 'text', text: '图片2: 设计基准图' },
         { type: 'image_url', image_url: { url: currentImgSrcs[1] } },
       ]
-    : [{ type: 'input_text', text }]
+    : [{ type: 'text', text }]
 
   const apiMessages = [
     ...historyText,
@@ -520,22 +569,45 @@ function parseThinkBuffer() {
 </script>
 
 <style scoped>
-/* ── 侧边面板主体（在布局流中占位，宽度过渡推挤画布） ── */
-.ai-side-panel {
+/* ── 外层包装器（控制宽度/过渡，为 toggle 提供定位基准） ── */
+.ai-side-panel-outer {
   flex-shrink: 0;
+  height: 100%;
   width: 0;
+  position: relative;
+  transition: width 220ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.ai-side-panel-outer--resizing {
+  transition: none !important;
+}
+
+/* ── 内层面板（overflow / 视觉样式） ── */
+.ai-side-panel {
+  width: 100%;
   height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   background: #ffffff;
-  position: relative;
-  transition: width 220ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
-              box-shadow 220ms ease;
+  border-right: 1px solid var(--octo-border-separator, #e8eaed);
 }
 .ai-side-panel--open {
-  width: 374px;
-  border-right: 1px solid var(--octo-border-separator, #e8eaed);
+  /* 保留类名，无额外样式 */
+}
+
+.ai-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 150ms ease;
+}
+.ai-resize-handle:hover {
+  background: transparent;
 }
 
 
@@ -879,6 +951,35 @@ function parseThinkBuffer() {
 .ai-send-btn:hover:not(:disabled) { opacity: 0.85; }
 .ai-send-btn:disabled { cursor: not-allowed; opacity: 0.4; }
 .ai-send-icon { display: block; }
+
+/* ── 面板开关按钮（跟随面板右边缘） ── */
+.ai-sidebar-toggle {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 48px;
+  background: #ffffff;
+  border: 1px solid #DFDFDF;
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+  cursor: pointer;
+  z-index: 101;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #777777;
+  padding: 0;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+.ai-sidebar-toggle:hover {
+  background: #f5f5f5;
+  color: #191919;
+}
+.ai-sidebar-toggle--open {
+  /* 保留类名，无额外样式 */
+}
 </style>
 
 <style>

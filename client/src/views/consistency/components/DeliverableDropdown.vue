@@ -1,12 +1,12 @@
 <template>
-  <div class="deliverable-dropdown" ref="dropdownRef">
+  <div class="deliverable-dropdown" :class="{ 'is-page-dropdown': isPage }" ref="dropdownRef">
     <div class="deliverable-trigger" @click.stop="toggleOpen">
       <span class="deliverable-trigger-sep">/</span>
       <span class="deliverable-trigger-text" :title="selected?.name ?? placeholder">{{ selected?.name ?? placeholder }}</span>
       <el-icon class="deliverable-trigger-arrow" :class="{ 'is-open': open }"><ArrowDown /></el-icon>
     </div>
     <Teleport to="body">
-      <div v-show="open" ref="panelRef" class="deliverable-panel" :style="panelStyle">
+      <div v-show="open" ref="panelRef" class="deliverable-panel" :class="{ 'is-page-panel': isPage }" :style="panelStyle">
         <div v-if="showAddButton" class="deliverable-add-btn" @click="onAdd">
           <el-icon class="deliverable-add-icon"><Plus /></el-icon>
           <span>{{ addButtonText }}</span>
@@ -19,14 +19,14 @@
           class="deliverable-item"
           :class="{
             'is-selected': String(selected?.id) === String(item.id),
-            'is-editing': allowEdit && editingId === item.id,
+            'is-editing': isPage && editingId === item.id,
           }"
           @click="onSelect(item)"
         >
           <img v-if="item.devBase64Data" :src="item.devBase64Data" class="deliverable-thumb" />
 
           <!-- 编辑模式 -->
-          <template v-if="allowEdit && editingId === item.id">
+          <template v-if="isPage && editingId === item.id">
             <input
               :ref="el => { if (el) editInputEl = el }"
               v-model="editingName"
@@ -36,7 +36,7 @@
               @keydown.esc.prevent="cancelEdit"
             />
             <span
-              class="deliverable-action-btn"
+              class="deliverable-action-btn deliverable-confirm-trigger"
               :class="{ 'is-disabled': !editingName.trim() || editingName === item.name }"
               @click.stop="onConfirmEdit(item)"
             >
@@ -50,12 +50,14 @@
           <template v-else>
             <span class="deliverable-item-name" :title="item.name">{{ item.name }}</span>
             <span
-              v-if="allowEdit"
+              v-if="isPage"
               class="deliverable-action-btn deliverable-edit-trigger"
               @click.stop="onEditClick(item)"
             >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M9.5 2L12 4.5M2 12L2.5 9.5L9.5 2L12 4.5L4.5 11.5L2 12Z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2.76 10.0501L11.5567 1.25678C12.3433 0.466778 13.62 0.470111 14.4067 1.25678C15.1967 2.04344 15.1967 3.32011 14.4067 4.11011L5.61333 12.9034L1 14.6668L2.76 10.0501Z" fill-rule="nonzero" stroke="currentColor" stroke-linejoin="round" stroke-width="1"/>
+                <path d="M10.8833 1.92676L13.7333 4.77676" stroke="currentColor" stroke-linecap="square" stroke-width="1"/>
+                <path d="M8.33325 14.8333L14.3333 14.8333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1"/>
               </svg>
             </span>
           </template>
@@ -76,7 +78,7 @@ const props = defineProps({
   emptyText:      { type: String,  default: '暂无数据' },
   showAddButton:  { type: Boolean, default: false },
   addButtonText:  { type: String,  default: '新增页面' },
-  allowEdit:      { type: Boolean, default: false },
+  isPage:         { type: Boolean, default: false },
 })
 const emit = defineEmits(['select', 'add', 'edit-item'])
 
@@ -105,7 +107,7 @@ function toggleOpen() {
 }
 
 function onSelect(item) {
-  if (props.allowEdit && editingId.value === item.id) return
+  if (props.isPage && editingId.value === item.id) return
   if (String(item.id) === String(props.selected?.id)) {
     open.value = false
     editingId.value = null
@@ -248,9 +250,13 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   cursor: default;
 }
 
+.deliverable-panel.is-page-panel .deliverable-item {
+  height: 56px;
+}
+
 .deliverable-thumb {
-  width: 20px;
-  height: 28px;
+  width: 40px;
+  height: 48px;
   border-radius: 3px;
   object-fit: cover;
   flex-shrink: 0;
@@ -275,13 +281,15 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
 /* 编辑 input */
 .deliverable-item-input {
-  flex: 1;
-  min-width: 0;
-  height: 26px;
+  flex: 1 1 124px;
+  width: 124px;
+  min-width: 124px;
+  box-sizing: border-box;
+  height: 32px;
   padding: 0 6px;
   border: 1px solid #0067D1;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: 8px;
+  font-size: 14px;
   color: #191919;
   outline: none;
   background: #fff;
@@ -306,8 +314,12 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   background: #E6F2FD;
 }
 .deliverable-action-btn.is-disabled {
-  color: #BFBFBF;
+  color: #c9c9c9;
   cursor: not-allowed;
+}
+
+.deliverable-confirm-trigger:not(.is-disabled) {
+  color: var(--octo-primary, #0067D1);
 }
 
 /* 编辑触发 icon：平时隐藏，hover item 时出现 */
@@ -356,7 +368,7 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
 .deliverable-separator {
   height: 1px;
-  background: rgba(223, 223, 223, 1);
+  background: transparent;
   margin: 2px 0;
   flex-shrink: 0;
 }

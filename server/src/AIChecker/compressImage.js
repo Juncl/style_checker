@@ -21,7 +21,7 @@ export async function compressImage(dataUrl) {
   const out = await sharp(buf).webp().toBuffer()
   const outB64 = out.toString('base64')
 
-  console.log(`[图片压缩] ${mime}  |  压缩前: ${b64.length.toLocaleString()} 字符  →  压缩后: ${outB64.length.toLocaleString()} 字符  |  缩减 ${((1 - outB64.length / b64.length) * 100).toFixed(1)}%`)
+  // console.log(`[图片压缩] ${mime}  |  压缩前: ${b64.length.toLocaleString()} 字符  →  压缩后: ${outB64.length.toLocaleString()} 字符  |  缩减 ${((1 - outB64.length / b64.length) * 100).toFixed(1)}%`)
 
   return `data:image/webp;base64,${outB64}`
 }
