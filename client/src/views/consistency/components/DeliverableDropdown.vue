@@ -50,7 +50,7 @@
           <template v-else>
             <span class="deliverable-item-name" :title="item.name">{{ item.name }}</span>
             <span
-              v-if="isPage"
+              v-if="isPage && debugStore.debugMode"
               class="deliverable-action-btn deliverable-edit-trigger"
               @click.stop="onEditClick(item)"
             >
@@ -70,6 +70,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { ArrowDown, Plus } from '@element-plus/icons-vue'
+import { useDebugStore } from '@/stores/debug'
 
 const props = defineProps({
   items:          { type: Array,   default: () => [] },
@@ -81,6 +82,7 @@ const props = defineProps({
   isPage:         { type: Boolean, default: false },
 })
 const emit = defineEmits(['select', 'add', 'edit-item'])
+const debugStore = useDebugStore()
 
 const open        = ref(false)
 const dropdownRef = ref(null)

@@ -31,6 +31,13 @@ export function fileToText(file: File | null | undefined): Promise<string> {
   })
 }
 
+// 字节转可读大小（KB/MB）
+export function formatFileSize(bytes: number): string {
+  const kb = bytes / 1024
+  if (kb >= 1024) return (kb / 1024).toFixed(3) + 'MB'
+  return kb.toFixed(3) + 'KB'
+}
+
 // Base64 DataURL → File 对象
 export function base64ToFile(base64: string, filename: string): File {
   const [meta, data] = base64.split(',')

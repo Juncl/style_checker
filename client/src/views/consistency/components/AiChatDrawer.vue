@@ -115,9 +115,7 @@
               </template>
             </button>
             <span v-if="i === 0" class="ai-switch-icon">
-              <svg viewBox="0 0 16 16" width="16" height="16" fill="none">
-                <path d="M1 5.68915L14.9992 5.68915L11.1043 1.83325M15 10.3333L1 10.3333L4.89497 14.1892" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="0.9"/>
-              </svg>
+              <img :src="arrowRight" width="16" height="16" />
             </span>
           </template>
         </div>
@@ -151,7 +149,6 @@
     <button
       class="ai-sidebar-toggle"
       :class="{ 'ai-sidebar-toggle--open': open }"
-      title="AI 检视助手"
       @click="$emit('toggle')"
     >
       <svg viewBox="0 0 6 10" width="6" height="10" fill="none">
@@ -175,6 +172,11 @@ import DOMPurify from 'dompurify'
 import clearImg from '@/assets/svg/clear-img.svg'
 import octoAi from '@/assets/svg/octo-ai.svg'
 import aiThinking from '@/assets/svg/ai-thinking.svg'
+import arrowRight from '@/assets/svg/arrow_right.svg'
+import { reportInteraction } from '../../utils-inner/report'
+import { usePlatformStore } from '../../../stores'
+import { inIframe, formatFileSize } from '../../utils/tools'
+import { AI_CHECKER_BASE_URL } from '../../../api/adminEnv'
 
 marked.setOptions({ breaks: true })
 
@@ -182,6 +184,7 @@ const props = defineProps({
   open: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close', 'report-ready', 'reset-report', 'loading-start', 'loading-end', 'toggle'])
+const platformStore = usePlatformStore()
 
 function fixTableFormat(md) {
   return md
@@ -301,7 +304,7 @@ function resetAll() {
 
 async function scheduleDiffParse(markdown, savedImgs) {
   try {
-    const diffResp = await fetch('/devlint/api/img/checker/diff', {
+    const diffResp = await fetch(`${AI_CHECKER_BASE_URL}/img/checker/diff`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ markdown }),
@@ -313,6 +316,16 @@ async function scheduleDiffParse(markdown, savedImgs) {
       designImg: savedImgs[1],
     })
     showPrecisionTip.value = true
+    try {
+      const diffCount = (diffData.diffs ?? []).length
+      const devImgSize = formatFileSize((savedImgs[0].split(',')[1]?.length ?? 0) * 0.75)
+      const designImgSize = formatFileSize((savedImgs[1].split(',')[1]?.length ?? 0) * 0.75)
+      reportInteraction({
+        name: 'devlint',
+        event: 'AIChecker',
+        extend: { diffCount, devImgSize, designImgSize, platform: platformStore.currentPlatform, isFrom: inIframe() ? 'hiscenario' : 'octo' },
+      })
+    } catch { /* 打点失败不影响主流程 */ }
   } catch { /* 解析失败不影响聊天功能 */ }
   emit('loading-end')
 }
@@ -462,7 +475,7 @@ async function sendMessage() {
   if (hasImgs) emit('loading-start')
 
   try {
-    const response = await fetch('/devlint/api/img/checker', {
+    const response = await fetch(`${AI_CHECKER_BASE_URL}/img/checker`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: apiMessages, stream: true }),
@@ -525,6 +538,17 @@ async function sendMessage() {
         thinkContent: streamingThink.value || null,
         thinkCollapsed: true,
       })
+
+      // 追加轮次（无新图片）：打点记录追问内容
+      if (savedImgs.length !== 2) {
+        try {
+          reportInteraction({
+            name: 'devlint',
+            event: 'AICheckerAppend',
+            extend: { appendText: text.slice(0, 200), platform: platformStore.currentPlatform, isFrom: inIframe() ? 'hiscenario' : 'octo' },
+          })
+        } catch { /* 打点失败不影响主流程 */ }
+      }
 
       // 流式结束后，将完整 Markdown 发到 server 转成 diff JSON
       const markdown = streamingMain.value
@@ -601,7 +625,7 @@ function parseThinkBuffer() {
   right: 0;
   width: 6px;
   height: 100%;
-  cursor: col-resize;
+  cursor: ew-resize;
   z-index: 10;
   background: transparent;
   transition: background 150ms ease;
@@ -979,6 +1003,9 @@ function parseThinkBuffer() {
 }
 .ai-sidebar-toggle--open {
   /* 保留类名，无额外样式 */
+}
+.ai-sidebar-toggle--open svg {
+  transform: translateX(-1px);
 }
 </style>
 

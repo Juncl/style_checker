@@ -284,6 +284,8 @@ import { normalizeSelection } from '../match/normalizeSelection.ts'
 import { matchNodes } from '../../../api/index.ts'
 import { useCanvasModeStore, useSelectionStore, usePlatformStore, useTempResultStore, useSelectNodesStore } from '../../../stores'
 import { useDebugStore } from '../../../stores/debug'
+import { reportInteraction } from '../../utils-inner/report'
+import { inIframe } from '../../utils/tools'
 
 const props = defineProps({
   result:               { type: Object,  required: true },
@@ -324,6 +326,7 @@ const emit = defineEmits([
   'compare-nodes',
   'save-manual-style',
   'remove-manual-style',
+  'clear-active-diff',
 ])
 
 const canvasMode = useCanvasModeStore()
@@ -458,6 +461,7 @@ function onDevBgClick() {
     if (selectBranchMode.value === 'select-tempPairs') { clearCompare(); selectionStore.clear() }
   } else {
     selectionStore.clear()
+    emit('clear-active-diff')
   }
 }
 function onDesignBgClick() {
@@ -466,6 +470,7 @@ function onDesignBgClick() {
     if (selectBranchMode.value === 'select-tempPairs') { clearCompare(); selectionStore.clear() }
   } else {
     selectionStore.clear()
+    emit('clear-active-diff')
   }
 }
 
@@ -520,6 +525,15 @@ async function runCompare() {
       }
     }).filter(Boolean)
     tempResultStore.setResult(diffs, tempPairs)
+    const errorlist = { all: diffs.length }
+    for (const d of diffs) {
+      errorlist[d.property] = (errorlist[d.property] || 0) + 1
+    }
+    reportInteraction({
+      name: 'clickCompare',
+      event: 'clickCompare',
+      extend: { errorlist, platform: platformStore.currentPlatform, isFrom: inIframe() ? 'hiscenario' : 'octo' },
+    })
   } catch (e) {
     ElMessage.error(`对比失败：${e.response?.data?.error || e.message}`)
   }

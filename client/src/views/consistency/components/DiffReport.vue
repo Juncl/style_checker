@@ -676,13 +676,11 @@ function issueLabel(property) {
 }
 
 .diff-card.selected {
-  background: var(--octo-surface-selected);
-  border-color: var(--octo-primary);
+  background: var(--octo-primary-subtle);
 }
 
 .diff-card.active-from-node {
   background: var(--octo-primary-subtle);
-  border-color: var(--octo-primary);
 }
 
 .diff-card.hover-from-node {
@@ -716,7 +714,7 @@ function issueLabel(property) {
   background: rgba(208, 216, 253, 0.50);
   color: #1F55B5;
   border-radius: 4px;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 20px;
   white-space: nowrap;
 }
@@ -787,18 +785,18 @@ function issueLabel(property) {
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.06);
   padding: 4px;
-  min-width: 80px;
+  min-width: 64px;
 }
 
 .more-menu-item {
   display: block;
   width: 100%;
   padding: 6px 12px;
-  text-align: left;
+  text-align: center;
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--octo-text-primary);
   border-radius: 4px;
   transition: background 150ms ease;
@@ -929,6 +927,7 @@ function issueLabel(property) {
   border-radius: 2px;
   border: 1px solid rgba(0, 0, 0, 0.12);
   flex-shrink: 0;
+  margin-top: 3px;
 }
 
 /* ── 模糊比对 tooltip ── */

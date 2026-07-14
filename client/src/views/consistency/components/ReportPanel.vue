@@ -230,7 +230,7 @@ const treeSelectedId = computed(() =>
   height: 32px;
   padding: 4px 16px;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   font-size: 14px;
   color: #fff;
   background: var(--octo-primary);

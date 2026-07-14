@@ -226,6 +226,9 @@
   color: #191919;
   line-height: 22px;
 }
+.extra-select .el-select__placeholder {
+  color: #191919;
+}
 .extra-select .el-input__inner::placeholder {
   color: #AEAEAE;
 }
@@ -438,7 +441,7 @@
 .inspector--design .prop-row.diff-weak .prop-val {
   color: var(--report-design-color);
   background: var(--report-design-bg);
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .prop-val--truncate {

@@ -98,6 +98,7 @@
           @design-hover="onDesignHover"
           @save-manual-style="onSaveManualStyle"
           @remove-manual-style="onRemoveManualStyle"
+          @clear-active-diff="activeDiff = null"
         />
         </div>
       </main>
@@ -887,8 +888,11 @@ async function triggerDevPreview(files) {
       files.arkuiImage ?? null,
       platformStore.currentPlatform,
     )
-  } catch { /* 静默失败 */ }
-  finally { devPreviewLoading.value = false }
+  } catch (e) {
+    /* 静默失败 */
+  } finally {
+    devPreviewLoading.value = false
+  }
 }
 
 async function triggerDesignPreview(files) {
@@ -901,8 +905,11 @@ async function triggerDesignPreview(files) {
       platformStore.currentPlatform,
       devPreview.value?.canvas?.w,
     )
-  } catch { /* 静默失败 */ }
-  finally { designPreviewLoading.value = false }
+  } catch (e) {
+    /* 静默失败 */
+  } finally {
+    designPreviewLoading.value = false
+  }
 }
 
 function onAddPage() {
@@ -1069,6 +1076,24 @@ async function onSave() {
       setUrlParams({ deliverableId: String(dId), pageId: String(pageId) })
     }
     ElMessage.success('存储成功')
+    try {
+      const manualDiffs = (result.value?.diffs ?? []).filter(d => d._isManual)
+      const nodeIds = new Set()
+      for (const d of manualDiffs) {
+        if (d.arkuiNodeId) nodeIds.add(`arkui:${d.arkuiNodeId}`)
+        if (d.designNodeId) nodeIds.add(`design:${d.designNodeId}`)
+      }
+      const manualAttr = { nodeCount: nodeIds.size, totalCount: manualDiffs.length, otherCount: manualDiffs.filter(d => !builtinStyleKeys.has(d.property)).length }
+      const manualDiff = { all: manualDiffs.length }
+      for (const d of manualDiffs) {
+        manualDiff[d.property] = (manualDiff[d.property] || 0) + 1
+      }
+      reportInteraction({
+        name: 'devlint',
+        event: 'ManualSave',
+        extend: { manualAttr, manualDiff, platform: platformStore.currentPlatform, isFrom: inIframe() ? 'hiscenario' : 'octo' },
+      })
+    } catch { /* 打点失败不影响主流程 */ }
   } catch (e) {
     console.error('存储失败', e)
     ElMessage.error('存储失败')
@@ -1339,7 +1364,7 @@ async function selectCase(id) {
     reportInteraction({
       name: 'selectCase',
       event: 'selectCase',
-      extend: { user: getUserAccount(), curTime: new Date().toISOString(), caseName: id, platform: platformStore.currentPlatform, isFrom: inIframe() ? 'hiscenario' : 'octo' },
+      extend: { caseName: id, platform: platformStore.currentPlatform, isFrom: inIframe() ? 'hiscenario' : 'octo' },
     })
 
     const rawDesignJson = data._rawDesignJson
@@ -1536,20 +1561,16 @@ async function onSelectPage(page) {
 
 async function onHistoryView(item) {
   await historyDebounce.run(async () => {
-    const dId = workingDeliverable.value?.id
-  const pId = workingPage.value?.id
-  if (!dId || !pId) return
-  workingVersionId.value = item.id ? String(item.id) : null
-  setUrlParams({ deliverableId: String(dId), pageId: String(pId) })
-  loading.value = true
-  try {
-    await loadHistoryVersion(item, workingPage.value?.deviceType ?? platformStore.currentPlatform)
-  } catch (e) {
-    console.error('加载历史版本失败', e)
-    ElMessage.warning('加载历史版本失败')
-  } finally {
-    loading.value = false
-  }
+    workingVersionId.value = item.id ? String(item.id) : null
+    loading.value = true
+    try {
+      await loadHistoryVersion(item, workingPage.value?.deviceType ?? platformStore.currentPlatform)
+    } catch (e) {
+      console.error('加载历史版本失败', e)
+      ElMessage.warning('加载历史版本失败')
+    } finally {
+      loading.value = false
+    }
   })
 }
 
