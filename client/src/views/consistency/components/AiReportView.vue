@@ -48,6 +48,9 @@
     <aside class="ai-report-diff-panel">
       <div class="up-tabbar up-tabbar--report">
         <span class="report-tab-title">分析结果</span>
+        <div class="report-links">
+          <button class="report-link" @click="$emit('exit')">退出</button>
+        </div>
       </div>
       <DiffReport
         :diffs="reportData.diffs"
@@ -56,6 +59,7 @@
         :hover-pair="hoverPair"
         :platform="platform"
         fuzzy-only
+        :show-more-menu="false"
         @select="(diff) => $emit('select', diff)"
         @diff-hover="(pair) => $emit('diff-hover', pair)"
       />
@@ -81,7 +85,7 @@ const props = defineProps({
   platform:            { type: String, required: true },
 })
 
-defineEmits(['select', 'diff-hover'])
+defineEmits(['select', 'diff-hover', 'exit'])
 
 const designNodes = computed(() => props.reportData?.designNodes ?? [])
 const devNodes    = computed(() => props.reportData?.devNodes    ?? [])

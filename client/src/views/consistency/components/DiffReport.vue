@@ -91,7 +91,7 @@
           </div>
           <span class="diff-card-ops">
             <span v-if="notIssueKeys.has(foldKey(d))" class="not-issue-tag">非问题</span>
-            <span class="diff-card-more" @click.stop="toggleMoreMenu(foldKey(d))">
+            <span v-if="showMoreMenu" class="diff-card-more" @click.stop="toggleMoreMenu(foldKey(d))">
               <svg viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <circle cx="1.667" cy="8" r="1" fill="rgb(25,25,25)" />
                 <circle cx="8" cy="8" r="1" fill="rgb(25,25,25)" />
@@ -150,7 +150,7 @@ import { ref, computed, watch, nextTick, onMounted, defineComponent, h } from 'v
 import { Search, CircleCheck, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { updateConsistencyCheckProblem } from '../../../api/api.ts'
-import { toWebColorDisplay } from '../../utils/tools.ts'
+import { toWebColorDisplay, useDebounceLoading } from '../../utils/tools.ts'
 import noproblemSvg from '../../../assets/svg/noproblem.svg'
 import { useDebugStore } from '../../../stores/debug'
 
@@ -196,6 +196,7 @@ const props = defineProps({
   versionId:    { type: [Number, String], default: null },
   platform:     { type: String,  default: 'hmPhone' },
   fuzzyOnly:    { type: Boolean, default: false },
+  showMoreMenu: { type: Boolean, default: true },
   deselectTick: { type: Number,  default: 0 },
 })
 const emit = defineEmits(['select', 'diff-hover'])
@@ -233,6 +234,7 @@ const listRef          = ref(null)
 const folded           = ref(new Set())
 const activeMoreCardKey = ref(null)
 const notIssueKeys     = ref(new Set())
+const notIssueDebounce = useDebounceLoading()
 
 // 当 diffs 变化时，根据数据中的 _isNotProblem 重建非问题标记（不保留旧值）
 watch(() => props.diffs, (diffs) => {
@@ -419,28 +421,31 @@ async function toggleNotIssue(key) {
   if (!diff) return
   const isMarked = notIssueKeys.value.has(key)
   const isNotProblem = isMarked ? 0 : 1
-  try {
+  // 防抖：loading 期间阻止重复调用
+  await notIssueDebounce.run(async () => {
     const problemId = diff._problemId || `${diff.arkuiNodeId}-${diff.property}`
-    await updateConsistencyCheckProblem({
-      id:           problemId,
-      versionId:    props.versionId,
-      key:          diff.nodeType || 'container',
-      desc:         diff.description || '',
-      type:         diff.property,
-      isNotProblem,
-    })
-    const next = new Set(notIssueKeys.value)
-    if (isMarked) {
-      next.delete(key)
-    } else {
-      next.add(key)
+    try {
+      await updateConsistencyCheckProblem({
+        id:           problemId,
+        versionId:    props.versionId,
+        key:          diff.nodeType || 'container',
+        desc:         diff.description || '',
+        type:         diff.property,
+        isNotProblem,
+      })
+      const next = new Set(notIssueKeys.value)
+      if (isMarked) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      notIssueKeys.value = next
+      activeMoreCardKey.value = null
+      ElMessage.success(isMarked ? '已取消非问题' : '已标记为非问题')
+    } catch (e) {
+      ElMessage.error('操作失败')
     }
-    notIssueKeys.value = next
-    activeMoreCardKey.value = null
-    ElMessage.success(isMarked ? '已取消非问题' : '已标记为非问题')
-  } catch (e) {
-    ElMessage.error('操作失败')
-  }
+  })
 }
 
 // ── 折叠状态（按节点+属性的稳定 key）──

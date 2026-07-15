@@ -366,7 +366,8 @@ watch(thinkDone, (val) => {
 function onKeydown(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
-    if (canSend.value) sendMessage()
+    // 追问时输入「退出」可随时触发重置（不受 canSend / streaming 限制）
+    if ((hasHistory.value && inputText.value.trim() === '退出') || canSend.value) sendMessage()
   }
 }
 
@@ -405,6 +406,11 @@ function openGuide() {
 }
 
 async function sendMessage() {
+  // 追问时输入「退出」：等同点击「需要精准检查」按钮，清空对话与报告并关闭面板
+  if (hasHistory.value && inputText.value.trim() === '退出') {
+    resetAll()
+    return
+  }
   if (streaming.value) return
   // 首轮：必须有两张图；追问：有图或有文字即可
   if (!hasHistory.value && !hasBothImgs.value) return
@@ -590,6 +596,9 @@ function parseThinkBuffer() {
   streamingMain.value  = raw.substring(closeIdx + 8)
   if (!thinkDone.value) thinkDone.value = true
 }
+
+// 暴露重置方法，供外部（如 AI 报告退出按钮）调用，等同点击「需要精准检查」
+defineExpose({ resetAll })
 </script>
 
 <style scoped>

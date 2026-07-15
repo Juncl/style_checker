@@ -9,7 +9,7 @@
     </div>
 
     <!-- AI 侧边面板（与 main 同级，在布局流中推挤画布） -->
-    <AiChatDrawer :open="aiChatOpen" @close="aiChatOpen = false" @toggle="aiChatOpen = !aiChatOpen" @report-ready="onAiReportReady" @reset-report="aiReportData = null" @loading-start="aiLoading = true" @loading-end="aiLoading = false" />
+    <AiChatDrawer ref="aiChatDrawerRef" :open="aiChatOpen" @close="aiChatOpen = false" @toggle="aiChatOpen = !aiChatOpen" @report-ready="onAiReportReady" @reset-report="aiReportData = null" @loading-start="aiLoading = true" @loading-end="aiLoading = false" />
 
     <div class="ai-center-wrapper">
       <!-- AI 分析中遮罩 -->
@@ -156,6 +156,7 @@
       :platform="platformStore.currentPlatform"
       @select="onAiDiffSelect"
       @diff-hover="onAiDiffHover"
+      @exit="aiChatDrawerRef?.resetAll()"
     />
     </div>
 
@@ -227,6 +228,7 @@ function onCanvasClearActiveDiff() {
   deselectTick.value++
 }
 const aiChatOpen      = ref(false)
+const aiChatDrawerRef = ref(null)
 const aiReportData    = ref(null)
 const aiLoading       = ref(false)
 const showAiReport    = computed(() => !!aiReportData.value)
@@ -447,15 +449,6 @@ function upsertManualDiff(newDiff) {
     mode: 'edit',
   })
   result.value.diffs = newDiffs
-  console.log('[manual-diff] 生成卡片:', JSON.stringify({
-    property:      newDiff.property,
-    _isManual:     newDiff._isManual,
-    designValue:   newDiff.designValue,
-    arkuiValue:    newDiff.arkuiValue,
-    designNodeId:  newDiff.designNodeId,
-    arkuiNodeId:   newDiff.arkuiNodeId,
-    textContent:   newDiff.textContent,
-  }, null, 2))
 }
 
 function removeDiff(designId, arkuiId, property) {
@@ -1257,9 +1250,6 @@ function mergeTempToResult() {
     existingDiffs: result.value.diffs ?? [],
     mode: 'select',
   })
-  console.log('[mergeTempToResult] 合并前 pairs:', _beforePairs.map(p => `${p.design?.id ?? '-'}|${p.arkui?.id ?? '-'}`))
-  console.log('[mergeTempToResult] 合并后 pairs:', newPairs.map(p => `${p.design?.id ?? '-'}|${p.arkui?.id ?? '-'}`))
-  console.log('[mergeTempToResult] 合并前 dev:5426 diffs:', JSON.stringify(_beforeDiffs.filter(d => String(d.arkuiNodeId) === '5426'), null, 2))
 
   let finalDiffs = [...newDiffs]
   const { diffs: rebuilt, manualKeys } = rebuildEditDiffs(
@@ -1275,7 +1265,6 @@ function mergeTempToResult() {
 
   result.value.diffs = finalDiffs
   result.value.pairs = resolvePairsToNodes(newPairs, result.value.allDesignNodes, result.value.allArkuiNodes)
-  console.log('[mergeTempToResult] 合并后 dev:5426 diffs:', JSON.stringify(finalDiffs.filter(d => String(d.arkuiNodeId) === '5426'), null, 2))
 
   // 清除 temp 状态，回到 select-select
   tempResultStore.clear()
