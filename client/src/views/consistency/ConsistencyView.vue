@@ -1258,7 +1258,12 @@ function mergeTempToResult() {
     newPairs,
     platformStore.currentPlatform,
   )
-  finalDiffs = finalDiffs.filter(d => d._isManual || !manualKeys.has(`${d.property}|${d.designNodeId}|${d.arkuiNodeId}`))
+  const newPairKeySet = new Set(newPairs.map(p => `${p.design?.id ?? ''}|${p.arkui?.id ?? ''}`))
+  finalDiffs = finalDiffs.filter(d =>
+    d._isManual
+      ? newPairKeySet.has(`${d.designNodeId ?? ''}|${d.arkuiNodeId ?? ''}`)
+      : !manualKeys.has(`${d.property}|${d.designNodeId}|${d.arkuiNodeId}`)
+  )
   for (const rd of rebuilt) {
     finalDiffs = upsertOneDiff(finalDiffs, rd)
   }

@@ -364,6 +364,7 @@ export function generateManualDiff(
   key:      string,
   platform: string,
 ): ManualStyleDiff | null {
+  if (pair.design?.manualStyle?.[key] === undefined && pair.arkui?.manualStyle?.[key] === undefined) return null
   const designVal = readStyleValue(pair.design, key)
   const arkuiVal  = readStyleValue(pair.arkui, key)
 
