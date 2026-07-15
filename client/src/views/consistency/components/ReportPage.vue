@@ -92,22 +92,40 @@
       @click.stop="onFloatBarClick"
     >
       <div class="float-bar-row" :class="{ 'float-bar-row--hidden': floatBarCollapsed }">
-        <button
-          class="float-icon-btn"
-          title="圆形"
-          :class="{ 'float-icon-btn--active': canvasMode.mode === 'edit' }"
-          @click="onCircleClick"
+        <el-tooltip
+          content="备注"
+          placement="top"
+          effect="light"
+          :offset="11"
+          :show-arrow="true"
+          :disabled="canvasMode.mode === 'edit'"
+          popper-class="inspector-add-tip-popper"
         >
-          <EditModeIcon />
-        </button>
-        <button
-          class="float-icon-btn"
-          title="矩形"
-          :class="{ 'float-icon-btn--active': canvasMode.mode === 'select' }"
-          @click="onRectClick"
+          <button
+            class="float-icon-btn"
+            :class="{ 'float-icon-btn--active': canvasMode.mode === 'edit' }"
+            @click="onCircleClick"
+          >
+            <EditModeIcon />
+          </button>
+        </el-tooltip>
+        <el-tooltip
+          content="局部对比"
+          placement="top"
+          effect="light"
+          :offset="11"
+          :show-arrow="true"
+          :disabled="canvasMode.mode === 'select'"
+          popper-class="inspector-add-tip-popper"
         >
-          <SelectModeIcon />
-        </button>
+          <button
+            class="float-icon-btn"
+            :class="{ 'float-icon-btn--active': canvasMode.mode === 'select' }"
+            @click="onRectClick"
+          >
+            <SelectModeIcon />
+          </button>
+        </el-tooltip>
         <div class="float-bar-sep"></div>
         <button
           class="float-icon-btn"
@@ -556,10 +574,10 @@ onMounted(() => window.addEventListener('resize', onWindowResize))
 onUnmounted(() => window.removeEventListener('resize', onWindowResize))
 
 function onArkuiHover(id) {
-  emit('arkui-hover', id)
+  emit('arkui-hover', usePair() ? id : null)
 }
 function onDesignHover(id) {
-  emit('design-hover', id)
+  emit('design-hover', usePair() ? id : null)
 }
 
 // 间距 diff 选中时给两侧画布画 H 形间距标注

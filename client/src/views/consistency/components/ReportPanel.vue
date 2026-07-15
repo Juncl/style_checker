@@ -52,6 +52,7 @@
     :hover-pair="hoverPairForDiff"
     :version-id="workingVersionId"
     :platform="platformStore.currentPlatform"
+    :deselect-tick="deselectTick"
     @select="$emit('diff-select', $event)"
     @diff-hover="$emit('diff-hover', $event)"
   />
@@ -126,7 +127,8 @@ const props = defineProps({
   workingVersionId:  { type: [Number, String],   default: null },
   closeHistoryKey:   { type: Number,             default: 0 },
   mergedDiffs:       { type: Array,              default: () => [] },
-  reportCanvasMode:  { type: String,             default: 'default' },
+  deselectTick:     { type: Number,              default: 0 },
+  reportCanvasMode:  { type: String,              default: 'default' },
   hasManualEdits:    { type: Boolean,            default: false },
   savingLoading:     { type: Boolean,            default: false },
 })

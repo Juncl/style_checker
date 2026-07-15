@@ -193,9 +193,10 @@ const props = defineProps({
   unmatched:  { type: Array,   default: () => [] },
   activePair: { type: Object,  default: null },
   hoverPair:  { type: Object,  default: null },
-  versionId:  { type: [Number, String], default: null },
-  platform:   { type: String,  default: 'hmPhone' },
-  fuzzyOnly:  { type: Boolean, default: false },
+  versionId:    { type: [Number, String], default: null },
+  platform:     { type: String,  default: 'hmPhone' },
+  fuzzyOnly:    { type: Boolean, default: false },
+  deselectTick: { type: Number,  default: 0 },
 })
 const emit = defineEmits(['select', 'diff-hover'])
 
@@ -227,6 +228,7 @@ function updateSlider() {
 onMounted(() => nextTick(updateSlider))
 const search           = ref('')
 const selectedIdx      = ref(-1)
+const selectedKey     = ref(null)
 const listRef          = ref(null)
 const folded           = ref(new Set())
 const activeMoreCardKey = ref(null)
@@ -325,9 +327,17 @@ const hoverDiffKeys = computed(() => {
 
 let _skipScrollOnce = false
 
+watch(() => props.deselectTick, () => {
+  selectedIdx.value = -1
+})
+
+watch(() => props.diffs, () => {
+  selectedIdx.value = -1
+})
+
 watch(() => props.activePair, (val) => {
   if (!val) {
-    selectedIdx.value = -1
+    _skipScrollOnce = false
     return
   }
   if (_skipScrollOnce) {
@@ -350,12 +360,21 @@ watch(() => props.activePair, (val) => {
 })
 
 watch(matchMode, () => {
+  selectedKey.value = null
   selectedIdx.value = -1
   emit('select', null)
   if (activeIssue.value !== 'all' && filteredDiffs.value.length === 0) {
     activeIssue.value = 'all'
   }
   nextTick(updateSlider)
+})
+
+watch(filteredDiffs, (list) => {
+  if (selectedKey.value == null) {
+    selectedIdx.value = -1
+    return
+  }
+  selectedIdx.value = list.findIndex(d => foldKey(d) === selectedKey.value)
 })
 
 watch(issueGroups, (groups) => {
@@ -373,15 +392,15 @@ watch(issueGroups, (groups) => {
 
 function selectIssue(key) {
   activeIssue.value = key
-  selectedIdx.value = -1
-  emit('select', null)
 }
 function selectItem(d, idx) {
   if (selectedIdx.value === idx) {
+    selectedKey.value = null
     selectedIdx.value = -1
     emit('select', null)
   } else {
     _skipScrollOnce = true   // 右侧主动点击，阻止 watch 触发滚动
+    selectedKey.value = foldKey(d)
     selectedIdx.value = idx
     emit('select', d)
   }
@@ -408,7 +427,6 @@ async function toggleNotIssue(key) {
       key:          diff.nodeType || 'container',
       desc:         diff.description || '',
       type:         diff.property,
-      data:         diff._problemData || JSON.stringify(diff),
       isNotProblem,
     })
     const next = new Set(notIssueKeys.value)

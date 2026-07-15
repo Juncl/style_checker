@@ -48,7 +48,7 @@
             <button
               class="inspector-add-btn"
               :disabled="showPendingRow"
-              @click.stop="showPendingRow = true"
+              @click.stop="onAddBtnClick"
               @pointerdown.stop
             >
               <svg viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -104,7 +104,7 @@
               </button>
             </div>
             <!-- 待确认的新行（编辑中） -->
-            <div v-if="showPendingRow" class="extra-edit-panel" @click.stop>
+            <div v-if="showPendingRow && editMode" class="extra-edit-panel" @click.stop>
               <div class="prop-row prop-row--extra">
                 <el-select v-model="pendingKey" class="extra-select" popper-class="extra-select-popper" placeholder="请选择">
                   <el-option
@@ -121,7 +121,16 @@
                     :class="{ 'extra-input--error': extraError }"
                     :placeholder="'请输入内容'"
                   />
-                  <span class="extra-error-tip">{{ extraError }}</span>
+                  <span class="extra-error-tip" :class="{ 'is-empty': !extraError }">
+                    <template v-if="extraError">
+                      <img
+                        src="@/assets/svg/error-tips.svg"
+                        class="extra-error-tip-icon"
+                        alt=""
+                      />
+                      <span>{{ extraError }}</span>
+                    </template>
+                  </span>
                 </div>
               </div>
               <div class="extra-actions">
@@ -1269,6 +1278,30 @@ function cancelExtra() {
   pendingKey.value     = ''
   pendingValue.value   = ''
   emit('extra-change', null)
+}
+
+function adjustTopForOverflow() {
+  const inspector = inspectorRef.value
+  const panel = panelRef.value
+  if (!inspector || !panel) return
+  const panelH = panel.clientHeight || 0
+  const inspectorH = inspector.offsetHeight || 220
+  const cur = inspectorDragPos.value || inspectorPos.value
+  const leftNum = parseInt(cur.left) || 0
+  let topNum = parseInt(cur.top) || 0
+  const maxTop = panelH - inspectorH - 4
+  if (topNum > maxTop) topNum = Math.max(4, maxTop)
+  if (inspectorDragPos.value) {
+    inspectorDragPos.value = { left: leftNum, top: topNum }
+  }
+  inspectorPos.value = toInspectorStyle(leftNum, topNum)
+}
+
+function onAddBtnClick() {
+  showPendingRow.value = true
+  nextTick(() => {
+    requestAnimationFrame(() => adjustTopForOverflow())
+  })
 }
 
 // 点击删除：移出 savedRows，通知父组件删除节点树中对应字段

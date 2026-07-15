@@ -98,7 +98,7 @@
           @design-hover="onDesignHover"
           @save-manual-style="onSaveManualStyle"
           @remove-manual-style="onRemoveManualStyle"
-          @clear-active-diff="activeDiff = null"
+          @clear-active-diff="onCanvasClearActiveDiff"
         />
         </div>
       </main>
@@ -128,6 +128,7 @@
         :working-version-id="workingVersionId"
         :close-history-key="closeHistoryKey"
         :merged-diffs="mergedDiffs"
+        :deselect-tick="deselectTick"
         :report-canvas-mode="canvasMode.mode"
         :has-manual-edits="hasManualInReport"
         :saving-loading="saveDebounce.loading.value"
@@ -218,7 +219,13 @@ const selectedCase    = ref('')
 const loading         = ref(false)
 const result          = ref(null)
 const activeDiff      = ref(null)
+const deselectTick   = ref(0)
 const uploadPageRef   = ref(null)
+
+function onCanvasClearActiveDiff() {
+  activeDiff.value = null
+  deselectTick.value++
+}
 const aiChatOpen      = ref(false)
 const aiReportData    = ref(null)
 const aiLoading       = ref(false)
@@ -258,11 +265,33 @@ const historyDebounce = useDebounceLoading()
 /** 当前可用的匹配对：temp 激活时用 tempPairs，否则用正式 pairs */
 const effectivePairs    = computed(() => tempResultStore.tempPairs ?? result.value?.pairs ?? [])
 const builtinStyleKeys   = new Set([...TEXT_STYLE_OPTIONS.map(o => o.value), ...CONTAINER_STYLE_OPTIONS.map(o => o.value)])
-const hasManualInReport  = computed(() => {
-  return (result.value?.diffs ?? []).some(d => d._isManual)
-    || Object.keys(nodeManualAttr.value.dev).length > 0
-    || Object.keys(nodeManualAttr.value.design).length > 0
+function diffKey(d) {
+  if (d.spaceId) return `space|${d.spaceId}`
+  return `${d.designNodeId ?? ''}|${d.arkuiNodeId ?? ''}|${d.property}`
+}
+
+function serializeSnapshot(r, manual) {
+  const diffs = (r?.diffs ?? [])
+    .map(d => [diffKey(d), d.designValue ?? '', d.arkuiValue ?? '', d.severity ?? '', d._isManual ?? false, d.diffSource ?? ''])
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+  const pairs = (r?.pairs ?? [])
+    .map(p => [`${p.design?.id ?? ''}|${p.arkui?.id ?? ''}`, p.confidence ?? '', p.matchDetail?.pass ?? '', p.matchDetail?.type ?? ''])
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+  return JSON.stringify({ diffs, pairs, manual })
+}
+
+const initialSnapshot = ref('')
+
+function snapshotInitial() {
+  initialSnapshot.value = result.value ? serializeSnapshot(result.value, nodeManualAttr.value) : ''
+}
+
+const hasManualInReport = computed(() => {
+  if (!result.value) return false
+  return serializeSnapshot(result.value, nodeManualAttr.value) !== initialSnapshot.value
 })
+
+watch(() => result.value, () => snapshotInitial())
 
 // 从节点树上收集所有人工覆盖属性，结构：{ dev: { id: { key: val } }, design: { id: { key: val } } }
 const nodeManualAttr = computed(() => {
@@ -314,41 +343,29 @@ function mergeCheckResult({ tempPairs, tempDiffs, existingPairs, existingDiffs, 
   const pairArkuiIds = new Set(newPairs.map(p => p.arkui?.id).filter(Boolean))
   const hasId = (v) => v != null && v !== ''
 
-  let diffs = [...existingDiffs]
+  const conflictWith = (d) => tempDiffs.find(nd => {
+    if (mode === 'edit' && d.property !== nd.property) return false
+    const sameDesignId = hasId(d.designNodeId) && hasId(nd.designNodeId) && d.designNodeId === nd.designNodeId
+    const sameArkuiId = hasId(d.arkuiNodeId) && hasId(nd.arkuiNodeId) && d.arkuiNodeId === nd.arkuiNodeId
+    return sameDesignId || sameArkuiId
+  })
 
-  for (const nd of tempDiffs) {
-    const toRemove = new Set()
+  const kept = []
+  for (const d of existingDiffs) {
+    if (!conflictWith(d)) { kept.push(d); continue }
+    if (mode === 'edit') continue
+    if (!d._isManual) continue
+    const designHasPair = hasId(d.designNodeId) && pairDesignIds.has(d.designNodeId)
+    const arkuiHasPair = hasId(d.arkuiNodeId) && pairArkuiIds.has(d.arkuiNodeId)
+    if (designHasPair || arkuiHasPair) continue
+    kept.push({ ...d, designNodeId: null, arkuiNodeId: null })
+  }
 
-    for (let i = 0; i < diffs.length; i++) {
-      const d = diffs[i]
-      if (mode === 'edit' && d.property !== nd.property) continue
+  let diffs = [...kept, ...tempDiffs]
 
-      const sameDesignId = hasId(d.designNodeId) && hasId(nd.designNodeId) && d.designNodeId === nd.designNodeId
-      const sameArkuiId = hasId(d.arkuiNodeId) && hasId(nd.arkuiNodeId) && d.arkuiNodeId === nd.arkuiNodeId
-      if (!sameDesignId && !sameArkuiId) continue
-
-      if (mode === 'edit') {
-        toRemove.add(i)
-      } else {
-        if (!d._isManual) {
-          toRemove.add(i)
-        } else {
-          const designHasPair = hasId(d.designNodeId) && pairDesignIds.has(d.designNodeId)
-          const arkuiHasPair = hasId(d.arkuiNodeId) && pairArkuiIds.has(d.arkuiNodeId)
-          if (designHasPair || arkuiHasPair) {
-            toRemove.add(i)
-          } else {
-            d.designNodeId = null
-            d.arkuiNodeId = null
-          }
-        }
-      }
-    }
-
-    const sortedIndices = [...toRemove].sort((a, b) => b - a)
-    for (const i of sortedIndices) diffs.splice(i, 1)
-
-    diffs.push(nd)
+  if (mode === 'select') {
+    const pairKeySet = new Set(newPairs.map(p => `${p.design?.id ?? ''}|${p.arkui?.id ?? ''}`))
+    diffs = diffs.filter(d => d._isManual || pairKeySet.has(`${d.designNodeId ?? ''}|${d.arkuiNodeId ?? ''}`))
   }
 
   return { newPairs, newDiffs: diffs }
@@ -356,12 +373,14 @@ function mergeCheckResult({ tempPairs, tempDiffs, existingPairs, existingDiffs, 
 
 /** 从节点 manualStyle 重新生成 edit-diff，使用当前 newPairs 信息 */
 function rebuildEditDiffs(allDesignNodes, allArkuiNodes, pairs, platform) {
-  const result = []
+  const diffs = []
+  const manualKeys = new Set()
 
   const buildOne = (designNodeId, arkuiNodeId, property, designNode, arkuiNode) => {
+    manualKeys.add(`${property}|${designNodeId}|${arkuiNodeId}`)
     if (builtinStyleKeys.has(property) && designNode && arkuiNode) {
       const diff = generateManualDiff({ design: designNode, arkui: arkuiNode }, property, platform)
-      if (diff) result.push(diff)
+      if (diff) diffs.push(diff)
       return
     }
     let mySide, myNode
@@ -369,7 +388,7 @@ function rebuildEditDiffs(allDesignNodes, allArkuiNodes, pairs, platform) {
     else if (arkuiNode?.manualStyle?.[property] !== undefined) { mySide = 'arkui'; myNode = arkuiNode }
     else return
     const otherSide = mySide === 'design' ? 'arkui' : 'design'
-    result.push({
+    diffs.push({
       property,
       [`${mySide}Value`]:    formatStyleValue(property, myNode.manualStyle[property], platform),
       [`${otherSide}Value`]: '—',
@@ -401,7 +420,7 @@ function rebuildEditDiffs(allDesignNodes, allArkuiNodes, pairs, platform) {
     }
   }
 
-  return result
+  return { diffs, manualKeys }
 }
 
 function upsertOneDiff(diffs, newDiff) {
@@ -525,14 +544,14 @@ const hoverPairForDiff = computed(() => {
 const hoveredDesignCrossId = computed(() => {
   if (hoveredDiffPair.value?.designNodeId) return hoveredDiffPair.value.designNodeId
   if (!hoveredArkuiNodeId.value) return null
-  const pair = result.value?.pairs?.find(p => p.arkui?.id === hoveredArkuiNodeId.value)
+  const pair = effectivePairs.value.find(p => p.arkui?.id === hoveredArkuiNodeId.value)
   return pair?.design?.id ?? null
 })
 
 const hoveredArkuiCrossId = computed(() => {
   if (hoveredDiffPair.value?.arkuiNodeId) return hoveredDiffPair.value.arkuiNodeId
   if (!hoveredDesignNodeId.value) return null
-  const pair = result.value?.pairs?.find(p => p.design?.id === hoveredDesignNodeId.value)
+  const pair = effectivePairs.value.find(p => p.design?.id === hoveredDesignNodeId.value)
   return pair?.arkui?.id ?? null
 })
 
@@ -562,7 +581,7 @@ const hoverArkuiSpacingMarks = computed(() => {
   const hoverId = hoveredArkuiNodeId.value || hoveredArkuiCrossId.value
   if (!hoverId || hoverId === selNode.id) return []
   // 优先从 pairs 中取坐标，保证与 selectedPair 同源，避免不同数据流坐标系不一致
-  const hoverNode = result.value?.pairs?.find(p => p.arkui?.id === hoverId)?.arkui
+  const hoverNode = effectivePairs.value.find(p => p.arkui?.id === hoverId)?.arkui
                  ?? allArkuiNodes.value.find(n => n.id === hoverId)
   return hoverNode?.rect ? computeSpacingMarks(selNode.rect, hoverNode.rect, null, null) : []
 })
@@ -573,7 +592,7 @@ const hoverDesignSpacingMarks = computed(() => {
   const hoverId = hoveredDesignNodeId.value || hoveredDesignCrossId.value
   if (!hoverId || hoverId === selNode.id) return []
   // 优先从 pairs 中取坐标，保证与 selectedPair 同源，避免不同数据流坐标系不一致
-  const hoverNode = result.value?.pairs?.find(p => p.design?.id === hoverId)?.design
+  const hoverNode = effectivePairs.value.find(p => p.design?.id === hoverId)?.design
                  ?? designNodes.value.find(n => n.id === hoverId)
   return hoverNode?.rect ? computeSpacingMarks(selNode.rect, hoverNode.rect, selNode.size, hoverNode.size) : []
 })
@@ -1076,6 +1095,7 @@ async function onSave() {
       setUrlParams({ deliverableId: String(dId), pageId: String(pageId) })
     }
     ElMessage.success('存储成功')
+    snapshotInitial()
     try {
       const manualDiffs = (result.value?.diffs ?? []).filter(d => d._isManual)
       const nodeIds = new Set()
@@ -1228,32 +1248,34 @@ function applyExtraOverride(nodes, override) {
 function mergeTempToResult() {
   if (!tempResultStore.tempDiffs || !tempResultStore.tempPairs || !result.value) return
 
+  const _beforePairs = result.value.pairs ?? []
+  const _beforeDiffs = result.value.diffs ?? []
   const { newPairs, newDiffs } = mergeCheckResult({
     tempPairs: tempResultStore.tempPairs,
     tempDiffs: tempResultStore.tempDiffs,
-    existingPairs: result.value.pairs ?? [],
+    existingPairs: _beforePairs,
     existingDiffs: result.value.diffs ?? [],
     mode: 'select',
   })
+  console.log('[mergeTempToResult] 合并前 pairs:', _beforePairs.map(p => `${p.design?.id ?? '-'}|${p.arkui?.id ?? '-'}`))
+  console.log('[mergeTempToResult] 合并后 pairs:', newPairs.map(p => `${p.design?.id ?? '-'}|${p.arkui?.id ?? '-'}`))
+  console.log('[mergeTempToResult] 合并前 dev:5426 diffs:', JSON.stringify(_beforeDiffs.filter(d => String(d.arkuiNodeId) === '5426'), null, 2))
 
   let finalDiffs = [...newDiffs]
-  const rebuilt = rebuildEditDiffs(
+  const { diffs: rebuilt, manualKeys } = rebuildEditDiffs(
     result.value.allDesignNodes ?? [],
     result.value.allArkuiNodes ?? [],
     newPairs,
     platformStore.currentPlatform,
   )
-  const existingKeys = new Set(finalDiffs.map(d => `${d.property}|${d.designNodeId}|${d.arkuiNodeId}`))
-  const toAdd = rebuilt.filter(d => !existingKeys.has(`${d.property}|${d.designNodeId}|${d.arkuiNodeId}`))
-  for (const rd of toAdd) {
+  finalDiffs = finalDiffs.filter(d => d._isManual || !manualKeys.has(`${d.property}|${d.designNodeId}|${d.arkuiNodeId}`))
+  for (const rd of rebuilt) {
     finalDiffs = upsertOneDiff(finalDiffs, rd)
   }
 
-  result.value = {
-    ...result.value,
-    diffs: finalDiffs,
-    pairs: resolvePairsToNodes(newPairs, result.value.allDesignNodes, result.value.allArkuiNodes),
-  }
+  result.value.diffs = finalDiffs
+  result.value.pairs = resolvePairsToNodes(newPairs, result.value.allDesignNodes, result.value.allArkuiNodes)
+  console.log('[mergeTempToResult] 合并后 dev:5426 diffs:', JSON.stringify(finalDiffs.filter(d => String(d.arkuiNodeId) === '5426'), null, 2))
 
   // 清除 temp 状态，回到 select-select
   tempResultStore.clear()
@@ -1441,7 +1463,6 @@ async function loadHistoryVersion(rawVersion, deviceType) {
         const diff = JSON.parse(adaptLegacyProblem(p).data)
         if (p.isNotProblem === 1) diff._isNotProblem = true
         diff._problemId = String(p.id)
-        diff._problemData = p.data
         return diff
       } catch { return null }
     }).filter(Boolean)
@@ -1725,10 +1746,12 @@ function onDiffSelect(diff) {
       selectionStore.select(pair)
     } else if (diff.designNodeId || diff.arkuiNodeId) {
       const designNode = diff.designNodeId
-        ? result.value?.allDesignNodes?.find(n => n.id === diff.designNodeId) ?? null
+        ? effectivePairs.value.find(p => p.design?.id === diff.designNodeId)?.design
+          ?? result.value?.allDesignNodes?.find(n => n.id === diff.designNodeId) ?? null
         : null
       const arkuiNode = diff.arkuiNodeId
-        ? result.value?.allArkuiNodes?.find(n => n.id === diff.arkuiNodeId) ?? null
+        ? effectivePairs.value.find(p => p.arkui?.id === diff.arkuiNodeId)?.arkui
+          ?? result.value?.allArkuiNodes?.find(n => n.id === diff.arkuiNodeId) ?? null
         : null
       selectionStore.select({
         matchDetail: { type: 'unmatched' },
@@ -1738,6 +1761,8 @@ function onDiffSelect(diff) {
     } else {
       selectionStore.clear()
     }
+  } else {
+    selectionStore.clear()
   }
 }
 </script>
