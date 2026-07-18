@@ -88,6 +88,63 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compT
   if (vpRect && nextRotationChain && nextRotationChain.length > 0) {
     vpRect = applyRotationChain(baseRect, nextRotationChain)
   }
+
+  // 文本 rect 重构（参考 design 侧 refitTextRect / refitTextHeight，x/w 与 y/h 拆分）：
+  //   准入门槛：原 w/h 都存在且不为 0；有内容，有fontSize，并且fontFamily 全小写后 harmony 开头
+  //   先处理 padding 得到内容区，再在内容区上做收紧/收敛：
+  //     x/w：左右不对称（left !== right）或水平对齐为 left 时扣出水平内容区；
+  //          在内容区内按 textAlign 收紧到文字真实宽度（w 只能缩小）
+  //     y/h：上下 padding 任一有值（top>0 或 bottom>0）时扣出垂直内容区；
+  //          单行(innerH<fs*1.9)才垂直居中收敛到 fontSize，多行不动
+  // 仅作用于有文字的文本节点（无文字后续会被剪枝，不处理）
+  if (TEXT_TYPES.has(type) && vpRect && vpRect.w > 0 && vpRect.h > 0) {
+    const content = getArkuiTextContent(attrs)
+    const fs = parseActualFontSize(attrs.actualFontSize, resolution) ?? parseVp(attrs.fontSize)
+    const ff = (attrs.fontFamily || '').toLowerCase()
+    if (content && fs && fs > 0 && ff.startsWith('harmony')) {
+      const pad = parsePadding(attrs.padding) || { top: 0, right: 0, bottom: 0, left: 0 }
+      const pL = pad.left || 0, pR = pad.right || 0, pT = pad.top || 0, pB = pad.bottom || 0
+      const align = normalizeTextAlign(attrs.textAlign) || 'left'
+
+      // x/w padding 处理：左右不对称（left !== right）或水平对齐为 left 时扣出水平内容区
+      const processHPad = pL !== pR || align === 'left'
+      let innerLeft, innerRight, innerW
+      if (processHPad) {
+        innerLeft = vpRect.x + pL
+        innerRight = vpRect.x + vpRect.w - pR
+        innerW = Math.max(0, innerRight - innerLeft)
+      } else {
+        innerLeft = vpRect.x
+        innerRight = vpRect.x + vpRect.w
+        innerW = vpRect.w
+      }
+      // x/w 收紧：在内容区内按 textAlign 收紧到文字真实宽度（w 只能缩小）
+      const textWidth = estimateTextWidth(content, fs)
+      if (textWidth > 0 && textWidth < innerW) {
+        let newX
+        if (align === 'center') newX = innerLeft + (innerW - textWidth) / 2
+        else if (align === 'right' || align === 'end') newX = innerRight - textWidth
+        else newX = innerLeft
+        vpRect = { ...vpRect, x: newX, w: textWidth }
+      }
+
+      // y/h padding 处理：上下 padding 任一有值时扣出垂直内容区
+      const hasVPad = pT > 0 || pB > 0
+      let innerTop, innerH
+      if (hasVPad) {
+        innerTop = vpRect.y + pT
+        innerH = Math.max(0, vpRect.h - pT - pB)
+      } else {
+        innerTop = vpRect.y
+        innerH = vpRect.h
+      }
+      // y/h 收敛：单行才收敛，多行(innerH >= fs*1.9)不动
+      if (innerH < fs * 1.9) {
+        vpRect = { ...vpRect, y: innerTop + (innerH - fs) / 2, h: fs }
+      }
+    }
+  }
+
   // 修正后同步 _rectRaw（step2 以 _rectRaw 判定 no-rect）
   const effectiveRectRaw = (vpRect !== rawVpRect && vpRect && rectRaw)
     ? { ...rectRaw, x: vpRect.x * resolution, y: vpRect.y * resolution, w: vpRect.w * resolution, h: vpRect.h * resolution }
@@ -394,7 +451,7 @@ function estimateTextWidth(content, fontSize) {
     if (/[一-龥　-〿＀-￯]/.test(ch)) {
       w += fontSize
     } else {
-      w += fontSize * 0.55
+      w += fontSize * 0.6
     }
   }
   return w

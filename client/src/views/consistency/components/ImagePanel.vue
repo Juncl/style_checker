@@ -1175,18 +1175,14 @@ const displayStyle = computed(() => {
     truncate,
   })
 
+  // 文本特有
   if (s.fontSize      != null) add('fontSize',      s.fontSize, null, '字号')
   if (s.fontWeight    != null) add('fontWeight',    s.fontWeight, null, '字重')
   if (s.fontColor)             add('fontColor',     formatColorVal(s.fontColor), s.fontColor, '颜色')
   if (s.fontFamily)            add('fontFamily',    s.fontFamily, null, '字体', true)
-  if (s.textAlign)             add('textAlign',     s.textAlign, null, '对齐')
-  if (s.lineHeight    != null) add('lineHeight',    s.lineHeight, null, '行高')
-  if (s.letterSpacing != null && s.letterSpacing !== 0) add('letterSpacing', s.letterSpacing, null, '字间距')
+
+  // 容器特有
   if (s.backgroundColor)       add('backgroundColor', formatColorVal(s.backgroundColor), s.backgroundColor, '填充')
-  // 任一侧 opacity ≠ 1 都在两侧详情框显示（对方 ≠ 1 会产生 opacity diff，本侧据此感知）
-  if ((s.opacity != null && s.opacity !== 1) || diffForStyleKey('opacity')) {
-    add('opacity', s.opacity ?? 1, null, '不透明度')
-  }
   if (s.borderRadius) {
     const br = s.borderRadius
     const v  = [br.topLeft, br.topRight, br.bottomRight, br.bottomLeft]
@@ -1195,14 +1191,28 @@ const displayStyle = computed(() => {
   }
   if (s.border?.width != null) add('borderWidth', s.border.width, null, '描边宽度')
   if (s.border?.color)        add('borderColor', formatColorVal(s.border.color), s.border.color, '描边颜色')
-  if (s.padding) {
+
+  // 双边共有
+  if (s.shadow) add('shadow', formatColorVal(s.shadow), null, '阴影')
+  if (s.blur)   add('blur',   s.blur,   null, '模糊')
+  // 任一侧 opacity ≠ 1 都在两侧详情框显示（对方 ≠ 1 会产生 opacity diff，本侧据此感知）
+  if ((s.opacity != null && s.opacity !== 1) || diffForStyleKey('opacity')) {
+    add('opacity', s.opacity ?? 1, null, '不透明度')
+  }
+
+  // 不在对比范围但展示
+  if (s.textAlign)             add('textAlign',     s.textAlign, null, '对齐')
+  if (s.verticalAlign)         add('verticalAlign', s.verticalAlign, null, '垂直对齐')
+  if (s.lineHeight    != null) add('lineHeight',    s.lineHeight, null, '行高')
+  if (s.padding && props.inspectorNode?.type === 'container') {
     const p = s.padding
     const uniform = p.top === p.right && p.right === p.bottom && p.bottom === p.left
     add('padding', uniform ? p.top : `${p.top} ${p.right} ${p.bottom} ${p.left}`, null, '内边距')
   }
-  if (s.itemSpacing   != null) add('itemSpacing',   s.itemSpacing, null, '间距')
-  if (s.shadow) add('shadow', formatColorVal(s.shadow), null, '阴影')
-  if (s.blur)   add('blur',   s.blur,   null, '模糊')
+  // 暂不展示  
+  // if (s.letterSpacing != null && s.letterSpacing !== 0) add('letterSpacing', s.letterSpacing, null, '字间距')
+  // if (s.itemSpacing   != null) add('itemSpacing',   s.itemSpacing, null, '间距')
+
   return rows
 })
 
@@ -1341,6 +1351,8 @@ const STYLE_DIFF_ALIASES = {
   itemSpacing: ['itemSpacing'],
   borderRadius: ['borderRadius'],
   blur: ['blur'],
+  // 以下属性仅展示，不参与 diff 着色
+  lineHeight: [],
 }
 
 function formatColorVal(val) {

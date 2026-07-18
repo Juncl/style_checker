@@ -38,7 +38,7 @@ export function pruneArkuiTree(root, canvasW, canvasH) {
   if (!root) return root
   hardPrune(root, canvasW, canvasH)
   root = filterSCBSystemLayer(root)
-  softPrune(root)
+  softPrune(root, canvasW, canvasH)
   return root
 }
 
@@ -73,9 +73,6 @@ function hardPruneReason(node, canvasW, canvasH) {
 
   if (isOutOfBoundsRect(node.rect, canvasW, canvasH)) return 'out-of-bounds'
 
-  // 异常超宽（> 3 倍画布）
-  if (node.rect.w > canvasW * 3) return 'too-wide'
-
   // 零尺寸或极小尺寸（w/h 为 0，或 w,h 均 < 2）
   // 有子节点时跳过：可能是中间层布局代理（h=0 但子节点有实际内容，如 case16），
   // 留给 softPrune unwrap；叶子节点的零尺寸才是真不可见
@@ -107,13 +104,13 @@ function isOutOfBoundsRect(rect, canvasW, canvasH) {
 }
 
 // ─── 2b. 软剪枝（unwrap）────────────────────────────────────────────────────────
-function softPrune(node) {
+function softPrune(node, canvasW, canvasH) {
   if (!node || !Array.isArray(node.children)) return
   let i = 0
   while (i < node.children.length) {
-    softPrune(node.children[i])
+    softPrune(node.children[i], canvasW, canvasH)
     const child = node.children[i]
-    if (shouldUnwrap(child)) {
+    if (shouldUnwrap(child, canvasW, canvasH)) {
       node.children.splice(i, 1, ...child.children)
       continue   // 不递增 i：新顶替上来的孙子可能也是 unwrap 候选
     }
@@ -121,13 +118,17 @@ function softPrune(node) {
   }
 }
 
-function shouldUnwrap(node) {
+function shouldUnwrap(node, canvasW, canvasH) {
   // Span / Blank 无独立布局，永远 unwrap
   if (node._spanType) return true
   if (node._blankType) return true
   
   // 极小节点（≤4vp）：保留子节点，只删自身
   if (node.rect && (node.rect.w <= 4 || node.rect.h <= 4)) return true
+
+  // 异常超宽（宽 > 3 倍画布）：保留子节点，只删自身
+  //   横滑列表(Row/Swiper/RelativeContainer)内容容器宽常远超画布，属合法布局
+  if (node.rect && node.rect.w > canvasW * 3) return true
 
   // 无 rect 的 wrapper / 语法节点（dump 里的 SyntaxItem 等）：无条件 unwrap
   // root 例外（它是整棵树的容器，永远保留）

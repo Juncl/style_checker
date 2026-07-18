@@ -1,9 +1,7 @@
 /**
- * Inspector 自定义对比行的输入校验、值解析、节点 style patch 工具函数。
+ * Inspector 自定义对比行的输入校验、值解析工具函数。
  * 每个属性有独立的格式规则；解析结果与节点 style 内部格式保持一致。
  */
-
-import type { SimpleNode } from './compareNodes'
 
 export interface ValidateResult {
   ok:     boolean
@@ -11,17 +9,15 @@ export interface ValidateResult {
 }
 
 // ── 属性分组 ──────────────────────────────────────────────────────────────────
+// 仅保留人工可加属性（TEXT_STYLE_OPTIONS / CONTAINER_STYLE_OPTIONS）中存在的条目，
+// 走不到的孤儿条目（lineHeight / itemSpacing / letterSpacing / padding / textAlign）已移除。
 
 const POSITIVE_NUM_PROPS = new Set([
-  'fontSize', 'lineHeight', 'borderWidth', 'itemSpacing', 'blur',
+  'fontSize', 'borderWidth', 'blur',
 ])
 
 const NON_NEGATIVE_NUM_PROPS = new Set([
   'opacity',
-])
-
-const ANY_NUM_PROPS = new Set([
-  'letterSpacing',
 ])
 
 const COLOR_PROPS = new Set([
@@ -29,15 +25,13 @@ const COLOR_PROPS = new Set([
 ])
 
 const MULTI_NUM_PROPS = new Set([
-  'borderRadius', 'padding',
+  'borderRadius',
 ])
 
 const FONT_WEIGHT_VALS = new Set([
   '100', '200', '300', '400', '500', '600', '700', '800', '900',
   'normal', 'bold', 'light', 'medium', 'semibold', 'thin', 'bolder',
 ])
-
-const TEXT_ALIGN_VALS = new Set(['left', 'center', 'right', 'justify'])
 
 // ── 输入校验 ──────────────────────────────────────────────────────────────────
 
@@ -67,12 +61,6 @@ export function validateOverrideInput(key: string, raw: string): ValidateResult 
     return { ok: true }
   }
 
-  // 任意数字（可负，如字间距）
-  if (ANY_NUM_PROPS.has(key)) {
-    if (isNaN(Number(s))) return { ok: false, error: '请输入数字，如 -0.5 或 1' }
-    return { ok: true }
-  }
-
   // 颜色
   if (COLOR_PROPS.has(key)) {
     return validateColor(s)
@@ -87,14 +75,6 @@ export function validateOverrideInput(key: string, raw: string): ValidateResult 
   if (key === 'fontWeight') {
     if (!FONT_WEIGHT_VALS.has(s.toLowerCase())) {
       return { ok: false, error: '如 400、bold、medium' }
-    }
-    return { ok: true }
-  }
-
-  // 对齐枚举
-  if (key === 'textAlign') {
-    if (!TEXT_ALIGN_VALS.has(s.toLowerCase())) {
-      return { ok: false, error: '可选 left / center / right / justify' }
     }
     return { ok: true }
   }
@@ -118,10 +98,8 @@ function validateColor(s: string): ValidateResult {
 }
 
 function validateMultiNum(key: string, s: string): ValidateResult {
-  const label = key === 'borderRadius' ? '圆角' : '内边距'
-  const hint  = key === 'borderRadius'
-    ? '如 8 或 8/4/8/4（左上/右上/右下/左下）'
-    : '如 16 或 8/16/8/16（上/右/下/左）'
+  const label = '圆角'
+  const hint  = '如 8 或 8/4/8/4（左上/右上/右下/左下）'
 
   const parts = s.split('/')
   if (parts.length !== 1 && parts.length !== 4) {
@@ -143,7 +121,7 @@ function validateMultiNum(key: string, s: string): ValidateResult {
 export function parseOverrideValue(key: string, raw: string): any {
   const s = raw.trim()
 
-  if (POSITIVE_NUM_PROPS.has(key) || ANY_NUM_PROPS.has(key) || NON_NEGATIVE_NUM_PROPS.has(key)) {
+  if (POSITIVE_NUM_PROPS.has(key) || NON_NEGATIVE_NUM_PROPS.has(key)) {
     return parseFloat(s)
   }
 
@@ -155,19 +133,11 @@ export function parseOverrideValue(key: string, raw: string): any {
     return parseMultiNum(s, ['topLeft', 'topRight', 'bottomRight', 'bottomLeft'])
   }
 
-  if (key === 'padding') {
-    return parseMultiNum(s, ['top', 'right', 'bottom', 'left'])
-  }
-
   if (key === 'fontWeight') {
     const lower = s.toLowerCase()
     // 若是纯数字字符串，保持数字类型；否则保持字符串
     const n = Number(s)
     return isNaN(n) ? lower : n
-  }
-
-  if (key === 'textAlign') {
-    return s.toLowerCase()
   }
 
   // shadow / fontFamily 等自由字符串
@@ -183,16 +153,4 @@ function parseMultiNum(s: string, keys: string[]): Record<string, number> {
     keys.forEach((k, i) => { result[k] = parts[i] ?? 0 })
   }
   return result
-}
-
-// ── 节点 style 读取 ───────────────────────────────────────────────────────────
-
-/**
- * 取节点某属性的当前值（处理 borderWidth / borderColor 的嵌套 border 对象）。
- */
-export function getNodeStyleRawValue(node: SimpleNode, key: string): any {
-  const s = node.style ?? {}
-  if (key === 'borderWidth') return s.border?.width
-  if (key === 'borderColor') return s.border?.color
-  return s[key]
 }

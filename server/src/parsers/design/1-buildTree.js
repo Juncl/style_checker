@@ -125,6 +125,11 @@ function convertToUnified(wrap, origCanvasW, origCanvasH, scale, canvasW, canvas
 
   if (raw.type === TEXT_TYPE && !hmSymbol) {
     unified.textContent = raw.content || ''
+    // 用 fontSize 估算文本实际渲染宽度，收紧 x/w 到真实文字范围
+    // 顺序：先在 dp 域改 size，再按 scale 系数映射 rect / normRect
+    refitTextRect(unified, scale, canvasW)
+    // 文本高度收敛（y/h），仅 Harmony 开头字体生效
+    refitTextHeight(unified, scale, canvasH)
   }
 
   for (const childWrap of wrap.children) {
@@ -334,4 +339,89 @@ function clipToMask(node, maskRect, canvasW, canvasH) {
   for (const child of (node.children || [])) {
     clipToMask(child, maskRect, canvasW, canvasH)
   }
+}
+
+// ─── TEXT 节点 x/w 重算 ──────────────────────────────────────────────────────
+// Figma 固定宽度文本框的 rect.w 常远大于实际文字渲染宽度，导致与开发侧 text 节点
+// 的 IoU 偏低、x 错位。这里用 fontSize 估算文字真实宽度，按 textAlign 在原框内
+// 重新定位 x、收紧 w。仅在 dp 域 size 上先算，再按 scale 系数映射到 rect / normRect。
+// y / h 完全不动。
+function refitTextRect(unified, scale, canvasW) {
+  if (unified.type !== 'text') return
+  const content = unified.textContent
+  if (!content) return
+  const fontSize = unified.style?.fontSize
+  if (typeof fontSize !== 'number' || fontSize <= 0) return
+  // 准入门槛：fontFamily 全小写后 harmony 开头（与 refitTextHeight / 开发侧一致）
+  if (!(unified.style?.fontFamily || '').toLowerCase().startsWith('harmony')) return
+
+  const { x: rx, w: rw } = unified.size
+  if (rw <= 0) return
+
+  const textWidth = estimateTextWidth(content, fontSize)
+  // 保底判据：估算宽度已达/超过原框宽（含多行文本累加偏大、自适应宽度框已贴合），
+  // 不重构，保留原 rect，避免把已贴合的文本框改坏
+  if (textWidth >= rw - 0.5) return
+
+  const align = unified.style?.textAlign || 'left'
+  let newX
+  if (align === 'center') {
+    newX = rx + (rw - textWidth) / 2
+  } else if (align === 'right' || align === 'end') {
+    newX = rx + rw - textWidth
+  } else {
+    // left / justify / start / 缺省
+    newX = rx
+  }
+
+  // 先改 dp 域 size，再按 scale 系数映射 rect / normRect
+  unified.size.x = newX
+  unified.size.w = textWidth
+  unified.rect.x = r4(newX * scale)
+  unified.rect.w = r4(textWidth * scale)
+  unified.normRect.x = (newX * scale) / canvasW
+  unified.normRect.w = (textWidth * scale) / canvasW
+}
+
+// 估算文本渲染宽度（dp 域）：中文/全角字符按 fontSize，其他字符按 fontSize×0.6
+function estimateTextWidth(content, fontSize) {
+  let w = 0
+  for (const ch of String(content)) {
+    if (/[一-龥　-〿＀-￯]/.test(ch)) {
+      w += fontSize
+    } else {
+      w += fontSize * 0.6
+    }
+  }
+  return w
+}
+
+// ─── TEXT 节点 y/h 重构（高度收敛） ──────────────────────────────────────────
+// 参考 dev 侧文本高度收敛：单行文本 rect.h 常含行高留白（lineHeight=1 即 auto，
+// rect.h 为字体默认行高≈1.25~1.4×fontSize，字形在行高内居中，TOP 也不贴顶），
+// 收敛到 fontSize 并垂直居中调整 y，让竖向尺寸与开发侧对齐。
+// 仅对 Harmony 开头字体生效（与 ArkUI 同源字体，行高 metrics 一致；非 harmony
+// 字体 metrics 不同，重构会失真，跳过）。x/w 不动。
+function refitTextHeight(unified, scale, canvasH) {
+  if (unified.type !== 'text') return
+  // 准入门槛：fontFamily 全小写后 harmony 开头（与 refitTextRect / 开发侧一致）
+  if (!(unified.style?.fontFamily || '').toLowerCase().startsWith('harmony')) return
+  const fontSize = unified.style?.fontSize
+  if (typeof fontSize !== 'number' || fontSize <= 0) return
+  const { y: ry, w: rw, h: rh } = unified.size
+  if (rw <= 0 || rh <= 0) return
+  // 单行判据：高度低于近两行视为单行；多行不重构
+  if (rh >= fontSize * 1.9) return
+
+  // 一律垂直居中收敛（与 dev 侧一致）：h→fontSize，y 上下各缩 (h-fs)/2 保文字位置
+  const newH = fontSize
+  const newY = ry + (rh - fontSize) / 2
+
+  // 先改 dp 域 size，再按 scale 系数映射 rect / normRect
+  unified.size.y = newY
+  unified.size.h = newH
+  unified.rect.y = r4(newY * scale)
+  unified.rect.h = r4(newH * scale)
+  unified.normRect.y = (newY * scale) / canvasH
+  unified.normRect.h = (newH * scale) / canvasH
 }
