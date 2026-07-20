@@ -1,6 +1,6 @@
 import { makePair } from './matchStrategies.js'
 import { dropGridOutlierAnchors } from './gridAnchorFilter.js'
-import { normalizeText, textSemanticSimilarity, parseArgb, extractMainTone } from '../utils/textSemantics.js'
+import { normalizeText, textSemanticSimilarity, parseArgb, extractMainTone, getSimilarityColor } from '../utils/textSemantics.js'
 import { MatchTools } from './tools.js'
 
 /**
@@ -58,33 +58,6 @@ function textSimilar(c1, c2) {
   }
 
   return Math.max(editScore, semanticScore)
-}
-
-/** 将 ARGB 颜色按 alpha 与白底混合，得到不透明 RGB：ch' = ch·α + 255·(1-α) */
-function blendOnWhite(argb) {
-  const alpha = argb.a / 255
-  return {
-    r: argb.r * alpha + 255 * (1 - alpha),
-    g: argb.g * alpha + 255 * (1 - alpha),
-    b: argb.b * alpha + 255 * (1 - alpha),
-  }
-}
-
-/**
- * 子评分2 · 颜色相似度：考虑 alpha 补偿（与白底混合后比较）
- * distance = |dR|+|dG|+|dB|（曼哈顿距离，最大 765），score = max(0, 1 - distance/765)
- * 任一侧无颜色值 → 视为不构成差异，返回 1
- */
-function getSimilarityColor(c1, c2) {
-  const p1 = parseArgb(extractMainTone(c1))
-  const p2 = parseArgb(extractMainTone(c2))
-  if (!p1 || !p2) return 1
-
-  const b1 = blendOnWhite(p1)
-  const b2 = blendOnWhite(p2)
-  const distance =
-    Math.abs(b1.r - b2.r) + Math.abs(b1.g - b2.g) + Math.abs(b1.b - b2.b)
-  return Math.max(0, 1 - distance / 765)
 }
 
 /**

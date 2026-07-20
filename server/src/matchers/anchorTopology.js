@@ -22,6 +22,7 @@ import { makePair } from './matchStrategies.js'
 import { isCompatibleType, hasVisualDecoration } from '../utils/nodeVisibility.js'
 import { computeIoU } from '../utils/matchGeometry.js'
 import { EPS, relation, makeAnchorCheck } from './anchorCheck.js'
+import { textSemanticSimilarity, getSimilarityColor } from '../utils/textSemantics.js'
 
 // 方向桶内排序键：左右按 x 间距、上下按 y 间距
 function dirDist(rect, anchorRect, dir) {
@@ -127,6 +128,52 @@ function verticalTriple(an, dn, aHm, aDe, ctx) {
   return { pass: ps > 0 && as > 0 && rs > 0, score: ps * 0.45 + as * 0.15 + rs * 0.10 + ds * 0.08 + hs * 0.12 + ss * 0.10 }
 }
 
+// ── 文本专用 6 维评分（x/y 通用）──────────────────────────────────────────────
+// 文本节点天然是「短数字 vs 长标签」宽高比悬殊的场景，沿用容器三维（位置/面积/宽高比）
+// 会让 rs 归零导致 pass 门控误杀。文本改用「位置 + 语义 + 字号 + 字重 + 字色 + 中心方向」6 维。
+// 位置评分仍按方向选函数：左右走 scorePosition（中心欧氏距离差），
+// 上下走 posScoreVertical（相对锚点左上角位移差）。
+function textScore(an, dn, aHm, aDe, ctx, dir) {
+  const isVertical = dir === 'up' || dir === 'down'
+  const ps = isVertical
+    ? posScoreVertical(an, dn, aHm, aDe, ctx)
+    : scorePosition(an, dn, aHm, aDe, dir, ctx)
+  const sem = textSemanticSimilarity(dn.textContent, an.textContent)
+  const ds = scoreCenterDirection(an, dn, aHm, aDe)
+  // 字号硬门控：两侧 fontSize 相差 ≥ 10 → 直接判死
+  const fsA = an.style?.fontSize
+  const fsD = dn.style?.fontSize
+  if (fsA != null && fsD != null && Math.abs(fsA - fsD) >= 10) return { pass: false, score: 0 }
+  const fs = (fsA != null && fsD != null)
+    ? MatchTools.gaussianCurveParabola(fsA, fsD, { x: 3, y: 0.5 }, 10)
+    : 1
+  // 字重硬门控：两侧 fontWeight 相差 ≥ 400 → 直接判死
+  const fwA = an.style?.fontWeight
+  const fwD = dn.style?.fontWeight
+  if (fwA != null && fwD != null && Math.abs(fwA - fwD) >= 400) return { pass: false, score: 0 }
+  const fw = (fwA != null && fwD != null)
+    ? MatchTools.gaussianCurveParabola(fwA, fwD, { x: 200, y: 0.5 }, 400)
+    : 1
+  // 字色：Pass 1 口径（线性 + 白底混合 + 曼哈顿距离）
+  const fcA = an.style?.fontColor
+  const fcD = dn.style?.fontColor
+  const fc = (fcA && fcD) ? getSimilarityColor(fcA, fcD) : 1
+  return {
+    pass: ps > 0 && (sem > 0 || fs + fw + fc > 0.5),
+    score: ps * 0.40 + sem * 0.20 + fs * 0.15 + fw * 0.10 + fc * 0.10 + ds * 0.05,
+  }
+}
+
+// ── 评分调度：文本走 textScore，容器按方向走原 tripleScore / verticalTriple ──
+// 异类拒绝：文本只能和文本，容器只能和容器
+function dispatchTriple(an, dn, aHm, aDe, ctx, dir) {
+  if (an.type !== dn.type) return { pass: false, score: 0 }
+  if (an.type === 'text') return textScore(an, dn, aHm, aDe, ctx, dir)
+  // 容器：按方向走原函数，逻辑不动
+  if (dir === 'left' || dir === 'right') return tripleScore(an, dn, aHm, aDe, dir, ctx)
+  return verticalTriple(an, dn, aHm, aDe, ctx)
+}
+
 // ── 主入口 ─────────────────────────────────────────────────────────────────────
 export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArkui, matchedDesignIds, regionContext, options = {}) {
   const { diagDe = 1, diagHm = 1, canvasHeight, canvasHeightVp, canvasWidth, canvasWidthVp, priorContainPairs = [] } = options
@@ -185,7 +232,7 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
       if (!an) continue
       const dn = nearestInDir(availDesign, aDe.rect, dir, d => !lockedDesign.has(d.id) && isCompatibleType(d, an) && anchorCheck(an, d))
       if (!dn) continue
-      const t = tripleScore(an, dn, aHm, aDe, dir, ctx)
+      const t = dispatchTriple(an, dn, aHm, aDe, ctx, dir)
       if (t.pass) addNom(an, dn, true, t.score)
     }
   }
@@ -206,7 +253,7 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
         // 守门：边缘间距差超过待匹配节点高度 → 放弃，丢后续流程
         if (Math.abs(edgeGap(dn.rect, aDe.rect, dir) - gapHm) > an.rect.h) continue
         if (!anchorCheck(an, dn)) continue
-        const t = verticalTriple(an, dn, aHm, aDe, ctx)
+        const t = dispatchTriple(an, dn, aHm, aDe, ctx, dir)
         if (t.pass) addNom(an, dn, false, t.score)
       }
     }
