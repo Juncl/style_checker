@@ -25,9 +25,9 @@ export const GUIDE_LINKS = {
 
 export const TEXT_STYLE_OPTIONS = [
   { value: 'fontSize',      label: '字号' },
-  { value: 'fontFamily',    label: '字体' },
   { value: 'fontWeight',    label: '字重' },
   { value: 'fontColor',     label: '颜色' },
+  { value: 'fontFamily',    label: '字体' },
   { value: 'shadow',        label: '阴影' },
   { value: 'blur',          label: '模糊' },
   { value: 'opacity',       label: '不透明度' },

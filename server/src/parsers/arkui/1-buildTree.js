@@ -95,7 +95,8 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compT
   //     x/w：左右不对称（left !== right）或水平对齐为 left 时扣出水平内容区；
   //          在内容区内按 textAlign 收紧到文字真实宽度（w 只能缩小）
   //     y/h：上下 padding 任一有值（top>0 或 bottom>0）时扣出垂直内容区；
-  //          单行(innerH<fs*1.9)才垂直居中收敛到 fontSize，多行不动
+  //          单行(innerH<fs*1.9)才垂直居中收敛到 fontSize，多行不动；
+  //          lineHeight<fs 时跳过收敛（行高小于字号，文字顶部排布，居中会失真）
   // 仅作用于有文字的文本节点（无文字后续会被剪枝，不处理）
   if (TEXT_TYPES.has(type) && vpRect && vpRect.w > 0 && vpRect.h > 0) {
     const content = getArkuiTextContent(attrs)
@@ -138,8 +139,11 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compT
         innerTop = vpRect.y
         innerH = vpRect.h
       }
-      // y/h 收敛：单行才收敛，多行(innerH >= fs*1.9)不动
-      if (innerH < fs * 1.9) {
+      // y/h 收敛：lineHeight<fs 时跳过（行高小于字号，文字顶部排布，居中收敛会失真）；
+      //          单行才收敛，多行(innerH >= fs*1.9)不动
+      const lh = parseVp(attrs.lineHeight)
+      const skipVRefit = lh != null && lh > 0 && lh < fs
+      if (!skipVRefit && innerH < fs * 1.9) {
         vpRect = { ...vpRect, y: innerTop + (innerH - fs) / 2, h: fs }
       }
     }
