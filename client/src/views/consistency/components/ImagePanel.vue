@@ -370,7 +370,6 @@ function hitNodesAt(px, py) {
     .filter(n =>
       n.visible !== false &&
       !isHiddenTextNode(n) &&
-      !n.visualOccluded &&
       n.rect &&
       px >= n.rect.x && px <= n.rect.x + n.rect.w &&
       py >= n.rect.y && py <= n.rect.y + n.rect.h
@@ -411,7 +410,7 @@ function hitTypePriority(node) {
 function isHiddenTextNode(node) {
   return !!(node &&
     node.type === 'text' &&
-    (node.visualOccluded || node.ocrVisibility?.visible === false))
+    node.ocrVisibility?.visible === false)
 }
 
 // ── 交互事件 ────────────────────────────────────────────────────────────────
@@ -543,7 +542,7 @@ function onBoxMove(e) {
   boxRect.value = { x, y, w, h }
   const sel = { x, y, w, h }
   const hits = props.nodes.filter(n =>
-    n.visible !== false && !n.visualOccluded && n.rect && rectsIntersect(sel, n.rect) &&
+    n.visible !== false && n.rect && rectsIntersect(sel, n.rect) &&
     !(n.rect.x >= -2 && n.rect.x <= 2 && n.rect.y >= -2 && n.rect.y <= 2 &&
       n.rect.w >= props.canvasW - 2 && n.rect.h >= props.canvasH - 2) &&
     canHoverInSel(n, sel)

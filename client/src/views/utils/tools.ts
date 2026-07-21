@@ -176,11 +176,11 @@ function isHiddenFrameworkTextNode(node: any): boolean {
   return !!(node && node.type === 'text' && node.hiddenFrameworkAncestor)
 }
 
-// OCR 判定为不可见的文本节点：被遮挡（visualOccluded）或 OCR 标注为不可见
+// OCR 判定为不可见的文本节点：OCR 标注为不可见
 function isOcrHiddenTextNode(node: any): boolean {
   return !!(node &&
     node.type === 'text' &&
-    (node.visualOccluded || node.ocrVisibility?.visible === false))
+    node.ocrVisibility?.visible === false)
 }
 
 // 判断节点是否可在画布上交互（可点击/高亮）：排除 Blank、不可见、被遮挡、极小节点
@@ -190,7 +190,6 @@ export function isInteractiveImageNode(node: any): boolean {
     node.visible !== false &&
     !isHiddenFrameworkTextNode(node) &&
     !isOcrHiddenTextNode(node) &&
-    !node.visualOccluded &&
     node.rect &&
     node.rect.w > 4 &&
     node.rect.h > 4)
@@ -202,7 +201,6 @@ export function isSelectableNode(node: any): boolean {
     node.visible !== false &&
     !isHiddenFrameworkTextNode(node) &&
     !isOcrHiddenTextNode(node) &&
-    !node.visualOccluded &&
     node.rect?.w > 4 &&
     node.rect?.h > 4)
 }
@@ -239,7 +237,6 @@ export function resolveSelectableNode(nodes: any[], nodeId: string): any {
     normalizeLooseText(n.textContent) === targetText &&
     isPathPrefix(node.path, n.path) &&
     n.visible !== false &&
-    !n.visualOccluded &&
     !isHiddenFrameworkTextNode(n) &&
     !isOcrHiddenTextNode(n)
   )
