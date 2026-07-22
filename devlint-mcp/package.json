@@ -1,0 +1,19 @@
+{
+  "name": "devlint-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "DevLint MCP Server - UI 还原度检查能力",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "files": [
+    "index.js",
+    "lib/",
+    "config.json"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.23.0"
+  }
+}

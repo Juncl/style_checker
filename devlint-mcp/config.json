@@ -1,0 +1,9 @@
+{
+  "env": "outer",
+  "outer": {
+    "checkServerUrl": "http://localhost:3012/api"
+  },
+  "inner": {
+    "checkServerUrl": "http://xxx.aaa.com/devlint/api"
+  }
+}
