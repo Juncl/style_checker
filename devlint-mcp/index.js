@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * devlint-mcp 入口
  *

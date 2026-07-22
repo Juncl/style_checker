@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "description": "DevLint MCP Server - UI 还原度检查能力",
+  "bin": {
+    "devlint-mcp": "index.js"
+  },
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js"
