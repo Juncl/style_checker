@@ -1,4 +1,4 @@
-import puppeteer from 'puppeteer'
+import puppeteer from 'puppeteer-core'
 import { existsSync } from 'fs'
 import { homedir, platform } from 'os'
 

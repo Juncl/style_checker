@@ -160,7 +160,10 @@ export function createMcpServer() {
     },
   )
 
-  // ── collect_web：Web 开发侧数据采集 ──────────────────────────────────────────
+  // ── collect_hm：hm arkui 开发侧数据采集 ──
+  // 占个空~ 后续需要实现
+
+  // ── collect_web：Web 开发侧数据采集 ──
   mcp.tool(
     'collect_web',
     [
@@ -258,6 +261,11 @@ export function createMcpServer() {
       }
     },
   )
+
+
+  // ── collect_pixso：pixso 设计侧数据采集 ─────
+  
+
 
   return mcp
 }
