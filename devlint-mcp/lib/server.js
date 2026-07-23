@@ -210,8 +210,8 @@ export function createMcpServer() {
         .describe('视口高度，默认 1080'),
       deviceScaleFactor: z
         .number()
-        .default(1)
-        .describe('截图质量倍率，默认 1（1x/2x/3x）'),
+        .default(2)
+        .describe('截图质量倍率，默认 2（1x/2x/3x）'),
       browserWSEndpoint: z
         .string()
         .optional()

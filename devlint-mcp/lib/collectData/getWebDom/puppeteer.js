@@ -9,7 +9,7 @@ const DEFAULT_LAUNCH_OPTIONS = {
   args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
 }
 
-const DEFAULT_VIEWPORT = { width: 1920, height: 1080, deviceScaleFactor: 1 }
+const DEFAULT_VIEWPORT = { width: 1920, height: 1080, deviceScaleFactor: 2 }
 
 const DEFAULT_RENDER_WAIT = 3000
 
@@ -96,8 +96,8 @@ export async function openPage(browser, url, options = {}) {
  * @param {Object} options
  *   - width: 画布宽度，默认 1920
  *   - height: 画布高度，默认 1080
- *   - deviceScaleFactor: 截图质量倍率，默认 1（1x/2x/3x）
- * @returns {Promise<import('puppeteer').CDPSession>} CDP session（用于后续 CDP 命令）
+ *   - deviceScaleFactor: 截图质量倍率，默认 2（1x/2x/3x）
+ * @returns {Promise<import('puppeteer').CDPSession>} CDP session（用于后续截图）
  */
 export async function emulateDevice(page, options = {}) {
   const vp = { ...DEFAULT_VIEWPORT, ...options }
@@ -128,19 +128,20 @@ export async function evalInPage(page, fn, ...args) {
 }
 
 /**
- * 截取页面截图，返回 PNG Buffer
- * 截图尺寸与 emulateDevice 设定的视口一致
+ * 通过 CDP 截取页面截图，返回 PNG Buffer
+ * 对齐插件逻辑：用 Page.captureScreenshot（fromSurface + captureBeyondViewport:false）
+ * 截图尺寸与 emulateDevice 设定的视口 + deviceScaleFactor 一致
  *
- * @param {import('puppeteer').Page} page
- * @param {Object} options - fullPage: 是否整页截图，默认 false（仅视口）
+ * @param {import('puppeteer').CDPSession} client - emulateDevice 返回的 CDP session
  * @returns {Promise<Buffer>}
  */
-export async function screenshot(page, options = {}) {
-  return page.screenshot({
-    type: 'png',
-    fullPage: options.fullPage ?? false,
-    ...options,
+export async function screenshot(client) {
+  const { data } = await client.send('Page.captureScreenshot', {
+    format: 'png',
+    fromSurface: true,
+    captureBeyondViewport: false,
   })
+  return Buffer.from(data, 'base64')
 }
 
 /**
@@ -205,7 +206,7 @@ export async function run(url, options = {}) {
   try {
     const page = await browser.newPage()
 
-    await emulateDevice(page, viewport)
+    const client = await emulateDevice(page, viewport)
 
     await page.goto(url, {
       waitUntil: waitUntil || 'networkidle0',
@@ -218,7 +219,7 @@ export async function run(url, options = {}) {
 
     const domData = collectFn ? await evalInPage(page, collectFn) : null
 
-    const screenshotBuffer = needScreenshot ? await screenshot(page) : null
+    const screenshotBuffer = needScreenshot ? await screenshot(client) : null
 
     return { domData, screenshotBuffer }
   } finally {
