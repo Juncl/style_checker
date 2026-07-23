@@ -8,3 +8,4 @@ client/dist
 backup
 a-design
 mock
+.devlint

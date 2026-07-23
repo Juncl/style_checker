@@ -1,25 +1,15 @@
-import { readFileSync } from 'fs'
-import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
+/**
+ * devlint-mcp 配置文件
+ */
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const configPath = join(__dirname, '..', 'config.json')
-
-const raw = JSON.parse(readFileSync(configPath, 'utf-8'))
-
-const envKey = raw.env || 'outer'
-const envConfig = raw[envKey]
-
-if (!envConfig) {
-  throw new Error(`config.json 中未找到 env="${envKey}" 对应的配置块`)
+const CHECK_ENV = 'outer'
+// const CHECK_ENV = 'inner'
+const CHECK_URL = {
+  outer:  'http://localhost:3012/api',
+  inner:  'http://xxx.aaa.com/devlint/api'
 }
 
 export const config = {
-  /** 当前环境标识：outer | inner */
-  env: envKey,
-  /**
-   * 检查引擎 server 地址，对应 client 的 SERVER_BASE_URL
-   * fetch 时拼接：`${checkServerUrl}/check/upload`
-   */
-  checkServerUrl: envConfig.checkServerUrl,
+  CHECK_SERVER_URL: CHECK_URL[CHECK_ENV],
+  DIR_NAME: '.devlint'
 }
