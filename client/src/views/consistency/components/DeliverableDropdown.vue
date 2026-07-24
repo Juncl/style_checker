@@ -50,7 +50,7 @@
           <template v-else>
             <span class="deliverable-item-name" :title="item.name">{{ item.name }}</span>
             <span
-              v-if="isPage && debugStore.debugMode"
+              v-if="isPage"
               class="deliverable-action-btn deliverable-edit-trigger"
               @click.stop="onEditClick(item)"
             >
