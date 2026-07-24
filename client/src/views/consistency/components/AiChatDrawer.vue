@@ -5,7 +5,7 @@
       <div ref="messagesEl" class="ai-messages">
         <div v-if="messages.length === 0 && !streaming" class="ai-empty">
           <div class="ai-empty-icon">
-            <img :src="octoAi" width="120" height="120" />
+            <img :src="octoAi" width="80" height="80" />
           </div>
           <p class="ai-empty-title">一致性检查</p>
           <div class="ai-empty-desc">
@@ -20,16 +20,15 @@
           :key="i"
           :class="['ai-msg', `ai-msg--${msg.role}`]"
         >
-          <!-- 带图片的用户消息 -->
-          <div v-if="msg.images && msg.images.length" class="ai-msg-img-bubble">
+          <!-- 带图片的用户消息：图片和文字分两个气泡 -->
+          <template v-if="msg.images && msg.images.length">
             <div class="ai-msg-img-files">
               <div v-for="(imgSrc, j) in msg.images" :key="j" class="ai-msg-img-file">
                 <img :src="imgSrc" class="ai-msg-img-file-thumb" />
-                <span class="ai-msg-img-file-name">{{ getImageFileName(j, imgSrc) }}</span>
               </div>
             </div>
-            <div v-if="msg.content" class="ai-msg-img-text">{{ msg.content }}</div>
-          </div>
+            <div v-if="msg.content" class="ai-msg-bubble ai-msg-img-text">{{ msg.content }}</div>
+          </template>
           <!-- assistant 消息 -->
           <template v-else-if="msg.role === 'assistant'">
             <div
@@ -651,7 +650,7 @@ defineExpose({ resetAll })
   padding: 24px 24px 40px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   scroll-behavior: smooth;
 }
 
@@ -661,14 +660,13 @@ defineExpose({ resetAll })
   align-items: center; justify-content: center;
   gap: 6px; padding: 40px 0; text-align: center;
 }
-.ai-empty-icon   { opacity: 0.9; }
 .ai-empty-title  { font-size: 32px; font-weight: 700; color: rgba(0, 0, 0, 0.90); margin: 0; }
 .ai-empty-desc   { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .ai-empty-desc p { font-size: 14px; font-weight: 400; color: rgba(0, 0, 0, 0.60); line-height: 22px; margin: 0; }
 .ai-empty-link   { color: var(--octo-primary) !important; cursor: pointer; }
 
 .ai-msg          { display: flex; max-width: 92%; }
-.ai-msg--user    { align-self: flex-end; flex-direction: column; align-items: flex-end; }
+.ai-msg--user    { align-self: flex-end; flex-direction: column; align-items: flex-end; gap: 16px; }
 .ai-msg--assistant { align-self: flex-start; flex-direction: column; gap: 4px; }
 
 /* ── Think 折叠块 ── */
@@ -744,57 +742,31 @@ defineExpose({ resetAll })
 .ai-msg-md :deep(pre) { background: #e8ecf0; border-radius: 6px; padding: 8px 10px; overflow-x: auto; margin: 6px 0; }
 .ai-msg-md :deep(pre code) { background: none; padding: 0; }
 
-/* 带图片的用户消息 */
-.ai-msg-img-bubble {
-  padding: 12px;
-  border-radius: 16px;
-  border-bottom-right-radius: 2px;
-  background: rgba(10, 89, 247, 0.08);
-  color: rgba(0, 0, 0, 0.9);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: 240px;
-}
+/* 带图片的用户消息：图片气泡 + 文字气泡 */
 .ai-msg-img-text {
   font-size: 14px;
   font-weight: 400;
   line-height: 22px;
-  color: rgba(25, 25, 25, 1);
   white-space: pre-wrap;
   word-break: break-word;
 }
 .ai-msg-img-files {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 8px;
   width: fit-content;
 }
 .ai-msg-img-file {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.9);
   position: relative;
 }
 .ai-msg-img-file-thumb {
-  width: 24px;
-  height: 30px;
+  width: 80px;
+  height: 80px;
   object-fit: cover;
   border-radius: 4px;
   flex-shrink: 0;
-}
-.ai-msg-img-file-name {
-  flex: 1;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 20px;
-  color: rgba(0, 0, 0, 0.9);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* 流式思考中状态 */
@@ -818,7 +790,7 @@ defineExpose({ resetAll })
 /* ── 容器 31823：精准检查提示 ── */
 .ai-precision-tip {
   flex-shrink: 0;
-  margin: 0 24px 16px 24px;
+  margin: 0 24px 24px 24px;
   padding: 16px 16px 12px 16px;
   border-radius: 12px;
   border: 1px solid rgba(0, 0, 0, 0.1);

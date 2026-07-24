@@ -1548,11 +1548,12 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 16px;
   border-radius: 12px;
   border: 1px dashed var(--octo-border-separator);
   background: url('@/assets/svg/report-bg.svg') no-repeat center center / 100% 100%;
+  background-origin: border-box;
 }
 
 .report-empty-img {
@@ -1640,7 +1641,7 @@ body {
   max-width: 100%;
   height: 32px !important;
   padding: 5px 16px !important;
-  border-radius: 4px !important;
+  border-radius: 8px !important;
   font-size: 14px !important;
   font-weight: 400 !important;
 }

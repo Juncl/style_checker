@@ -151,6 +151,7 @@
 
 <script setup>
 import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { toWebColorDisplay } from '../../utils/tools.ts'
 import { TEXT_STYLE_OPTIONS, CONTAINER_STYLE_OPTIONS } from '../../utils/constants'
 import { validateOverrideInput, parseOverrideValue } from '../match/overrideValidator'
@@ -1317,6 +1318,7 @@ function onAddBtnClick() {
 function deleteRow(key) {
   savedRows.value = savedRows.value.filter(r => r.key !== key)
   emit('remove-manual-style', { nodeId: props.inspectorNode?.id, key })
+  ElMessage.warning('备注已删除')
 }
 
 // 将已解析的 manualStyle 值反向格式化为显示字符串（节点切换时还原已保存行）
