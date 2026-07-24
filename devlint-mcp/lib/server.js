@@ -263,8 +263,64 @@ export function createMcpServer() {
   )
 
 
-  // ── collect_pixso：pixso 设计侧数据采集 ─────
-  
+  // ── collect_design：设计侧数据采集（占位，内网实现）──
+  mcp.tool(
+    'collect_design',
+    [
+      '设计稿数据采集工具。通过传送码或设计稿 URL，采集 Pixso 设计稿的节点树数据 + 截图，',
+      '生成 design.json 和 design.png 保存到指定工程目录，返回文件路径。',
+      '',
+      '【触发场景】',
+      '当用户说以下任何一种时触发：采集设计稿、采集 Pixso 设计稿、获取设计稿数据、',
+      '采集设计侧数据、导出设计稿、设计稿截图、传送码采集。',
+      '采集结果可直接用于 ui_style_check 进行 UI 还原度检查。',
+      '',
+      '【参数说明】',
+      '- code: 传送码（可选），如 "111"，内网通过传送码服务解析为 Pixso 页面地址',
+      '- url: 设计稿 URL 地址',
+      '  · code 和 url 至少传一个，同时传时 url 优先',
+      '- filePath: 当前打开的工程目录地址（必填），采集结果保存到此目录下',
+      '',
+      '【输出格式】',
+      '返回 JSON，包含：',
+      '- designJsonPath: 采集的设计稿 JSON 文件路径',
+      '- designImagePath: 截图 PNG 文件路径',
+      '',
+      '【使用指引】',
+      '采集完成后，将返回值直接传给 ui_style_check 工具进行 UI 还原度检查：',
+      '  collect_design 返回的 designJsonPath → ui_style_check 的 designJsonPath 参数',
+      '  collect_design 返回的 designImagePath → ui_style_check 的 designImagePath 参数',
+      '同时配合开发侧数据（用户提供或 collect_web 采集）完成检查。',
+      '即：collect_design → ui_style_check 是固定串联流程，采集完应自动调用 ui_style_check。',
+    ].join('\n'),
+    {
+      code: z
+        .string()
+        .optional()
+        .describe('传送码'),
+      url: z
+        .string()
+        .optional()
+        .describe('设计稿 URL 地址'),
+      filePath: z
+        .string()
+        .describe('当前打开的工程目录地址'),
+    },
+    async (params) => {
+      // TODO: 内网实现 - 根据 params.code / params.url 解析 Pixso 地址，
+      //       采集设计稿数据 + 截图，保存到 params.filePath 目录下
+      return {
+        content: [
+          {
+            type: 'text',
+            text: '设计稿采集为内网功能，当前环境（外网）暂不支持。',
+          },
+        ],
+        isError: true,
+      }
+    },
+  )
+
 
 
   return mcp

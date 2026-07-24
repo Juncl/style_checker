@@ -230,12 +230,12 @@ const COLLECT_FN = () => {
 }
 
 /**
- * 生成时间戳文件名：web_月-日-时分
+ * 生成时间戳：月日时分秒
  */
 function timestamp() {
   const d = new Date()
   const pad = n => String(n).padStart(2, '0')
-  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
+  return `${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
 }
 
 /**
@@ -258,9 +258,12 @@ export async function collectWebDom(url, options = {}) {
   const dir = join(process.cwd(), config.DIR_NAME)
   mkdirSync(dir, { recursive: true })
 
+  const vp = options.viewport || {}
+  const w = vp.width || 1920
+  const h = vp.height || 1080
   const ts = timestamp()
-  const devJsonPath = join(dir, `web_${ts}.json`)
-  const devImagePath = screenshotBuffer ? join(dir, `web_${ts}.png`) : null
+  const devJsonPath = join(dir, `web_${w}x${h}_${ts}.json`)
+  const devImagePath = screenshotBuffer ? join(dir, `web_${w}x${h}_${ts}.png`) : null
 
   writeFileSync(devJsonPath, JSON.stringify(domData, null, 2))
   if (devImagePath) writeFileSync(devImagePath, screenshotBuffer)
