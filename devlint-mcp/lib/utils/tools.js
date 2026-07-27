@@ -49,3 +49,12 @@ export function fileToBlob(filePath, fallbackType = 'application/json') {
     fallbackType
   return new Blob([buf], { type })
 }
+
+/**
+ * 生成时间戳：月日时分秒
+ */
+export function timestamp() {
+  const d = new Date()
+  const pad = n => String(n).padStart(2, '0')
+  return `${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+}

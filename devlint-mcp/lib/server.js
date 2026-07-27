@@ -5,6 +5,7 @@ import { extractSummary } from './utils/summary.js'
 import { fileToBlob } from './utils/tools.js'
 import { config } from './config.js'
 import { collectWebDom } from './collectData/getWebDom/getWebDom.js'
+import { collectDesign } from './collectData/getPixData/getPixData.js'
 
 /**
  * 创建一个 McpServer 实例，注册所有工具
@@ -24,18 +25,28 @@ export function createMcpServer() {
       '当用户说以下任何一种时触发：UI 还原度检查、一致性检查、设计稿对比、找开发对比设计的差异、',
       '检查 UI 实现、样式对比、设计走查、比对设计图和代码、检查 UI 还原、前端走查、视觉还原。',
       '',
-      '【与 collect_web 的协作】',
-      '开发侧的文件路径有两种来源：',
-      '1. 用户直接提供本地文件路径 → 直接传入 devJsonPath / devImagePath',
-      '2. 用户提供的是网页 URL → 先调用 collect_web 工具采集，拿到返回的 devJsonPath / devImagePath 后再传入',
-      '当用户的描述中包含 URL 或"采集网页""读取网页"等表述时，必须先调 collect_web，再调本工具。',
+      '【调用前：数据来源判断】',
+      '本工具需要开发侧和设计侧两份数据，调用前需根据用户提供的内容判断如何获取：',
+      '',
+      '开发侧数据：',
+      '1. 用户提供本地文件路径 → 直接作为 devJsonPath / devImagePath 传入',
+      '2. 用户提供网页 URL → 先调用 collect_web 采集，拿到返回的 devJsonPath / devImagePath 后再传入',
+      '3. 用户未提供任何开发侧数据 → 提示用户："请提供开发侧数据（本地文件路径或网页 URL）"',
+      '',
+      '设计侧数据：',
+      '1. 用户提供本地文件路径 → 直接作为 designJsonPath / designImagePath 传入',
+      '2. 用户提供传送码或设计稿 URL → 先调用 collect_design 采集，拿到返回的 designJsonPath / designImagePath 后再传入',
+      '3. 用户未提供任何设计侧数据 → 提示用户："请提供设计侧数据（本地文件路径、传送码或设计稿 URL）"',
+      '',
+      '只有当两侧数据都就绪后，才调用本工具。判断依据：用户描述中包含 http/https 开头的网址视为 URL；',
+      '纯数字或短字符串视为传送码；以 / 或盘符开头的视为本地文件路径。',
       '',
       '【参数说明】',
-      '- designJsonPath: 设计稿 JSON 文件路径（Figma/Pixso 导出的 data 结构）',
-      '- devJsonPath: 开发侧 JSON 文件路径（用户提供的本地文件，或 collect_web 返回的 devJsonPath）',
+      '- designJsonPath: 设计稿 JSON 文件路径（本地路径，或 collect_design 返回的 designJsonPath）',
+      '- devJsonPath: 开发侧 JSON 文件路径（本地路径，或 collect_web 返回的 devJsonPath）',
       '- platform: 平台类型，hmPhone（鸿蒙手机，默认）/ hmWatch（鸿蒙手表）/ web（Web 网页）',
-      '- designImagePath: 设计稿截图路径（可选，png/jpg）',
-      '- devImagePath: 开发侧截图路径（可选，来自用户或 collect_web 返回的 devImagePath）',
+      '- designImagePath: 设计稿截图路径（可选，本地路径或 collect_design 返回的 designImagePath）',
+      '- devImagePath: 开发侧截图路径（可选，本地路径或 collect_web 返回的 devImagePath）',
       '工具内部读取文件，文件内容不占用 AI 上下文。',
       '',
       '【输出格式】',
@@ -89,8 +100,8 @@ export function createMcpServer() {
         for (const [label, path] of [
           ['设计稿 JSON', params.designJsonPath],
           ['开发侧 JSON', params.devJsonPath],
-          ...(params.designImagePath ? [['设计稿截图', params.designImagePath] ] : []),
-          ...(params.devImagePath ? [['开发侧截图', params.devImagePath] ] : []),
+          ...(params.designImagePath ? [['设计稿截图', params.designImagePath]] : []),
+          ...(params.devImagePath ? [['开发侧截图', params.devImagePath]] : []),
         ]) {
           if (!existsSync(path)) {
             return {
@@ -166,7 +177,7 @@ export function createMcpServer() {
       '- url: 目标页面地址（必填）',
       '- width: 视口宽度，默认 1920',
       '- height: 视口高度，默认 1080',
-      '- deviceScaleFactor: 截图质量倍率，默认 1（1x/2x/3x）',
+      '- deviceScaleFactor: 截图质量倍率，默认 2（1x/2x/3x）',
       '- browserWSEndpoint: 连接已打开的 Chrome（可选），用于需登录的页面',
       '  · 不传 → 默认无头模式，适合无登录限制的页面',
       '  · 传入 → connect 模式，连接用户已打开并登录的 Chrome 浏览器',
@@ -250,7 +261,7 @@ export function createMcpServer() {
   )
 
 
-  // ── collect_design：设计侧数据采集（占位，内网实现）──
+  // ── collect_design：设计侧数据采集 ──
   mcp.tool(
     'collect_design',
     [
@@ -263,9 +274,9 @@ export function createMcpServer() {
       '采集结果可直接用于 ui_style_check 进行 UI 还原度检查。',
       '',
       '【参数说明】',
-      '- code: 传送码（可选），如 "111"，内网通过传送码服务解析为 Pixso 页面地址',
+      '- code: 传送码，如 "111"，通过传送码服务解析为 Pixso 页面地址',
       '- url: 设计稿 URL 地址',
-      '  · code 和 url 至少传一个，同时传时 url 优先',
+      '  · code 和 url 至少传一个，同时传时 code 优先',
       '- filePath: 当前打开的工程目录地址（必填），采集结果保存到此目录下',
       '',
       '【输出格式】',
@@ -293,17 +304,29 @@ export function createMcpServer() {
         .string()
         .describe('当前打开的工程目录地址'),
     },
-    async (params) => {
-      // TODO: 内网实现 - 根据 params.code / params.url 解析 Pixso 地址，
-      //       采集设计稿数据 + 截图，保存到 params.filePath 目录下
-      return {
-        content: [
-          {
-            type: 'text',
-            text: '设计稿采集为内网功能，当前环境（外网）暂不支持。',
-          },
-        ],
-        isError: true,
+    async args => {
+      try {
+        const { code, url, filePath } = args || {};
+        // 参数校验：code 和 url 至少传一个
+        if (!code && !url) {
+          return {
+            content: [{ type: 'text', text: `传送码和 URL 至少需要提供一个` }],
+            isError: true
+          }
+        }
+
+        return await collectDesign(code, url, filePath);
+
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `采集过程出错: ${err.message}`,
+            },
+          ],
+          isError: true,
+        }
       }
     },
   )

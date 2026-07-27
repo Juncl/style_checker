@@ -1,33 +1,30 @@
 /**
  * Pixso 设计稿数据采集
  *
- * 依赖本目录 puppeteer.js 通道，在 Pixso 页面上下文中执行采集逻辑，
- * 返回 design.json 格式的设计稿数据（供 server parseDesign 消费）。
- *
- * 使用方式：
- *   import { collectPixData } from './getPixData.js'
- *   const { domData, screenshotBuffer } = await collectPixData(url)
  */
 
-import { run } from './puppeteer.js'
+import { join } from 'path'
+import { getChromePath, timestamp } from "../../utils/tools";
 
-/**
- * 在浏览器上下文执行的 Pixso 数据采集函数
- *
- * TODO: 将现有谷歌插件采集逻辑迁移至此
- *       现有逻辑负责：从 Pixso 页面中提取设计稿节点树数据
- */
-const COLLECT_FN = () => {
-  // TODO: 迁移现有 Pixso 采集逻辑
-  return null
-}
+const CHROME_PATH = getChromePath()
 
-/**
- * 采集 Pixso 设计稿数据 + 截图
- * @param {string} url - Pixso 页面地址
- * @param {Object} options - 透传给 puppeteer.run 的选项（viewport / waitUntil 等）
- * @returns {Promise<{ domData: Object, screenshotBuffer: Buffer }>}
- */
-export async function collectPixData(url, options = {}) {
-  return run(url, { ...options, collectFn: COLLECT_FN })
+export async function collectDesign(code, url, filePath) {
+  if (!CHROME_PATH) {
+    throw new Error(
+      '未找到 Chrome 浏览器。请通过 env 配置 CHROME_PATH 指定 Chrome 可执行文件路径，' +
+      '例如：{ "env": { "CHROME_PATH": "C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe" } }'
+    )
+  }
+
+  const dir = process.cwd()
+  const jsonPath = join(dir, `./devlint/design_${timestamp()}.json`);
+  const imgPath = join(dir, `./devlint/design_${timestamp()}.png`);
+
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify({ designJsonPath: jsonPath, designImagePath: imgPath }, null, 2)
+    }]
+  }
+
 }

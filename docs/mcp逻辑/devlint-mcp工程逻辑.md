@@ -4,37 +4,42 @@
 
 devlint-mcp 是一个 **MCP（Model Context Protocol）服务器**，作为 AI 编码助手（opencode）与 style_checker server 之间的桥梁。
 
-它提供两类能力，封装为两个 MCP 工具：
+它提供三类能力，封装为三个 MCP 工具：
 
 | 工具 | 职责 | 输出 |
 |---|---|---|
 | `collect_web` | 通过 puppeteer 打开网页，采集 DOM 树结构 + 计算样式 + 截图 | `web.json` + `web.png` 文件路径 |
+| `collect_design` | 通过传送码/URL 采集 Pixso 设计稿节点树数据 + 截图 | `design.json` + `design.png` 文件路径 |
 | `ui_style_check` | 读取本地设计稿/开发侧文件，调用 server 完成检查 | 精简后的差异报告 JSON |
 
-两者可串联使用：`collect_web` 采集的开发侧文件路径直接传给 `ui_style_check` 的 `devJsonPath` / `devImagePath`，完成一次端到端检查。
+三者可串联使用：`collect_web` / `collect_design` 采集的文件路径直接传给 `ui_style_check`，完成一次端到端检查。
 
 ```
-                          ┌─────────────────────────────────────────────┐
-                          │                  devlint-mcp                 │
-用户 ──对话──▶ AI(opencode) │                                              │
-                      │    │  ┌─ collect_web ──┐   ┌─ ui_style_check ──┐ │
-                      │    │  │ puppeteer 采集  │   │ 读文件→multipart  │ │
-        stdio JSON-RPC│    │  │ web.json/png    │──▶│ →HTTP POST server │ │
-                      ▼    │  └────────────────┘   └────────┬──────────┘ │
-                  devlint-mcp│                                │            │
-                          │    │                                ▼            │
-                          │    │                          server(3012)      │
-                          │    │                          解析/匹配/比对    │
-                          │    │                                │            │
-                          │    │                          ◀── JSON 结果 ──┘ │
-                          │    │                          extractSummary    │
-                          └────│── 精简摘要 ◀──────────────────────────────│
-                               └──────────────────────────────────────────┘
+                          ┌──────────────────────────────────────────────────┐
+                          │                  devlint-mcp                      │
+用户 ──对话──▶ AI(opencode) │                                                   │
+                      │    │  ┌─ collect_web ──┐  ┌─ collect_design ────────┐ │
+                      │    │  │ puppeteer 采集  │  │ Pixso 采集（内网真实）  │ │
+                      │    │  │ web.json/png    │  │ design.json/png         │ │
+                      │    │  └───────┬────────┘  └──────────┬──────────────┘ │
+        stdio JSON-RPC│    │          │                      │                │
+                      ▼    │          │     ┌─ ui_style_check ──┐             │
+                  devlint-mcp│         └────▶│ 读文件→multipart   │             │
+                          │    │               │ →HTTP POST server │             │
+                          │    │               └────────┬──────────┘             │
+                          │    │                        ▼                        │
+                          │    │                  server(3012)                   │
+                          │    │                  解析/匹配/比对                  │
+                          │    │                        │                        │
+                          │    │                  ◀── JSON 结果 ──┘              │
+                          │    │                  extractSummary                 │
+                          └────│── 精简摘要 ◀─────────────────────────────────│
+                               └───────────────────────────────────────────────┘
 ```
 
 **核心价值**：
 - 文件内容由 MCP 进程内部读取并转为 multipart 上传，**不经过 AI 上下文**，避免大 JSON 占用 token
-- `collect_web` 采集的文件直接落盘到 `.devlint/` 目录，路径回传给 AI，无需 AI 处理文件内容
+- 采集的文件直接落盘到 `.devlint/` 目录，路径回传给 AI，无需 AI 处理文件内容
 
 ---
 
@@ -47,18 +52,29 @@ devlint-mcp/
 ├── lib/
 │   ├── server.js                         # MCP 服务器创建 + 工具注册（核心）
 │   ├── config.js                         # 环境配置（常量定义，含 DIR_NAME）
-│   ├── summary.js                        # 从 server 完整结果中提取精简摘要
+│   └── utils/                            # 公共工具函数
+│       ├── tools.js                      # getChromePath / fileToBlob / timestamp
+│       └── summary.js                    # 从 server 完整结果中提取精简摘要
 │   └── collectData/                      # 数据采集模块
 │       ├── getWebDom/                    # Web 开发侧 DOM 采集
 │       │   ├── getWebDom.js              #   采集逻辑（浏览器内执行函数 + 落盘）
-│       │   └── puppeteer.js              #   puppeteer 通道层（launch/connect 双模式）
-│       └── getPixData/                   # Pixso 设计侧采集（TODO 占位）
-│           ├── getPixData.js             #   采集逻辑（TODO，未实现）
-│           └── puppeteer.js              #   puppeteer 通道层（基础封装）
+│       │   └── puppeteer.js              #   puppeteer 通道层（launch/Connect 双模式）
+│       └── getPixData/                   # Pixso 设计侧采集
+│           └── getPixData.js             #   采集逻辑（外网占位，内网真实实现）
 └── node_modules/
 ```
 
 技术栈：ESM（`"type": "module"`）、MCP SDK、zod（参数校验）、puppeteer-core（浏览器自动化）。
+
+### `utils/tools.js` — 公共工具函数
+
+| 函数 | 职责 |
+|---|---|
+| `getChromePath()` | 跨平台查找 Chrome 可执行路径（env `CHROME_PATH` > 自动查找 > null） |
+| `fileToBlob(filePath, fallbackType)` | 读取文件为 Blob，按扩展名设置 MIME 类型（.png/.jpg/.json） |
+| `timestamp()` | 生成 `月日时分秒` 时间戳，用于采集文件命名 |
+
+> 这些函数被 `puppeteer.js`、`getWebDom.js`、`getPixData.js`、`server.js` 共同复用。
 
 ---
 
@@ -98,7 +114,7 @@ export const config = {
 | 配置项 | 说明 |
 |---|---|
 | `CHECK_SERVER_URL` | server 端 API 基地址，fetch 时拼接 `/check/upload` |
-| `DIR_NAME` | 采集数据存放目录名，`collect_web` 在 `process.cwd()/.devlint/` 下落盘 |
+| `DIR_NAME` | 采集数据存放目录名，采集模块在 `process.cwd()/.devlint/` 下落盘 |
 | `CHECK_ENV` | 内外网切换常量，改注释行即可（`outer` ↔ `inner`），代码零改动 |
 
 > 注意：当前配置通过 `config.js` 中的常量管理，不再读取外部 `config.json` 文件。
@@ -107,7 +123,7 @@ export const config = {
 
 ## 五、工具注册（`server.js`）
 
-共注册 2 个已实装工具 + 2 个占位工具。
+共注册 3 个工具。
 
 ### 5.1 `ui_style_check` — UI 一致性检查
 
@@ -133,7 +149,7 @@ export const config = {
    遍历所有传入路径，existsSync 检查，不存在则返回 isError
 
 2. 读取文件为 Blob
-   fileToBlob() 根据扩展名设置 MIME 类型：
+   fileToBlob()（来自 utils/tools.js）根据扩展名设置 MIME 类型：
      .png → image/png
      .jpg/.jpeg → image/jpeg
      其他 → application/json
@@ -193,15 +209,38 @@ export const config = {
    { devJsonPath, devImagePath } 作为 JSON 返回给 AI
 ```
 
-### 5.3 `collect_design` — 设计侧数据采集（占位）
+### 5.3 `collect_design` — 设计侧数据采集
 
-工具名 `collect_design`，参数定义（zod 校验）与 `collect_web` 一致（`input` + 视口/截图/浏览器连接选项），description 已完整编写。handler 在外网为占位（直接返回"内网功能暂不支持"），内网替换 `getPixData.js` 中 `COLLECT_FN`（Pixso 节点树提取）和 `resolvePixsoUrl`（传送码解析）即可接入真实采集。
+**参数定义**（zod 校验）：
 
-### 5.4 占位工具（未实现）
+| 参数 | 必填 | 类型 | 说明 |
+|---|---|---|---|
+| `code` | 否 | string | 传送码，如 "111"，通过传送码服务解析为 Pixso 页面地址 |
+| `url` | 否 | string | 设计稿 URL 地址 |
+| `filePath` | string | 当前打开的工程目录地址（必填，但当前采集逻辑未使用，采集结果统一落盘到 `.devlint/`） |
 
-| 工具 | 状态 | 说明 |
-|---|---|---|
-| `collect_hm` | 占位注释 | 鸿蒙 ArkUI 开发侧数据采集，后续实现 |
+> `code` 和 `url` 至少传一个，同时传时 url 优先。
+
+**description** 指导 AI：
+- 何时触发（用户说"采集设计稿""采集 Pixso 设计稿""传送码采集"等关键词时）
+- 输出 `designJsonPath` / `designImagePath`，可直接传给 `ui_style_check`
+- `collect_design → ui_style_check` 是固定串联流程
+
+**工具执行流程（handler）**：
+
+```
+1. 参数校验
+   code 和 url 至少传一个，否则返回 isError
+
+2. 调用 collectDesign(code, url, filePath)
+   外网：返回 .devlint/design.json / .devlint/design.png 的全路径（占位，不实际采集）
+   内网：替换 getPixData.js 实现真实 Pixso 采集逻辑
+
+3. 返回
+   { designJsonPath, designImagePath } 作为 JSON 返回给 AI
+```
+
+> 注意：handler 中对 `collectDesign` 的调用使用 `await`，确保内部 `throw` 能被 catch 捕获并返回 `isError`。
 
 ---
 
@@ -209,12 +248,14 @@ export const config = {
 
 ### 6.1 架构：通道层 + 采集逻辑分离
 
-每个采集模块由两个文件组成，职责分离：
+Web 采集模块由两个文件组成，职责分离：
 
 | 文件 | 职责 |
 |---|---|
-| `puppeteer.js` | **通道层**：浏览器生命周期管理（launch/connect）、页面导航、CDP 设备仿真、截图、`page.evaluate` 注入执行 |
-| `getWebDom.js` / `getPixData.js` | **采集逻辑**：在浏览器上下文中执行的 `COLLECT_FN` 函数 + 结果落盘 |
+| `puppeteer.js` | **通道层**：浏览器生命周期管理（launch/Connect）、页面导航、CDP 设备仿真、截图、`page.evaluate` 注入执行 |
+| `getWebDom.js` | **采集逻辑**：在浏览器上下文中执行的 `COLLECT_FN` 函数 + 结果落盘 |
+
+Pixso 采集模块（`getPixData/`）当前只有一个文件 `getPixData.js`，外网为占位返回，内网替换为真实采集逻辑。
 
 通道层 `run()` 统一流程：
 
@@ -267,7 +308,7 @@ export const config = {
 ```
 1. 调用 run(url, { collectFn: COLLECT_FN, ...options }) 获取 { domData, screenshotBuffer }
 2. 在 process.cwd()/.devlint/ 目录下创建文件
-3. 文件名带时间戳：web_月-日-时分.json / web_月-日-时分.png
+3. 文件名带尺寸+时间戳：web_{w}x{h}_{月日时分秒}.json / .png
 4. 返回 { devJsonPath, devImagePath }
 ```
 
@@ -278,7 +319,7 @@ export const config = {
 | **launch**（默认） | 不传 `browserWSEndpoint` 且 `useConnect !== true` | puppeteer 自建无头浏览器实例，采集完 `browser.close()` 关闭 | 无登录限制的页面 |
 | **connect** | 传了 `browserWSEndpoint` 或 `useConnect === true` | 连接用户已打开的 Chrome，采集完 `browser.disconnect()` 仅断开连接 | 需登录的页面 |
 
-**Chrome 路径查找**（`getChromePath()`）：
+**Chrome 路径查找**（`getChromePath()`，来自 `utils/tools.js`）：
 - 优先级：环境变量 `CHROME_PATH` > 跨平台自动查找 > null
 - darwin: `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`
 - win32: `Program Files` / `Program Files(x86)` / `LOCALAPPDATA` 下的 Chrome
@@ -294,15 +335,28 @@ export const config = {
 
 **截图**：通过 CDP `Page.captureScreenshot`（`fromSurface: true`），尺寸与 `emulateDevice` 设定的视口 + `deviceScaleFactor` 一致。
 
-### 6.3 `getPixData/` — Pixso 设计侧采集（TODO）
+### 6.3 `getPixData/` — Pixso 设计侧采集
 
-当前为占位状态：
-- `getPixData.js` 的 `COLLECT_FN` 直接 `return null`，标注 TODO 待迁移现有 Pixso 采集逻辑
-- `puppeteer.js` 为基础通道封装（仅 launch 模式，无 connect / CDP 仿真），引用 `puppeteer`（完整版，注意 package.json 中仅有 `puppeteer-core` 依赖）
+#### 外网状态（当前）
+
+`getPixData.js` 为占位实现：
+- 校验 Chrome 路径是否存在（`getChromePath()`）
+- 拼接 `process.cwd()/.devlint/design_{月日时分秒}.json` / `.png` 全路径返回
+- **不实际采集**，仅返回路径供流程串联测试
+
+#### 内网状态
+
+内网部署时替换 `getPixData.js` 为真实实现：
+- 通过传送码（`code`）或 URL 解析 Pixso 页面地址
+- 采集 Pixso 节点树数据 + 截图
+- 落盘到 `process.cwd()/.devlint/design_{月日时分秒}.json` / `.png`
+- 返回全路径
+
+> `filePath` 参数当前未使用，采集结果统一落盘到 `.devlint/` 目录（与 `collect_web` 一致）。
 
 ---
 
-## 七、结果提取（`summary.js`）
+## 七、结果提取（`utils/summary.js`）
 
 ### `extractSummary(result)` 的职责
 
@@ -407,7 +461,7 @@ AI(opencode) 调用 MCP 工具 ui_style_check
   ▼  (stdio JSON-RPC)
 devlint-mcp / server.js handler
   │  1. existsSync 校验文件
-  │  2. readFileSync → Blob
+  │  2. fileToBlob() 读取文件为 Blob
   │  3. 构建 FormData
   │  4. fetch POST http://localhost:3012/api/check/upload
   │
@@ -417,7 +471,7 @@ server / routes/check.js → runCheck()
   │  返回完整 JSON 结果
   │
   ▼  (HTTP response)
-devlint-mcp / summary.js → extractSummary()
+devlint-mcp / utils/summary.js → extractSummary()
   │  过滤 error → 按设计节点分组 → 构建 componentChain → 排序
   │  返回精简摘要 JSON
   │
@@ -437,8 +491,8 @@ AI(opencode) 第一步：调用 MCP 工具 collect_web
   ▼  (stdio JSON-RPC)
 devlint-mcp / server.js handler
   │  调用 collectWebDom(url, options)
-  │    → puppeteer.run() → launch/connect 浏览器 → CDP 仿真 → 导航 → 采集 DOM → 截图
-  │    → 落盘到 .devlint/web_月-日-时分.json / .png
+  │    → puppeteer.run() → launch/Connect 浏览器 → CDP 仿真 → 导航 → 采集 DOM → 截图
+  │    → 落盘到 .devlint/web_{w}x{h}_{月日时分秒}.json / .png
   │  返回 { devJsonPath, devImagePath }
   │
   ▼  (stdio JSON-RPC response)
@@ -452,19 +506,49 @@ AI(opencode) 第二步：调用 MCP 工具 ui_style_check
   ▼  （后续流程同场景一）
 ```
 
+### 场景三：用户采集设计稿（collect_design → ui_style_check 串联）
+
+```
+用户: "采集这个设计稿"（提供传送码/URL + 开发侧文件路径）
+  │
+  ▼
+AI(opencode) 第一步：调用 MCP 工具 collect_design
+  │  参数: code, [url], filePath
+  │
+  ▼  (stdio JSON-RPC)
+devlint-mcp / server.js handler
+  │  调用 collectDesign(code, url, filePath)
+  │    外网：返回 .devlint/design_{月日时分秒}.json / .png 全路径（占位）
+  │    内网：真实采集 Pixso 节点树 + 截图，落盘到 .devlint/
+  │  返回 { designJsonPath, designImagePath }
+  │
+  ▼  (stdio JSON-RPC response)
+AI 拿到文件路径
+  │
+  ▼
+AI(opencode) 第二步：调用 MCP 工具 ui_style_check
+  │  参数: designJsonPath(collect_design返回), devJsonPath(用户提供),
+  │         platform, designImagePath(collect_design返回), devImagePath(用户提供)
+  │
+  ▼  （后续流程同场景一）
+```
+
 ---
 
 ## 十、关键设计点总结
 
 | 设计点 | 说明 |
 |---|---|
-| **文件不经 AI 上下文** | MCP 进程内部 `readFileSync` 读取文件并转 Blob 上传，文件内容不占用 AI token |
-| **采集与检查解耦** | `collect_web` 只负责采集落盘返回路径，`ui_style_check` 只负责读文件检查，两者通过文件路径串联 |
+| **文件不经 AI 上下文** | MCP 进程内部 `fileToBlob` 读取文件并转 Blob 上传，文件内容不占用 AI token |
+| **采集与检查解耦** | `collect_web` / `collect_design` 只负责采集落盘返回路径，`ui_style_check` 只负责读文件检查，两者通过文件路径串联 |
 | **通道层与采集逻辑分离** | `puppeteer.js` 管浏览器生命周期，`getWebDom.js` 管采集逻辑，新增采集类型只需写新的采集函数 |
+| **公共工具函数复用** | `getChromePath` / `fileToBlob` / `timestamp` 抽到 `utils/tools.js`，被多个模块复用 |
 | **双浏览器模式** | launch（无头，自建自毁）适合公开页面；connect（连接已登录 Chrome）适合需登录页面 |
 | **只返回 error 级差异** | summary 过滤掉 warning，让 AI 聚焦需精准修改的问题 |
 | **内外网切换** | 只改 `config.js` 的 `CHECK_ENV` 常量，代码零改动 |
+| **内外网采集逻辑隔离** | `getPixData.js` 外网占位返回路径，内网替换为真实 Pixso 采集实现 |
 | **stdio 传输** | 由 opencode 作为子进程启动，通过 stdin/stdout 通信 |
 | **组件层级链** | 通过 path 数组还原祖先链，帮开发者定位代码 |
 | **画布坐标排序** | 按 y→x 排序，报告顺序与页面视觉顺序一致 |
-| **采集结果带时间戳** | 文件名 `web_月-日-时分.json`，避免覆盖，方便多次采集对比 |
+| **采集文件命名** | web 采集带尺寸+时间戳 `web_{w}x{h}_{月日时分秒}`；设计采集带时间戳 `design_{月日时分秒}` |
+| **await 确保 catch 生效** | `collect_design` handler 中 `await collectDesign(...)`，确保内部 throw 被 catch 捕获返回 isError |

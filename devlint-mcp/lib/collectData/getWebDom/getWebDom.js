@@ -20,6 +20,7 @@ import { run } from './puppeteer.js'
 import { writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { config } from '../../config.js'
+import { timestamp } from '../../utils/tools.js'
 
 /**
  * 在浏览器上下文执行的 DOM 采集函数
@@ -227,15 +228,6 @@ const COLLECT_FN = () => {
       .map(el => getElementData(el, 0, 0))
       .filter(Boolean),
   }
-}
-
-/**
- * 生成时间戳：月日时分秒
- */
-function timestamp() {
-  const d = new Date()
-  const pad = n => String(n).padStart(2, '0')
-  return `${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
 }
 
 /**
