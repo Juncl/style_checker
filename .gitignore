@@ -8,4 +8,11 @@ client/dist
 backup
 a-design
 mock
+
+consistency-compare-client
+dist-pro
+dist-devlint
+dist-devlint.zip
+
+devlint-mcp-*
 .devlint

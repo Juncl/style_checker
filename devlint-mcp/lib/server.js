@@ -1,23 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { readFileSync, existsSync } from 'fs'
-import { extname } from 'path'
-import { extractSummary } from './summary.js'
+import { existsSync } from 'fs'
+import { extractSummary } from './utils/summary.js'
+import { fileToBlob } from './utils/tools.js'
 import { config } from './config.js'
 import { collectWebDom } from './collectData/getWebDom/getWebDom.js'
-
-/**
- * 读取文件为 Blob，支持 JSON 和图片
- */
-function fileToBlob(filePath, fallbackType = 'application/json') {
-  const buf = readFileSync(filePath)
-  const ext = extname(filePath).toLowerCase()
-  const type =
-    ext === '.png' ? 'image/png' :
-    ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
-    fallbackType
-  return new Blob([buf], { type })
-}
 
 /**
  * 创建一个 McpServer 实例，注册所有工具
