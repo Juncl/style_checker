@@ -4,7 +4,7 @@
  */
 
 import { join } from 'path'
-import { getChromePath, timestamp } from "../../utils/tools";
+import { getChromePath, timestamp } from "../../utils/tools.js";
 
 const CHROME_PATH = getChromePath()
 

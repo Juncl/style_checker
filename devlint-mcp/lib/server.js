@@ -196,6 +196,14 @@ export function createMcpServer() {
       '  collect_web 返回的 devImagePath → ui_style_check 的 devImagePath 参数',
       '同时设 platform 为 web，配合用户提供的设计稿路径（designJsonPath / designImagePath）完成检查。',
       '即：collect_web → ui_style_check 是固定串联流程，采集完应自动调用 ui_style_check。',
+      '',
+      '【采集中断处理】',
+      'collect_web 与 collect_design 互相独立，web 侧采集中断不阻塞设计侧采集：',
+      '- 若 collect_web 返回错误（如登录跳转、网络超时等），仍应继续执行 collect_design 完成设计侧采集，',
+      '  然后根据错误提示向用户提供恢复选项，待用户补齐 web 侧数据后再调用 ui_style_check。',
+      '- 登录跳转中断时，错误提示中会包含两个选项供用户选择：',
+      '  1. 自行登录后重新采集（登录中断专属）',
+      '  2. 手动提供 web.json / web.png 文件路径（所有 web 中断通用）',
     ].join('\n'),
     {
       url: z
@@ -247,6 +255,38 @@ export function createMcpServer() {
           ],
         }
       } catch (err) {
+        // 登录页重定向：web 采集中断，但不阻塞设计侧采集
+        if (err.code === 'LOGIN_REDIRECT') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: [
+                  '【Web 采集中断 - 需要登录】',
+                  `原因：${err.message}`,
+                  '',
+                  '当前 Web 侧数据采集因页面跳转登录页而中断，但设计侧采集不受影响，可继续执行 collect_design。',
+                  '',
+                  '请向用户说明中断原因，并提供以下两个选项让用户选择如何继续：',
+                  '',
+                  '选项1：自行登录后重新采集（仅登录中断时提供）',
+                  '  用户在浏览器中手动登录目标站点，登录后重新调用 collect_web 采集：',
+                  '  - 启动带调试端口的 Chrome 并登录：',
+                  '    /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222',
+                  '  - 重新调用 collect_web，传入 browserWSEndpoint="connect" 连接已登录的 Chrome',
+                  '',
+                  '选项2：手动提供 Web 开发侧数据文件（所有 web 采集中断通用）',
+                  '  用户自行导出 web.json（DOM 树 JSON）和 web.png（页面截图），提供本地文件路径，',
+                  '  直接作为 devJsonPath / devImagePath 传给 ui_style_check，跳过 collect_web 采集。',
+                  '',
+                  '注意：无论用户选择哪个选项，都应先继续完成设计侧（collect_design）的采集，',
+                  '两侧采集相互独立，不要因 web 侧中断而停止设计侧采集。',
+                ].join('\n'),
+              },
+            ],
+            isError: true,
+          }
+        }
         return {
           content: [
             {

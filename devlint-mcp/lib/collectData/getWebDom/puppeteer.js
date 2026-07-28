@@ -167,6 +167,99 @@ export async function close(browser, connected = false) {
   }
 }
 
+// ── 登录页检测 ──────────────────────────────────────
+// 部分页面需登录才能访问，未登录时会被自动重定向到登录页。
+// 此时采集到的 DOM/截图并非目标页面数据，需要识别并中断采集，
+// 提示用户先登录（推荐 connect 模式连接已登录的 Chrome）。
+
+/** 登录页 hostname 子域名特征前缀 */
+const LOGIN_HOST_PREFIXES = ['login.', 'signin.', 'sign-in.', 'sso.', 'passport.', 'idp.', 'auth.']
+
+/** 登录页 pathname 特征片段 */
+const LOGIN_PATH_SEGMENTS = ['/login', '/signin', '/sign-in', '/sign_in', '/signon', '/sso', '/oauth', '/passport', '/idp', '/authorize', '/auth/']
+
+/**
+ * 判断 URL 是否为登录页地址
+ * 综合 hostname 子域名特征 + pathname 路径片段判断
+ */
+function isLoginUrl(urlStr) {
+  if (!urlStr) return false
+  try {
+    const u = new URL(urlStr)
+    const host = u.hostname.toLowerCase()
+    const path = (u.pathname + u.search).toLowerCase()
+    if (LOGIN_HOST_PREFIXES.some(h => host.startsWith(h) || host.includes('.' + h))) return true
+    if (LOGIN_PATH_SEGMENTS.some(p => path.includes(p))) return true
+    return false
+  } catch {
+    const lower = urlStr.toLowerCase()
+    return LOGIN_PATH_SEGMENTS.some(p => lower.includes(p))
+  }
+}
+
+/**
+ * 判断是否发生了重定向（origin 或 pathname 变化即视为跳转）
+ */
+function isRedirected(originalUrl, finalUrl) {
+  if (!originalUrl || !finalUrl) return false
+  try {
+    const a = new URL(originalUrl)
+    const b = new URL(finalUrl)
+    return a.origin !== b.origin || a.pathname !== b.pathname
+  } catch {
+    return finalUrl !== originalUrl
+  }
+}
+
+/**
+ * 检测当前页面是否被重定向到登录页
+ *
+ * 判定规则（原始 URL 本身即登录页时跳过检测，尊重用户意图）：
+ * 1. 发生重定向且最终 URL 含登录特征 → 登录页（高置信，覆盖大多数 SSO/302 拦截）
+ * 2. 发生重定向或最终 URL 含登录特征，且页面存在密码输入框、可见元素较少（< 30）
+ *    → 登录页（补充：SPA 登录表单场景）
+ *
+ * @param {import('puppeteer').Page} page
+ * @param {string} originalUrl - 用户传入的目标 URL
+ * @returns {Promise<{ isLogin: boolean, reason: string, finalUrl: string }>}
+ */
+export async function detectLoginPage(page, originalUrl) {
+  // 原始 URL 本身就是登录页，不检测（用户可能就是要采集登录页）
+  if (isLoginUrl(originalUrl)) {
+    return { isLogin: false, reason: '', finalUrl: '' }
+  }
+
+  const finalUrl = page.url()
+  const redirected = isRedirected(originalUrl, finalUrl)
+  const finalIsLoginUrl = isLoginUrl(finalUrl)
+
+  // 页面 DOM 特征：是否存在密码输入框 + body 下元素数量
+  const { hasPasswordInput, elementCount } = await page.evaluate(() => ({
+    hasPasswordInput: !!document.querySelector('input[type="password"]'),
+    elementCount: document.querySelectorAll('body *').length,
+  }))
+
+  // 条件1：重定向到含登录特征的 URL
+  if (redirected && finalIsLoginUrl) {
+    return {
+      isLogin: true,
+      reason: `页面被重定向到登录页：${originalUrl} → ${finalUrl}`,
+      finalUrl,
+    }
+  }
+
+  // 条件2：跳转或 URL 含登录特征，且页面是简洁的登录表单（有密码框 + 元素少）
+  if ((redirected || finalIsLoginUrl) && hasPasswordInput && elementCount < 30) {
+    return {
+      isLogin: true,
+      reason: `页面跳转后呈现登录表单（检测到密码输入框，页面元素 ${elementCount} 个）：${originalUrl} → ${finalUrl}`,
+      finalUrl,
+    }
+  }
+
+  return { isLogin: false, reason: '', finalUrl }
+}
+
 /**
  * 完整采集流程（通道层封装）
  *
@@ -221,6 +314,15 @@ export async function run(url, options = {}) {
 
     if (waitForRender > 0) {
       await new Promise(r => setTimeout(r, waitForRender))
+    }
+
+    // 登录页检测：被重定向到登录页时中断采集，避免采集到非目标数据
+    const loginCheck = await detectLoginPage(page, url)
+    if (loginCheck.isLogin) {
+      const err = new Error(loginCheck.reason)
+      err.code = 'LOGIN_REDIRECT'
+      err.finalUrl = loginCheck.finalUrl
+      throw err
     }
 
     const domData = collectFn ? await evalInPage(page, collectFn) : null
