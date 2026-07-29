@@ -178,12 +178,10 @@ export function createMcpServer() {
       '- width: 视口宽度，默认 1920',
       '- height: 视口高度，默认 1080',
       '- deviceScaleFactor: 截图质量倍率，默认 2（1x/2x/3x）',
-      '- browserWSEndpoint: 连接已打开的 Chrome（可选），用于需登录的页面',
-      '  · 不传 → 默认无头模式，适合无登录限制的页面',
-      '  · 传入 → connect 模式，连接用户已打开并登录的 Chrome 浏览器',
-      '  · 用户需先启动 Chrome 并登录：',
-      '    /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222',
-      '  · 传入值示例：ws://localhost:9222/devtools/browser/xxxx 或直接传 "connect" 自动获取',
+      '',
+      '【采集流程】',
+      '1. 无头模式：克隆用户日常 Chrome profile（cookie + localStorage），静默采集',
+      '2. 检测到登录页 → 自动降级有头模式：弹出浏览器窗口，等待用户手动登录后继续采集',
       '',
       '【输出格式】',
       '返回 JSON，包含：',
@@ -199,11 +197,10 @@ export function createMcpServer() {
       '',
       '【采集中断处理】',
       'collect_web 与 collect_design 互相独立，web 侧采集中断不阻塞设计侧采集：',
-      '- 若 collect_web 返回错误（如登录跳转、网络超时等），仍应继续执行 collect_design 完成设计侧采集，',
+      '- 若 collect_web 返回错误（如登录超时、网络超时等），仍应继续执行 collect_design 完成设计侧采集，',
       '  然后根据错误提示向用户提供恢复选项，待用户补齐 web 侧数据后再调用 ui_style_check。',
-      '- 登录跳转中断时，错误提示中会包含两个选项供用户选择：',
-      '  1. 自行登录后重新采集（登录中断专属）',
-      '  2. 手动提供 web.json / web.png 文件路径（所有 web 中断通用）',
+      '- 登录超时中断时，可提示用户重新调用 collect_web，在有头窗口中完成登录后采集。',
+      '- 用户也可手动提供 web.json / web.png 文件路径，跳过 collect_web 直接调用 ui_style_check。',
     ].join('\n'),
     {
       url: z
@@ -221,10 +218,6 @@ export function createMcpServer() {
         .number()
         .default(2)
         .describe('截图质量倍率，默认 2（1x/2x/3x）'),
-      browserWSEndpoint: z
-        .string()
-        .optional()
-        .describe('连接已打开的 Chrome（connect 模式），用于需登录的页面。传 "connect" 自动从 localhost:9222 获取'),
     },
     async (params) => {
       try {
@@ -234,14 +227,6 @@ export function createMcpServer() {
             height: params.height,
             deviceScaleFactor: params.deviceScaleFactor,
           },
-        }
-
-        if (params.browserWSEndpoint) {
-          if (params.browserWSEndpoint === 'connect') {
-            collectOptions.useConnect = true
-          } else {
-            collectOptions.browserWSEndpoint = params.browserWSEndpoint
-          }
         }
 
         const { devJsonPath, devImagePath } = await collectWebDom(params.url, collectOptions)
@@ -255,27 +240,24 @@ export function createMcpServer() {
           ],
         }
       } catch (err) {
-        // 登录页重定向：web 采集中断，但不阻塞设计侧采集
-        if (err.code === 'LOGIN_REDIRECT') {
+        // 登录超时：有头窗口等待用户登录超时
+        if (err.code === 'LOGIN_TIMEOUT') {
           return {
             content: [
               {
                 type: 'text',
                 text: [
-                  '【Web 采集中断 - 需要登录】',
+                  '【Web 采集中断 - 登录超时】',
                   `原因：${err.message}`,
                   '',
-                  '当前 Web 侧数据采集因页面跳转登录页而中断，但设计侧采集不受影响，可继续执行 collect_design。',
+                  '当前 Web 侧数据采集因等待登录超时而中断，但设计侧采集不受影响，可继续执行 collect_design。',
                   '',
-                  '请向用户说明中断原因，并提供以下两个选项让用户选择如何继续：',
+                  '请向用户说明中断原因，并提供以下选项让用户选择如何继续：',
                   '',
-                  '选项1：自行登录后重新采集（仅登录中断时提供）',
-                  '  用户在浏览器中手动登录目标站点，登录后重新调用 collect_web 采集：',
-                  '  - 启动带调试端口的 Chrome 并登录：',
-                  '    /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222',
-                  '  - 重新调用 collect_web，传入 browserWSEndpoint="connect" 连接已登录的 Chrome',
+                  '选项1：重新采集',
+                  '  重新调用 collect_web，在弹出的有头浏览器窗口中尽快完成登录（120秒内）。',
                   '',
-                  '选项2：手动提供 Web 开发侧数据文件（所有 web 采集中断通用）',
+                  '选项2：手动提供 Web 开发侧数据文件',
                   '  用户自行导出 web.json（DOM 树 JSON）和 web.png（页面截图），提供本地文件路径，',
                   '  直接作为 devJsonPath / devImagePath 传给 ui_style_check，跳过 collect_web 采集。',
                   '',
