@@ -42,7 +42,9 @@ export async function launch(options = {}) {
  * 连接模式只断开不断开浏览器，不影响用户已有窗口和登录状态。
  *
  * 用户启动 Chrome 命令：
- *   /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
+ *   macOS:  /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
+ *   Windows: chrome.exe --remote-debugging-port=9222
+ * 注意：Chrome 默认只监听 127.0.0.1（IPv4），本工具用 127.0.0.1 连接以兼容 Windows 下 localhost 解析为 ::1 的问题。
  *
  * @param {Object} options
  *   - browserWSEndpoint: WebSocket 调试地址，默认自动从 localhost:9222 获取
@@ -53,7 +55,7 @@ export async function connect(options = {}) {
 
   // 未指定地址时，自动从默认端口获取
   if (!browserWSEndpoint) {
-    const res = await fetch(`http://localhost:${DEFAULT_DEBUG_PORT}/json/version`)
+    const res = await fetch(`http://127.0.0.1:${DEFAULT_DEBUG_PORT}/json/version`)
     const data = await res.json()
     browserWSEndpoint = data.webSocketDebuggerUrl
   }
