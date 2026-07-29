@@ -11,7 +11,7 @@ const DEFAULT_LAUNCH_OPTIONS = {
 
 const DEFAULT_VIEWPORT = { width: 1920, height: 1080, deviceScaleFactor: 2 }
 
-const DEFAULT_RENDER_WAIT = 3000
+const DEFAULT_RENDER_WAIT = 8000
 
 const DEFAULT_DEBUG_PORT = 9222
 
@@ -267,45 +267,22 @@ function isRedirected(originalUrl, finalUrl) {
 /**
  * 检测当前页面是否被重定向到登录页
  *
- * 判定规则（原始 URL 本身即登录页时跳过检测，尊重用户意图）：
- * 1. 发生重定向且最终 URL 含登录特征 → 登录页（高置信，覆盖大多数 SSO/302 拦截）
- * 2. 发生重定向或最终 URL 含登录特征，且页面存在密码输入框、可见元素较少（< 30）
- *    → 登录页（补充：SPA 登录表单场景）
+ * 判定规则：
+ * 发生重定向（origin 或 pathname 变化）→ 登录页
  *
  * @param {import('puppeteer').Page} page
  * @param {string} originalUrl - 用户传入的目标 URL
  * @returns {Promise<{ isLogin: boolean, reason: string, finalUrl: string }>}
  */
 export async function detectLoginPage(page, originalUrl) {
-  // 原始 URL 本身就是登录页，不检测（用户可能就是要采集登录页）
-  if (isLoginUrl(originalUrl)) {
-    return { isLogin: false, reason: '', finalUrl: '' }
-  }
-
   const finalUrl = page.url()
   const redirected = isRedirected(originalUrl, finalUrl)
-  const finalIsLoginUrl = isLoginUrl(finalUrl)
 
-  // 页面 DOM 特征：是否存在密码输入框 + body 下元素数量
-  const { hasPasswordInput, elementCount } = await page.evaluate(() => ({
-    hasPasswordInput: !!document.querySelector('input[type="password"]'),
-    elementCount: document.querySelectorAll('body *').length,
-  }))
-
-  // 条件1：重定向到含登录特征的 URL
-  if (redirected && finalIsLoginUrl) {
+  // 重定向了 → 被拦截到登录页
+  if (redirected) {
     return {
       isLogin: true,
-      reason: `页面被重定向到登录页：${originalUrl} → ${finalUrl}`,
-      finalUrl,
-    }
-  }
-
-  // 条件2：跳转或 URL 含登录特征，且页面是简洁的登录表单（有密码框 + 元素少）
-  if ((redirected || finalIsLoginUrl) && hasPasswordInput && elementCount < 30) {
-    return {
-      isLogin: true,
-      reason: `页面跳转后呈现登录表单（检测到密码输入框，页面元素 ${elementCount} 个）：${originalUrl} → ${finalUrl}`,
+      reason: `页面被重定向：${originalUrl} → ${finalUrl}`,
       finalUrl,
     }
   }
@@ -355,31 +332,34 @@ async function runHeadedWithProfile(url, options = {}) {
 
     await page.goto(url, {
       waitUntil: waitUntil || 'domcontentloaded',
-      timeout: timeout || 30000,
+      timeout: timeout || 60000,
     })
 
     // 检测是否仍为登录页，若是则等待用户手动登录
-    let loginCheck = await detectLoginPage(page, url)
-    if (loginCheck.isLogin) {
+    let isLogin = false
+    try {
+      const loginCheck = await detectLoginPage(page, url)
+      isLogin = loginCheck.isLogin
+    } catch {
+      // 页面导航中，等 2 秒重试一次
+      await new Promise(r => setTimeout(r, 2000))
+      const loginCheck = await detectLoginPage(page, url)
+      isLogin = loginCheck.isLogin
+    }
+
+    if (isLogin) {
       const start = Date.now()
       while (Date.now() - start < HEADED_LOGIN_TIMEOUT) {
         await new Promise(r => setTimeout(r, 2000))
-        loginCheck = await detectLoginPage(page, page.url())
-        if (!loginCheck.isLogin) break
+        // 当前 URL 和用户给的 URL 前面一致（origin + pathname 相同）= 登录成功
+        if (!isRedirected(url, page.url())) break
       }
-      if (loginCheck.isLogin) {
+      if (Date.now() - start >= HEADED_LOGIN_TIMEOUT) {
         const err = new Error(
           `等待登录超时（${HEADED_LOGIN_TIMEOUT / 1000}秒），请确认已在弹出的浏览器窗口中完成登录后重试。`
         )
         err.code = 'LOGIN_TIMEOUT'
         throw err
-      }
-      // 登录后页面可能已自动跳转，若仍在登录页 URL 则重新导航到目标页面
-      if (isLoginUrl(page.url())) {
-        await page.goto(url, {
-          waitUntil: waitUntil || 'networkidle0',
-          timeout: timeout || 30000,
-        })
       }
     }
 
@@ -408,9 +388,9 @@ async function runHeadedWithProfile(url, options = {}) {
  * @param {Object} options
  *   - collectFn: 在页面上下文执行的采集函数，签名: () => Object
  *   - viewport: { width, height, deviceScaleFactor } 视口尺寸，默认 1920×1080
- *   - waitUntil: 页面加载策略，默认 networkidle0
- *   - timeout: 页面导航超时，默认 30000
- *   - waitForRender: 渲染等待时间(ms)，默认 3000（对齐插件固定 3 秒）
+ *   - waitUntil: 页面加载策略，默认 domcontentloaded
+ *   - timeout: 页面导航超时，默认 60000
+ *   - waitForRender: 渲染等待时间(ms)，默认 8000
  *   - needScreenshot: 是否截图，默认 true
  *   - launchOptions: puppeteer.launch 额外选项（如 headless: false、userDataDir）
  * @returns {Promise<{ domData: Object|null, screenshotBuffer: Buffer|null }>}
@@ -433,18 +413,20 @@ export async function run(url, options = {}) {
     const page = await browser.newPage()
     const client = await emulateDevice(page, viewport)
     await page.goto(url, {
-      waitUntil: waitUntil || 'networkidle0',
-      timeout: timeout || 30000,
+      waitUntil: waitUntil || 'domcontentloaded',
+      timeout: timeout || 60000,
     })
-    if (waitForRender > 0) {
-      await new Promise(r => setTimeout(r, waitForRender))
-    }
+    // 先检测登录页，是登录页就立刻降级，不浪费时间等渲染
     const loginCheck = await detectLoginPage(page, url)
     if (loginCheck.isLogin) {
       // 无头检测到登录页 → 关闭无头，降级有头让用户手动登录
       await close(browser, connected, tempProfileDir)
       closed = true
       return await runHeadedWithProfile(url, options)
+    }
+    // 不是登录页，等渲染再采集
+    if (waitForRender > 0) {
+      await new Promise(r => setTimeout(r, waitForRender))
     }
     const domData = collectFn ? await evalInPage(page, collectFn) : null
     const screenshotBuffer = needScreenshot ? await screenshot(client) : null
