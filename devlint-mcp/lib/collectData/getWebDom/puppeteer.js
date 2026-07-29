@@ -338,24 +338,41 @@ async function runHeadedWithProfile(url, options = {}) {
       timeout: timeout || 60000,
     })
 
-    // 检测是否仍为登录页，若是则等待用户手动登录
-    let isLogin = false
-    try {
-      const loginCheck = await detectLoginPage(page, url)
-      isLogin = loginCheck.isLogin
-    } catch {
-      // 页面导航中，等 2 秒重试一次
-      await new Promise(r => setTimeout(r, 2000))
-      const loginCheck = await detectLoginPage(page, url)
-      isLogin = loginCheck.isLogin
+    // 等待页面重定向稳定（URL 连续 3 秒不变才算稳定，最多等 20 秒）
+    let lastUrl = page.url()
+    let stableTime = 0
+    const waitStart = Date.now()
+    while (Date.now() - waitStart < 20000) {
+      await new Promise(r => setTimeout(r, 1000))
+      const currentUrl = page.url()
+      if (currentUrl === lastUrl) {
+        stableTime += 1000
+        if (stableTime >= 3000) break
+      } else {
+        stableTime = 0
+        lastUrl = currentUrl
+      }
     }
+    console.error(`[有头-URL稳定后] page.url()=${page.url()} 等待耗时=${Date.now() - waitStart}ms`)
 
-    if (isLogin) {
+    // 检测是否为登录页
+    const loginCheck = await detectLoginPage(page, url)
+
+    if (loginCheck.isLogin) {
       const start = Date.now()
       while (Date.now() - start < HEADED_LOGIN_TIMEOUT) {
         await new Promise(r => setTimeout(r, 2000))
-        // 当前 URL 和用户给的 URL 前面一致（origin + pathname 相同）= 登录成功
-        if (!isRedirected(url, page.url())) break
+        // 连续 3 次（每次间隔 2 秒）URL 都和目标一致，才算真正登录成功
+        // 防止页面跳转中途 URL 短暂经过目标 URL 导致误判
+        if (!isRedirected(url, page.url())) {
+          await new Promise(r => setTimeout(r, 2000))
+          if (!isRedirected(url, page.url())) {
+            await new Promise(r => setTimeout(r, 2000))
+            if (!isRedirected(url, page.url())) {
+              break
+            }
+          }
+        }
       }
       if (Date.now() - start >= HEADED_LOGIN_TIMEOUT) {
         const err = new Error(
