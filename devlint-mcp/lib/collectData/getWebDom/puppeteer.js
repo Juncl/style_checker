@@ -277,6 +277,9 @@ function isRedirected(originalUrl, finalUrl) {
 export async function detectLoginPage(page, originalUrl) {
   const finalUrl = page.url()
   const redirected = isRedirected(originalUrl, finalUrl)
+  console.error(`[detectLoginPage] originalUrl=${originalUrl}`)
+  console.error(`[detectLoginPage] finalUrl=${finalUrl}`)
+  console.error(`[detectLoginPage] redirected=${redirected}`)
 
   // 重定向了 → 被拦截到登录页
   if (redirected) {
@@ -416,17 +419,28 @@ export async function run(url, options = {}) {
       waitUntil: waitUntil || 'domcontentloaded',
       timeout: timeout || 60000,
     })
-    // 先检测登录页，是登录页就立刻降级，不浪费时间等渲染
+    // 等待页面重定向稳定（URL 连续 3 秒不变才算稳定，最多等 20 秒）
+    let lastUrl = page.url()
+    let stableTime = 0
+    const waitStart = Date.now()
+    while (Date.now() - waitStart < 20000) {
+      await new Promise(r => setTimeout(r, 1000))
+      const currentUrl = page.url()
+      if (currentUrl === lastUrl) {
+        stableTime += 1000
+        if (stableTime >= 3000) break
+      } else {
+        stableTime = 0
+        lastUrl = currentUrl
+      }
+    }
+    console.error(`[URL稳定后] page.url()=${page.url()} 等待耗时=${Date.now() - waitStart}ms`)
     const loginCheck = await detectLoginPage(page, url)
     if (loginCheck.isLogin) {
       // 无头检测到登录页 → 关闭无头，降级有头让用户手动登录
       await close(browser, connected, tempProfileDir)
       closed = true
       return await runHeadedWithProfile(url, options)
-    }
-    // 不是登录页，等渲染再采集
-    if (waitForRender > 0) {
-      await new Promise(r => setTimeout(r, waitForRender))
     }
     const domData = collectFn ? await evalInPage(page, collectFn) : null
     const screenshotBuffer = needScreenshot ? await screenshot(client) : null
