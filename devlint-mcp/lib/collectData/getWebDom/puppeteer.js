@@ -329,6 +329,8 @@ async function runHeadedWithProfile(url, options = {}) {
     // 有头模式下用 CDP 仿真设置采集视口 + 截图
     const vp = { ...DEFAULT_VIEWPORT, ...viewport }
     const client = await emulateDevice(page, vp)
+    // 仿真后等待 3 秒缓冲让页面按新尺寸重新布局
+    await new Promise(r => setTimeout(r, 3000))
     const domData = collectFn ? await evalInPage(page, collectFn) : null
     const screenshotBuffer = needScreenshot ? await screenshot(client) : null
 
