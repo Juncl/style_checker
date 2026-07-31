@@ -51,9 +51,17 @@ const COLLECT_FN = () => {
 
   /** 移除 CSS 值中的 px 单位，返回数值 */
   function removePxUnit(value) {
-    if (!value) return 0
-    const n = parseFloat(value)
-    return isNaN(n) ? 0 : n
+    if(!value || typeof value !== 'string') {
+      return value;
+    }
+
+    // 使用正则表达式匹配数字部分（包括小数点）
+    const match = value.match(/^(\d+\.?\d*)/);
+
+    if(match) {
+      return parseFloat(match[1]);
+    }
+    return value
   }
 
   /** 将 RGB/RGBA/hex 颜色转换为 #AARRGGBB 格式（8位，前两位 alpha） */
@@ -103,6 +111,9 @@ const COLLECT_FN = () => {
     // 只处理元素节点
     if (node.nodeType !== Node.ELEMENT_NODE) return null
 
+    // 豁免 body：跳过 body 节点本身，不采集其样式
+    if (node === document.body) return null
+
     const computed = window.getComputedStyle(node)
 
     // 过滤隐藏元素
@@ -123,9 +134,12 @@ const COLLECT_FN = () => {
     const w = Math.round(rect.width)
     const h = Math.round(rect.height)
 
-    // 判断文本 vs 容器：叶子元素（无子元素）且有文本内容 → text
+    // 文本提取，只取直接子文本节点，多个文本节点用空格拼接
+    const textContent = Array.from(node.childNodes)
+      .filter(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim().length > 0)
+      .map(n => n.textContent.trim())
+      .join(' ');
     const hasElementChildren = node.children.length > 0
-    const textContent = node.textContent ? node.textContent.trim() : ''
     const isText = !hasElementChildren && textContent.length > 0
 
     const id = ++_id
@@ -161,8 +175,9 @@ const COLLECT_FN = () => {
       data.backgroundColor = toARGBHex(computed.backgroundColor)
       data.borderRadius = removePxUnit(computed.borderTopLeftRadius)
 
-      // 边框（DPI 修正后）
-      const borderWidth = Math.round(removePxUnit(computed.borderTopWidth) * fixRatio * 10) / 10
+      // 边框（DPI 修正后）；removePxUnit 可能返回非数字（如 "medium"），做数值兜底避免 NaN
+      const _bwRaw = removePxUnit(computed.borderTopWidth)
+      const borderWidth = Math.round((typeof _bwRaw === 'number' ? _bwRaw : 0) * fixRatio * 10) / 10
       data.borderWidth = borderWidth
       data.borderStyle = computed.borderTopStyle
       data.borderColor = borderWidth > 0 ? toARGBHex(computed.borderTopColor) : ''
