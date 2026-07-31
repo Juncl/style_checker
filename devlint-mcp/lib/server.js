@@ -178,10 +178,14 @@ export function createMcpServer() {
       '- width: 视口宽度，默认 1920',
       '- height: 视口高度，默认 1080',
       '- deviceScaleFactor: 截图质量倍率，默认 2（1x/2x/3x）',
+      '- headless: 是否无头模式，默认 true',
+      '  · true（默认）→ 无头采集，失败自动降级有头',
+      '  · false → 直接有头模式，弹出浏览器窗口让用户操作',
       '',
       '【采集流程】',
-      '1. 无头模式：克隆用户日常 Chrome profile（cookie + localStorage），静默采集',
-      '2. 检测到登录页 → 自动降级有头模式：弹出浏览器窗口，等待用户手动登录后继续采集',
+      '1. headless=true（默认）：无头模式克隆用户 Chrome profile，已内置 --ignore-certificate-errors',
+      '   无头采集失败（导航超时、证书拦截、网络错误、检测到登录页等）→ 自动降级有头模式',
+      '2. headless=false：直接有头模式，弹出浏览器窗口，用户手动操作（登录、跳过证书等）后自动采集',
       '',
       '【输出格式】',
       '返回 JSON，包含：',
@@ -218,6 +222,10 @@ export function createMcpServer() {
         .number()
         .default(2)
         .describe('截图质量倍率，默认 2（1x/2x/3x）'),
+      headless: z
+        .boolean()
+        .default(true)
+        .describe('是否无头模式，默认 true（无头），传 false 直接走有头模式'),
     },
     async (params) => {
       try {
@@ -227,6 +235,7 @@ export function createMcpServer() {
             height: params.height,
             deviceScaleFactor: params.deviceScaleFactor,
           },
+          headless: params.headless,
         }
 
         const { devJsonPath, devImagePath } = await collectWebDom(params.url, collectOptions)

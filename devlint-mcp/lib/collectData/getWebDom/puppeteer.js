@@ -5,17 +5,16 @@ const CHROME_PATH = getChromePath()
 
 const DEFAULT_LAUNCH_OPTIONS = {
   headless: true,
+  ignoreHTTPSErrors: true,
   ...(CHROME_PATH ? { executablePath: CHROME_PATH } : {}),
-  args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+  args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--ignore-certificate-errors'],
 }
 
 const DEFAULT_VIEWPORT = { width: 1920, height: 1080, deviceScaleFactor: 2 }
 
 const DEFAULT_RENDER_WAIT = 8000
 
-const DEFAULT_DEBUG_PORT = 9222
-
-/** 有头模式等待用户登录的最大时长（ms） */
+/** 有头模式等待用户操作的最大时长（ms） */
 const HEADED_LOGIN_TIMEOUT = 120000
 
 /**
@@ -28,7 +27,7 @@ const HEADED_LOGIN_TIMEOUT = 120000
  * @param {Object} options - puppeteer launch 选项，覆盖默认值
  *   - headless: true 默认无头，调试时传 false
  *   - userDataDir: 指定 user-data-dir，优先级高于自动克隆
- * @returns {Promise<{ browser: import('puppeteer').Browser, connected: false, tempProfileDir: string|null }>}
+ * @returns {Promise<{ browser: import('puppeteer').Browser, tempProfileDir: string|null }>}
  */
 export async function launch(options = {}) {
   if (!CHROME_PATH) {
@@ -53,66 +52,8 @@ export async function launch(options = {}) {
   }
 
   const browser = await puppeteer.launch({ ...DEFAULT_LAUNCH_OPTIONS, args, ...options })
-  return { browser, connected: false, tempProfileDir }
+  return { browser, tempProfileDir }
 }
-
-/**
- * 连接到用户已打开的 Chrome 浏览器（connect 模式）
- *
- * 当前已停用，保留代码备将来恢复。
- *
- * 适用于需登录的页面。用户自行启动 Chrome 并登录，puppeteer 连接该浏览器采集。
- * 连接模式只断开不断开浏览器，不影响用户已有窗口和登录状态。
- *
- * 用户启动 Chrome 命令：
- *   macOS:  /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
- *   Windows: chrome.exe --remote-debugging-port=9222
- * 注意：Chrome 默认只监听 127.0.0.1（IPv4），本工具用 127.0.0.1 连接以兼容 Windows 下 localhost 解析为 ::1 的问题。
- *
- * @param {Object} options
- *   - browserWSEndpoint: WebSocket 调试地址，默认自动从 localhost:9222 获取
- * @returns {Promise<{ browser: import('puppeteer').Browser, connected: true }>}
- */
-// export async function connect(options = {}) {
-//   let { browserWSEndpoint } = options
-//
-//   // 未指定地址时，自动从默认端口获取
-//   if (!browserWSEndpoint) {
-//     let res
-//     try {
-//       res = await fetch(`http://127.0.0.1:${DEFAULT_DEBUG_PORT}/json/version`)
-//     } catch (e) {
-//       const err = new Error(
-//         `无法连接到 Chrome 调试端口 9222（${e.message}）。\n` +
-//         '最常见原因：已有 Chrome 实例在运行，导致带调试端口启动的 Chrome 只是转发了窗口就退出了，调试端口根本没开。\n\n' +
-//         '请按以下步骤操作：\n' +
-//         '1. 完全关闭所有 Chrome 窗口，并确认任务管理器中没有残留的 chrome.exe 进程；\n' +
-//         '2. 用独立 user-data-dir 重新启动（不影响日常 Chrome，避免实例冲突）：\n' +
-//         '   Windows: chrome.exe --remote-debugging-port=9222 --user-data-dir="C:\\temp\\chrome-debug"\n' +
-//         '   macOS:   /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-debug\n' +
-//         '3. 在新开的 Chrome 窗口中完成目标页面的登录；\n' +
-//         '4. 重新调用 collect_web 采集。\n\n' +
-//         '注意：使用独立 user-data-dir 时是全新 profile，需要重新登录目标站点。'
-//       )
-//       err.code = 'CONNECT_FAILED'
-//       throw err
-//     }
-//
-//     if (!res.ok) {
-//       throw new Error(`Chrome 调试端口返回异常状态码 ${res.status}：${res.statusText}`)
-//     }
-//
-//     const data = await res.json()
-//     browserWSEndpoint = data.webSocketDebuggerUrl
-//   }
-//
-//   try {
-//     const browser = await puppeteer.connect({ browserWSEndpoint })
-//     return { browser, connected: true }
-//   } catch (e) {
-//     throw new Error(`puppeteer.connect 失败（${e.message}），browserWSEndpoint: ${browserWSEndpoint}`)
-//   }
-// }
 
 /**
  * 打开页面并导航到指定 URL
@@ -203,21 +144,14 @@ export async function screenshot(client) {
 }
 
 /**
- * 关闭/断开浏览器，并清理临时 profile
- * - launch 模式：close() 关闭整个浏览器，清理克隆的临时 profile
- * - connect 模式：disconnect() 只断开连接，不影响用户浏览器
+ * 关闭浏览器，并清理临时 profile
  *
  * @param {import('puppeteer').Browser} browser
- * @param {boolean} connected - 是否为 connect 模式
- * @param {string|null} tempProfileDir - launch 模式下克隆的临时 profile 目录
+ * @param {string|null} tempProfileDir - 克隆的临时 profile 目录
  */
-export async function close(browser, connected = false, tempProfileDir = null) {
+export async function close(browser, tempProfileDir = null) {
   if (!browser) return
-  if (connected) {
-    browser.disconnect()
-  } else {
-    await browser.close()
-  }
+  await browser.close()
   if (tempProfileDir) cleanupTempProfile(tempProfileDir)
 }
 
@@ -297,10 +231,11 @@ export async function detectLoginPage(page, originalUrl) {
  * 有头模式采集（降级方案）
  *
  * 直接启动有头 Chrome（空白 profile，不克隆、不影响日常 Chrome），
- * 用户在弹出的窗口中手动登录，工具检测到登录完成后自动采集。
+ * 用户在弹出的窗口中手动操作（登录、跳过证书拦截等），工具检测到到达目标页面后自动采集。
  *
  * 适用于：
- * - 无头模式克隆 profile 后仍检测到登录页
+ * - 无头模式采集失败（导航超时、自签名证书拦截、网络错误等）
+ * - 无头模式检测到登录页
  *
  * @param {string} url - 目标页面地址
  * @param {Object} options - 采集选项（collectFn / viewport / waitUntil / timeout / waitForRender / needScreenshot）
@@ -326,17 +261,23 @@ async function runHeadedWithProfile(url, options = {}) {
   const browser = await puppeteer.launch({
     executablePath: CHROME_PATH,
     headless: false,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--start-maximized'],
+    ignoreHTTPSErrors: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--start-maximized', '--ignore-certificate-errors'],
     defaultViewport: null,
   })
 
   try {
     const page = await browser.newPage()
 
-    await page.goto(url, {
-      waitUntil: waitUntil || 'domcontentloaded',
-      timeout: timeout || 60000,
-    })
+    // 有头模式：导航失败不抛错（如证书拦截、超时等），让用户在窗口中手动操作
+    try {
+      await page.goto(url, {
+        waitUntil: waitUntil || 'domcontentloaded',
+        timeout: timeout || 60000,
+      })
+    } catch (navErr) {
+      console.error(`[有头-导航失败] ${navErr.message}，等待用户手动操作浏览器...`)
+    }
 
     // 等待页面重定向稳定（URL 连续 3 秒不变才算稳定，最多等 20 秒）
     let lastUrl = page.url()
@@ -355,15 +296,13 @@ async function runHeadedWithProfile(url, options = {}) {
     }
     console.error(`[有头-URL稳定后] page.url()=${page.url()} 等待耗时=${Date.now() - waitStart}ms`)
 
-    // 检测是否为登录页
-    const loginCheck = await detectLoginPage(page, url)
-
-    if (loginCheck.isLogin) {
+    // 有头模式：如果当前不在目标页面（被拦截到登录页/证书页/其他），等待用户手动操作
+    if (isRedirected(url, page.url())) {
+      console.error(`[有头-等待用户操作] 当前URL=${page.url()} 目标URL=${url}`)
       const start = Date.now()
       while (Date.now() - start < HEADED_LOGIN_TIMEOUT) {
         await new Promise(r => setTimeout(r, 2000))
-        // 连续 3 次（每次间隔 2 秒）URL 都和目标一致，才算真正登录成功
-        // 防止页面跳转中途 URL 短暂经过目标 URL 导致误判
+        // 连续 3 次（每次间隔 2 秒）URL 都和目标一致，才算用户操作完成
         if (!isRedirected(url, page.url())) {
           await new Promise(r => setTimeout(r, 2000))
           if (!isRedirected(url, page.url())) {
@@ -376,7 +315,7 @@ async function runHeadedWithProfile(url, options = {}) {
       }
       if (Date.now() - start >= HEADED_LOGIN_TIMEOUT) {
         const err = new Error(
-          `等待登录超时（${HEADED_LOGIN_TIMEOUT / 1000}秒），请确认已在弹出的浏览器窗口中完成登录后重试。`
+          `等待用户操作超时（${HEADED_LOGIN_TIMEOUT / 1000}秒），请确认已在弹出的浏览器窗口中完成操作后重试。`
         )
         err.code = 'LOGIN_TIMEOUT'
         throw err
@@ -402,7 +341,11 @@ async function runHeadedWithProfile(url, options = {}) {
 /**
  * 完整采集流程（通道层封装）
  *
- * 流程：无头模式（克隆用户 profile）→ 检测登录页 → 降级有头（弹窗等用户登录）
+ * 流程：
+ * 1. headless=true（默认）：无头模式（克隆用户 profile 复用登录态）
+ *    无头阶段任何失败（导航超时、自签名证书拦截、网络错误、检测到登录页等）
+ *    → 自动降级有头模式（弹窗等用户手动操作后采集）
+ * 2. headless=false：直接有头模式，弹出浏览器窗口让用户操作后采集
  *
  * @param {string} url - 目标页面地址
  * @param {Object} options
@@ -412,7 +355,8 @@ async function runHeadedWithProfile(url, options = {}) {
  *   - timeout: 页面导航超时，默认 60000
  *   - waitForRender: 渲染等待时间(ms)，默认 8000
  *   - needScreenshot: 是否截图，默认 true
- *   - launchOptions: puppeteer.launch 额外选项（如 headless: false、userDataDir）
+ *   - headless: 是否无头模式，默认 true
+ *   - launchOptions: puppeteer.launch 额外选项（如 userDataDir）
  * @returns {Promise<{ domData: Object|null, screenshotBuffer: Buffer|null }>}
  */
 export async function run(url, options = {}) {
@@ -423,11 +367,18 @@ export async function run(url, options = {}) {
     timeout,
     waitForRender = DEFAULT_RENDER_WAIT,
     needScreenshot = true,
+    headless = true,
     launchOptions,
   } = options
 
+  // headless=false → 直接走有头模式
+  if (headless === false) {
+    return await runHeadedWithProfile(url, options)
+  }
+
   // 无头模式（克隆用户 profile 复用登录态）
-  const { browser, connected, tempProfileDir } = await launch(launchOptions)
+  // 无头阶段任何失败（导航超时、证书拦截、网络错误、检测到登录页等）→ 自动降级有头模式
+  const { browser, tempProfileDir } = await launch(launchOptions)
   let closed = false
   try {
     const page = await browser.newPage()
@@ -455,16 +406,25 @@ export async function run(url, options = {}) {
     const loginCheck = await detectLoginPage(page, url)
     if (loginCheck.isLogin) {
       // 无头检测到登录页 → 关闭无头，降级有头让用户手动登录
-      await close(browser, connected, tempProfileDir)
+      console.error('[无头采集失败] 原因：检测到登录页，自动降级有头模式')
+      await close(browser, tempProfileDir)
       closed = true
       return await runHeadedWithProfile(url, options)
     }
     const domData = collectFn ? await evalInPage(page, collectFn) : null
     const screenshotBuffer = needScreenshot ? await screenshot(client) : null
     return { domData, screenshotBuffer }
+  } catch (headlessErr) {
+    // 无头采集失败（导航超时、自签名证书拦截、网络错误等）→ 自动降级有头模式
+    console.error(`[无头采集失败] 原因：${headlessErr.message}，自动降级有头模式`)
+    if (!closed) {
+      try { await close(browser, tempProfileDir) } catch {}
+      closed = true
+    }
+    return await runHeadedWithProfile(url, options)
   } finally {
     if (!closed) {
-      try { await close(browser, connected, tempProfileDir) } catch {}
+      try { await close(browser, tempProfileDir) } catch {}
     }
   }
 }

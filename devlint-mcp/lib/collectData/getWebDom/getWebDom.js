@@ -256,7 +256,6 @@ const COLLECT_FN = () => {
  *   - waitForRender: 渲染等待时间(ms)，默认 3000
  *   - needScreenshot: 是否截图，默认 true
  *   - launchOptions: puppeteer.launch 额外选项（如 headless: false 调试）
- *   - browserWSEndpoint: connect 模式 WebSocket 地址，传入则连接用户已打开的 Chrome
  * @returns {Promise<{ devJsonPath: string, devImagePath: string|null }>}
  */
 export async function collectWebDom(url, options = {}) {
