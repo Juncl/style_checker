@@ -36,7 +36,8 @@ export function extractSummary(result) {
       const rect = designRectMap.get(designId) || { y: 0, x: 0 }
 
       byDesignNode.set(designId, {
-        designName: d.designName || null,
+        // 节点名用开发侧：文本节点用文本内容，非文本节点用组件名
+        nodeName: (d.textContent || d.arkuiName) || null,
         textContent: d.textContent || null,
         nodeType: d.nodeType || null,
         // 节点相对位置（画布坐标）

@@ -52,7 +52,7 @@ export function createMcpServer() {
       '',
       '【输出格式】',
       '返回 JSON，以设计侧节点为维度组织（最多展示部分节点，完整结果在 reportPath 指向的 md 文件中）。每个节点含：',
-      '- designName: 设计侧节点名（Figma 图层名）',
+      '- nodeName: 开发侧节点名（文本节点用文本内容，非文本节点用 className/组件类型）',
       '- devClassName: 开发侧节点名（web 平台为 className，ArkUI 平台为组件类型如 Text/Column）',
       '- textContent: 节点文本内容',
       '- nodeType: 节点类型（text / container）',

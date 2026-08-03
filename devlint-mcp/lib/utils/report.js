@@ -108,7 +108,8 @@ export function generateReport(result, dir) {
       const devNode = arkuiById.get(devId)
       const rect = (devNode && devNode.rect) || designRectMap.get(d.designNodeId) || { y: 0, x: 0, w: 0, h: 0 }
       byDevNode.set(devId, {
-        designName: d.designName || null,
+        // 节点名用开发侧：文本节点用文本内容，非文本节点用组件名
+        nodeName: (d.textContent || d.arkuiName) || null,
         textContent: d.textContent || null,
         devRect: rect,
         componentChain: buildComponentChain(
@@ -160,18 +161,16 @@ export function generateReport(result, dir) {
       const rect = node.devRect || {}
       const posDesc = describePosition(rect)
 
-      lines.push(`## ${i + 1}. ${node.designName || '(未命名)'}`)
+      lines.push(`## ${i + 1}. ${node.nodeName || '(未命名)'}`)
       lines.push('')
       if (node.componentChain) {
         lines.push(`> 定位：${node.componentChain}`)
       }
-      if (node.devClassName) {
+      // 标题已是 nodeName（textContent 或 devClassName），仅补充未用于标题的信息
+      if (node.textContent && node.devClassName) {
         const isWeb = result.platform === 'web'
         const label = isWeb ? 'className' : '组件类型'
         lines.push(`> ${label}：\`${node.devClassName}\``)
-      }
-      if (node.textContent) {
-        lines.push(`> 文本：「${node.textContent}」`)
       }
       if (posDesc) {
         lines.push(`> 位置：${posDesc}`)
