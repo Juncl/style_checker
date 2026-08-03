@@ -2,7 +2,7 @@
   "name": "devlint-mcp",
   "version": "1.0.0",
   "type": "module",
-  "description": "DevLint MCP Server - UI 还原度检查能力",
+  "description": "DevLint MCP Server - UI 一致性检查能力",
   "bin": {
     "devlint-mcp": "index.js"
   },

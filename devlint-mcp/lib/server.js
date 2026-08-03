@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { existsSync } from 'fs'
 import { extractSummary } from './utils/summary.js'
+import { generateReport } from './utils/report.js'
 import { fileToBlob } from './utils/tools.js'
 import { config } from './config.js'
 import { collectWebDom } from './collectData/getWebDom/getWebDom.js'
@@ -22,8 +23,8 @@ export function createMcpServer() {
       'UI 一致性检查工具。对比设计稿与开发实现，找出开发侧与设计稿的差异，列出开发需要修改的点。',
       '',
       '【触发场景】',
-      '当用户说以下任何一种时触发：UI 还原度检查、一致性检查、设计稿对比、找开发对比设计的差异、',
-      '检查 UI 实现、样式对比、设计走查、比对设计图和代码、检查 UI 还原、前端走查、视觉还原。',
+      '当用户说以下任何一种时触发：UI 一致性检查、UX 一致性检查、一致性检查、设计稿对比、找开发对比设计的差异、',
+      '检查 UI 实现、样式对比、设计走查、比对设计图和代码、检查 UI 还原、前端走查。',
       '',
       '【调用前：数据来源判断】',
       '本工具需要开发侧和设计侧两份数据，调用前需根据用户提供的内容判断如何获取：',
@@ -50,7 +51,7 @@ export function createMcpServer() {
       '工具内部读取文件，文件内容不占用 AI 上下文。',
       '',
       '【输出格式】',
-      '返回 JSON，以设计侧节点为维度组织。每个节点含：',
+      '返回 JSON，以设计侧节点为维度组织（最多展示部分节点，完整结果在 reportPath 指向的 md 文件中）。每个节点含：',
       '- designName: 设计侧节点名（Figma 图层名）',
       '- devClassName: 开发侧节点名（web 平台为 className，ArkUI 平台为组件类型如 Text/Column）',
       '- textContent: 节点文本内容',
@@ -62,6 +63,8 @@ export function createMcpServer() {
       '  - description: 中文描述（如"字号"、"颜色"）',
       '  - expected: 设计稿的值（正确值）',
       '  - actual: 开发侧的值（需改的值）',
+      '- totalNodes: 问题节点总数',
+      '- reportPath: 完整报告 md 文件路径，后续修改代码时读此文件',
       '',
       '【输出指引】',
       '拿到结果后，按修改指令格式展示给用户，帮助开发者快速定位并修改代码：',
@@ -73,6 +76,7 @@ export function createMcpServer() {
       '6. 不要展示评分、匹配覆盖率、检查耗时等统计信息',
       '7. 不要展示节点 ID、原始 path 数组等内部技术信息',
       '8. 如果没有差异，直接说"开发侧与设计稿一致，无需修改"',
+      '9. 完整问题清单见 reportPath 指向的 md 文件，后续修改代码时直接读该 md 文件',
     ].join('\n'),
     {
       designJsonPath: z
@@ -139,9 +143,23 @@ export function createMcpServer() {
         const result = await res.json()
         const summary = extractSummary(result)
 
+        // 生成完整 md 报告
+        const reportPath = generateReport(result)
+
+        // 返回给 agent 的只截取前 10 个节点，避免上下文过长
+        const MAX_PREVIEW = 10
+        const preview = {
+          platform: summary.platform,
+          nodes: summary.nodes.slice(0, MAX_PREVIEW),
+        }
+
+        const tail = summary.nodes.length > MAX_PREVIEW
+          ? `\n\n（共 ${summary.nodes.length} 个问题节点，仅展示前 ${MAX_PREVIEW} 个，完整报告见 ${reportPath}）`
+          : `\n\n完整报告见 ${reportPath}`
+
         return {
           content: [
-            { type: 'text', text: JSON.stringify(summary, null, 2) },
+            { type: 'text', text: JSON.stringify(preview, null, 2) + tail },
           ],
         }
       } catch (err) {
@@ -171,7 +189,7 @@ export function createMcpServer() {
       '【触发场景】',
       '当用户说以下任何一种时触发：采集网页、采集 web 页面、抓取网页 DOM、采集开发侧数据、',
       '导出 web 页面数据、获取网页截图、采集前端页面。',
-      '采集结果可直接用于 ui_style_check 进行 UI 还原度检查。',
+      '采集结果可直接用于 ui_style_check 进行 UI 一致性检查。',
       '',
       '【参数说明】',
       '- url: 目标页面地址（必填）',
@@ -193,7 +211,7 @@ export function createMcpServer() {
       '- devImagePath: 截图 PNG 文件路径',
       '',
       '【使用指引】',
-      '采集完成后，将返回值直接传给 ui_style_check 工具进行 UI 还原度检查：',
+      '采集完成后，将返回值直接传给 ui_style_check 工具进行 UI 一致性检查：',
       '  collect_web 返回的 devJsonPath  → ui_style_check 的 devJsonPath 参数',
       '  collect_web 返回的 devImagePath → ui_style_check 的 devImagePath 参数',
       '同时设 platform 为 web，配合用户提供的设计稿路径（designJsonPath / designImagePath）完成检查。',
@@ -302,7 +320,7 @@ export function createMcpServer() {
       '【触发场景】',
       '当用户说以下任何一种时触发：采集设计稿、采集 Pixso 设计稿、获取设计稿数据、',
       '采集设计侧数据、导出设计稿、设计稿截图、传送码采集。',
-      '采集结果可直接用于 ui_style_check 进行 UI 还原度检查。',
+      '采集结果可直接用于 ui_style_check 进行 UI 一致性检查。',
       '',
       '【参数说明】',
       '- code: 传送码，如 "111"，通过传送码服务解析为 Pixso 页面地址',
@@ -316,7 +334,7 @@ export function createMcpServer() {
       '- designImagePath: 截图 PNG 文件路径',
       '',
       '【使用指引】',
-      '采集完成后，将返回值直接传给 ui_style_check 工具进行 UI 还原度检查：',
+      '采集完成后，将返回值直接传给 ui_style_check 工具进行 UI 一致性检查：',
       '  collect_design 返回的 designJsonPath → ui_style_check 的 designJsonPath 参数',
       '  collect_design 返回的 designImagePath → ui_style_check 的 designImagePath 参数',
       '同时配合开发侧数据（用户提供或 collect_web 采集）完成检查。',

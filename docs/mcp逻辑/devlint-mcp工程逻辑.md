@@ -138,7 +138,7 @@ export const config = {
 | `devImagePath` | 否 | string | 开发侧截图路径（png/jpg，或 `collect_web` 返回的路径） |
 
 **description** 指导 AI：
-- 何时触发（用户说"UI 还原度检查""设计稿对比"等关键词时）
+- 何时触发（用户说"UI 一致性检查""设计稿对比"等关键词时）
 - 与 `collect_web` 的协作（URL → 先采集；本地文件 → 直接传入）
 - 参数含义、输出格式、输出指引
 
@@ -452,7 +452,7 @@ MCP 调用的 server 端接口：`POST /api/check/upload`
 ### 场景一：用户提供本地文件
 
 ```
-用户: "帮我检查这个页面的 UI 还原度"（提供本地 JSON/图片路径）
+用户: "帮我检查这个页面的 UI 一致性"（提供本地 JSON/图片路径）
   │
   ▼
 AI(opencode) 调用 MCP 工具 ui_style_check
@@ -482,7 +482,7 @@ AI 拿到摘要，按修改指令格式展示给用户
 ### 场景二：用户提供网页 URL（collect_web → ui_style_check 串联）
 
 ```
-用户: "采集这个网页并检查 UI 还原度"（提供 URL + 设计稿路径）
+用户: "采集这个网页并检查 UI 一致性"（提供 URL + 设计稿路径）
   │
   ▼
 AI(opencode) 第一步：调用 MCP 工具 collect_web

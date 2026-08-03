@@ -13,7 +13,7 @@
  *   // 自定义尺寸：
  *   const result = await collectWebDom(url, { viewport: { width: 1440, height: 900 } })
  *
- * 采集结果自动写入 {工程目录}/.devlint/ 下，返回文件路径供 ui_style_check 衔接。
+ * 采集结果自动写入配置目录下，返回文件路径供 ui_style_check 衔接。
  */
 
 import { run } from './puppeteer.js'
@@ -246,7 +246,7 @@ const COLLECT_FN = () => {
 }
 
 /**
- * 采集 Web 页面 DOM 数据 + 截图，写入 .devlint/ 目录
+ * 采集 Web 页面 DOM 数据 + 截图，写入配置目录
  *
  * @param {string} url - 目标页面地址
  * @param {Object} options
