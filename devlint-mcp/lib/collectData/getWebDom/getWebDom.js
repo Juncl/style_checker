@@ -26,7 +26,7 @@ import { timestamp } from '../../utils/tools.js'
  * 在浏览器上下文执行的 DOM 采集函数
  *
  * 完整迁移插件 mainExportInContent + getElementData 逻辑：
- *   1. DPI 修正（测试元素测量 1px border 实际渲染值）
+ *   1. 探测真实的dpr（测试元素测量 1px border 实际渲染值）
  *   2. 递归遍历 DOM 树（getElementData）
  *   3. 过滤隐藏元素 / 不可视元素
  *   4. 提取节点结构 + 计算样式
@@ -35,30 +35,40 @@ import { timestamp } from '../../utils/tools.js'
  *
  * 返回 web.json 格式的 DOM 树，字段结构与现有 case 数据完全一致
  */
-const COLLECT_FN = () => {
-  let _id = 0
+const exportDOMTree = () => {
+  // 初始化 ID 计数器
+  let currentId = 5;
 
-  // ── DPI 修正 ──────────────────────────────────────
-  // 创建测试元素测量 1px border 的实际渲染值，修正系统 DPR 缩放导致的像素偏差
-  const _testEl = document.createElement('div')
-  _testEl.style.cssText = 'border:1px solid black;position:absolute;visibility:hidden;'
-  document.body.appendChild(_testEl)
-  const _testStyle = window.getComputedStyle(_testEl)
-  const fixRatio = 1 / (parseFloat(_testStyle.borderTopWidth) || 1)
-  document.body.removeChild(_testEl)
+
+  // 探测真实的dpr
+  const testDiv = document.createElement('div');
+  testDiv.style.border = '1px solid transparent';
+  testDiv.style.position = 'absolute';
+  testDiv.style.visibility = 'hidden';
+  document.body.appendChild(testDiv);
+  const computed = parseFloat(window.getComputedStyle(testDiv).borderBottomWidth);
+  document.body.removeChild(testDiv);
+  // 如果 1px 变成了 0.667px， 那么fixRatio 就是 1/0.667 = 1.5
+  // 如果本来就是1px， 那么 fixRatio 就是 1
+  let fixRatio = computedW > 0 ? (1 / computedW) : 1;
+  fixRatio = Number(fixRatio.toFixed(2));
+
+  // 获取当前视口的尺寸
+  const vWidth = window.innerWidth || document.documentElement.clientWidth;
+  const vHeight = window.innerHeight || document.documentElement.clientHeight;
 
   // ── 辅助函数 ──────────────────────────────────────
 
   /** 移除 CSS 值中的 px 单位，返回数值 */
   function removePxUnit(value) {
-    if(!value || typeof value !== 'string') {
+    if (!value || typeof value !== 'string') {
       return value;
     }
 
     // 使用正则表达式匹配数字部分（包括小数点）
     const match = value.match(/^(\d+\.?\d*)/);
 
-    if(match) {
+    if (match) {
       return parseFloat(match[1]);
     }
     return value
@@ -90,13 +100,13 @@ const COLLECT_FN = () => {
     return '#00000000'
   }
 
-  /** 字重归一化：normal→400, bold→700, 数字字符串→数字 */
-  function normalizeFontWeight(value) {
-    if (value === 'normal') return 400
-    if (value === 'bold') return 700
-    const n = parseInt(value)
-    return isNaN(n) ? 400 : n
-  }
+  // /** 字重归一化：normal→400, bold→700, 数字字符串→数字 */
+  // function normalizeFontWeight(value) {
+  //   if (value === 'normal') return 400
+  //   if (value === 'bold') return 700
+  //   const n = parseInt(value)
+  //   return isNaN(n) ? 400 : n
+  // }
 
   // ── 核心递归：getElementData ──────────────────────
 
@@ -107,142 +117,139 @@ const COLLECT_FN = () => {
    * @param {number} offsetY - 累计 y 偏移
    * @returns {Object|null} 节点数据对象，被过滤则返回 null
    */
-  function getElementData(node, offsetX, offsetY) {
-    // 只处理元素节点
+  function getElementData(node, offsetX = 0, offsetY = 0) {
+
     if (node.nodeType !== Node.ELEMENT_NODE) return null
 
-    // 豁免 body：跳过 body 节点本身，不采集其样式
-    if (node === document.body) return null
+    const rawRect = node.getBoundingClientRect();
+    const rect = {
+      left: rawRect.left || 0,
+      top: rawRect.top || 0,
+      width: rawRect.width || 0,
+      height: rawRect.height || 0,
+      right: rawRect.right || (rawRect.left + rawRect.width) || 0,
+      bottom: rawRect.bottom || (rawRect.top + rawRect.height) || 0
+    };
+    const style = window.getComputedStyle(node);
 
-    const computed = window.getComputedStyle(node)
+    // 只检查是否在视口范围内，不检查宽高 （避免父元素尺寸为0导致子元素被过滤）
+    const isVisible = (
+      rect.bottom >= 0 &&
+      rect.right >= 0 &&
+      rect.top <= vHeight &&
+      rect.left <= vWidth
+    );
 
-    // 过滤隐藏元素
-    if (computed.display === 'none' || computed.visibility === 'hidden') return null
-
-    const rect = node.getBoundingClientRect()
-
-    // 可视区域判断：元素与视口相交才采集
-    const vw = window.innerWidth
-    const vh = window.innerHeight
-    if (rect.bottom <= 0 || rect.right <= 0 || rect.top >= vh || rect.left >= vw) {
-      return null
+    // 如果节点本身不在视口内（且不是body）， 则跳过
+    if (!isVisible && node !== document.body) {
+      return null;
     }
 
-    // 坐标（含 iframe 偏移）
-    const x = Math.round(rect.x + offsetX)
-    const y = Math.round(rect.y + offsetY)
-    const w = Math.round(rect.width)
-    const h = Math.round(rect.height)
-
-    // 文本提取，只取直接子文本节点，多个文本节点用空格拼接
+    // 获取文本逻辑
     const textContent = Array.from(node.childNodes)
       .filter(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim().length > 0)
       .map(n => n.textContent.trim())
       .join(' ');
-    const hasElementChildren = node.children.length > 0
-    const isText = !hasElementChildren && textContent.length > 0
+    const isText = textContent.length > 0;
+    const tagName = node.tagName.toLowerCase();
 
-    const id = ++_id
-    const type = isText ? 'text' : node.tagName.toLowerCase()
+    // 坐标直接取视口相对位置， 不加 scroll 偏移
+    const absoluteTop = Math.round(rect.top + offsetX);
+    const absoluteLeft = Math.round(rect.left + offsetY);
 
-    // 公共字段（text 和 container 都有）
+    const id = currentId++;
+
     const data = {
-      id,
+      id: id,
       name: id,
-      type,
-      className: typeof node.className === 'string' ? node.className : '',
-      rect: { w, h, x, y },
-      size: { w, h, x, y },
-      w, h, x, y,
-      display: computed.display,
-      position: computed.position,
-      padding: computed.padding,
-      margin: computed.margin,
-      opacity: parseFloat(computed.opacity),
-      textAlign: computed.textAlign,
+      type: isText ? "text" : tagName,
+      className: node.className || "",
+      rect: {
+        w: rect.width,
+        h: rect.height,
+        x: absoluteLeft,
+        y: absoluteTop
+      },
+      size: {
+        w: rect.width,
+        h: rect.height,
+        x: absoluteLeft,
+        y: absoluteTop
+      },
+      w: rect.width,
+      h: rect.height,
+      x: absoluteLeft,
+      y: absoluteTop,
+      display: style.display,
+      position: style.position,
+      padding: style.padding,
+      margin: style.margin,
+      opacity: Number(style.opacity),
+      textAlign: style.textAlign,
+      backgroundColor: toARGBHex(style.backgroundColor),
+      borderRadius: style.borderRadius, // 原数据不转换
+      borderWidth: Number((removePxUnit(style.borderWidth) * fixRatio).toFixed(1)),
+      borderStyle: style.borderStyle,
+      borderColor: Number((removePxUnit(style.borderWidth) * fixRatio).toFixed(1)) ? toARGBHex(style.borderColor) : undefined,
+      boxShadow: (style.boxShadow && style.boxShadow !== "none") ? style.boxShadow : undefined,
+      textShadow: (style.textShadow && style.textShadow !== "none") ? style.textShadow : undefined
+    };
+
+    if ((style.filter && style.filter !== "none") || (style.backdropFilter && style.backdropFilter !== "none")) {
+      data.blur = {
+        filter: (style.filter && style.filter !== "none") ? style.filter : undefined,
+        backdropFilter: (style.backdropFilter && style.backdropFilter !== "none") ? style.backdropFilter : undefined
+      }
     }
 
     if (isText) {
-      // 文本节点额外字段
-      data.content = textContent
-      data.fontSize = removePxUnit(computed.fontSize)
-      data.fontFamily = computed.fontFamily
-      data.fontWeight = normalizeFontWeight(computed.fontWeight)
-      data.fontColor = toARGBHex(computed.color)
-      data.children = []
-    } else {
-      // 容器节点额外字段
-      data.backgroundColor = toARGBHex(computed.backgroundColor)
-      data.borderRadius = removePxUnit(computed.borderTopLeftRadius)
-
-      // 边框（DPI 修正后）；removePxUnit 可能返回非数字（如 "medium"），做数值兜底避免 NaN
-      const _bwRaw = removePxUnit(computed.borderTopWidth)
-      const borderWidth = Math.round((typeof _bwRaw === 'number' ? _bwRaw : 0) * fixRatio * 10) / 10
-      data.borderWidth = borderWidth
-      data.borderStyle = computed.borderTopStyle
-      data.borderColor = borderWidth > 0 ? toARGBHex(computed.borderTopColor) : ''
-
-      // 阴影（有值才加）
-      if (computed.boxShadow && computed.boxShadow !== 'none') {
-        data.boxShadow = computed.boxShadow
-      }
-      if (computed.textShadow && computed.textShadow !== 'none') {
-        data.textShadow = computed.textShadow
-      }
-
-      // 模糊（有值才加）
-      const hasFilter = computed.filter && computed.filter !== 'none'
-      const hasBackdropFilter = computed.backdropFilter && computed.backdropFilter !== 'none'
-      if (hasFilter || hasBackdropFilter) {
-        data.blur = {}
-        if (hasFilter) data.blur.filter = computed.filter
-        if (hasBackdropFilter) data.blur.backdropFilter = computed.backdropFilter
-      }
-
-      // 递归子元素
-      data.children = []
-      for (const child of node.children) {
-        const childData = getElementData(child, offsetX, offsetY)
-        if (childData) data.children.push(childData)
-      }
-
-      // iframe 处理：同域递归（传入 iframe 坐标偏移），跨域标记
-      if (node.tagName === 'IFRAME') {
-        try {
-          const iframeDoc = node.contentDocument || (node.contentWindow && node.contentWindow.document)
-          if (iframeDoc && iframeDoc.body) {
-            const offX = offsetX + Math.round(rect.x)
-            const offY = offsetY + Math.round(rect.y)
-            for (const child of iframeDoc.body.children) {
-              const childData = getElementData(child, offX, offY)
-              if (childData) data.children.push(childData)
-            }
-          }
-        } catch (e) {
-          data.info = 'Cross-origin iframe - Access Denied'
-        }
-      }
+      data.content = textContent;
+      data.fontSize = removePxUnit(style.fontSize);
+      data.fontFamily = style.fontFamily;
+      data.fontWeight = Number(style.fontWeight);
+      data.fontColor = toARGBHex(style.color);
     }
 
-    return data
+    // 处理子节点
+    let children = Array.from(node.children);
+    let childData = [];
+
+    // 特殊逻辑：如果是 iframe，尝试进入其内部
+    if (tabName === 'iframe') {
+      try {
+        const iframeDoc = node.contentDocument || node.contentWindow.document;
+        if (iframeDoc && iframeDoc.body) {
+          // 核心逻辑：进入iframe时，累加当前iframe的绝对位置作为子节点的偏移基准
+          // 注意：iframe 内部可能有边框和内边距，这里简单处理累加坐标
+          childData = Array.from(iframeDoc.body.children)
+            .map(child => getElementData(child, absoluteLeft, absoluteTop))
+            .filter(c => c !== null);
+        }
+      } catch (e) {
+        data.info = 'Cross-origin iframe - Access Denied'
+      }
+    } else {
+      childData = children
+        .map(child => getElementData(child, offsetX, offsetY))
+        .filter(c => c !== null);
+    }
+
+    data.children = childData;
+    return data;
   }
 
   // ── 根节点构造（viewport）──────────────────────────
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-
   return {
-    id: ++_id,
+    id: 3,
     deviceType: 'web',
     name: 'viewport',
     type: 'container',
-    rect: { w: vw, h: vh, x: 0, y: 0 },
-    size: { w: vw, h: vh, x: 0, y: 0 },
-    w: vw, h: vh, x: 0, y: 0,
-    children: Array.from(document.body.children)
-      .map(el => getElementData(el, 0, 0))
-      .filter(Boolean),
-  }
+    rect: { w: vWidth, h: vHeight, x: 0, y: 0 },
+    size: { w: vWidth, h: vHeight, x: 0, y: 0 },
+    w: vWidth, h: vHeight, x: 0, y: 0,
+    children: [getElementData(document.body)]
+  };
+  return root;
 }
 
 /**
@@ -259,7 +266,7 @@ const COLLECT_FN = () => {
  * @returns {Promise<{ devJsonPath: string, devImagePath: string|null }>}
  */
 export async function collectWebDom(url, options = {}) {
-  const { domData, screenshotBuffer } = await run(url, { ...options, collectFn: COLLECT_FN })
+  const { domData, screenshotBuffer } = await run(url, { ...options, collectFn: exportDOMTree })
 
   const dir = join(process.cwd(), config.DIR_NAME)
   mkdirSync(dir, { recursive: true })
@@ -271,7 +278,7 @@ export async function collectWebDom(url, options = {}) {
   const devJsonPath = join(dir, `web_${w}x${h}_${ts}.json`)
   const devImagePath = screenshotBuffer ? join(dir, `web_${w}x${h}_${ts}.png`) : null
 
-  writeFileSync(devJsonPath, JSON.stringify(domData, null, 2))
+  writeFileSync(devJsonPath, JSON.stringify(domData))
   if (devImagePath) writeFileSync(devImagePath, screenshotBuffer)
 
   return { devJsonPath, devImagePath }
