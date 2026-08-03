@@ -46,10 +46,10 @@ const exportDOMTree = () => {
   testDiv.style.position = 'absolute';
   testDiv.style.visibility = 'hidden';
   document.body.appendChild(testDiv);
-  const computed = parseFloat(window.getComputedStyle(testDiv).borderBottomWidth);
+  const computedW = parseFloat(window.getComputedStyle(testDiv).borderBottomWidth);
   document.body.removeChild(testDiv);
-  // 如果 1px 变成了 0.667px， 那么fixRatio 就是 1/0.667 = 1.5
-  // 如果本来就是1px， 那么 fixRatio 就是 1
+  // 如果 1px 变成了 0.667px， 那么 fixRatio 就是 1 / 0.667 = 1.5
+  // 如果本来就是 1px，那么 fixRatio 就是 1
   let fixRatio = computedW > 0 ? (1 / computedW) : 1;
   fixRatio = Number(fixRatio.toFixed(2));
 
@@ -145,17 +145,23 @@ const exportDOMTree = () => {
       return null;
     }
 
+    // 过滤掉透明度为 0 或 display: none 的节点（可选）
+    if (style.display === 'none' || style.visibility === 'hidden') {
+      return null;
+    }
+
     // 获取文本逻辑
     const textContent = Array.from(node.childNodes)
       .filter(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim().length > 0)
       .map(n => n.textContent.trim())
       .join(' ');
+
     const isText = textContent.length > 0;
     const tagName = node.tagName.toLowerCase();
 
-    // 坐标直接取视口相对位置， 不加 scroll 偏移
-    const absoluteTop = Math.round(rect.top + offsetX);
-    const absoluteLeft = Math.round(rect.left + offsetY);
+    // 坐标直接取视口相对位置，不加 scroll 偏移
+    const absoluteTop = Math.round(rect.top + offsetY);
+    const absoluteLeft = Math.round(rect.left + offsetX);
 
     const id = currentId++;
 
@@ -190,7 +196,7 @@ const exportDOMTree = () => {
       borderRadius: style.borderRadius, // 原数据不转换
       borderWidth: Number((removePxUnit(style.borderWidth) * fixRatio).toFixed(1)),
       borderStyle: style.borderStyle,
-      borderColor: Number((removePxUnit(style.borderWidth) * fixRatio).toFixed(1)) ? toARGBHex(style.borderColor) : undefined,
+      borderColor: (Number((removePxUnit(style.borderWidth) * fixRatio).toFixed(1))) ? toARGBHex(style.borderColor) : undefined,
       boxShadow: (style.boxShadow && style.boxShadow !== "none") ? style.boxShadow : undefined,
       textShadow: (style.textShadow && style.textShadow !== "none") ? style.textShadow : undefined
     };
@@ -198,7 +204,7 @@ const exportDOMTree = () => {
     if ((style.filter && style.filter !== "none") || (style.backdropFilter && style.backdropFilter !== "none")) {
       data.blur = {
         filter: (style.filter && style.filter !== "none") ? style.filter : undefined,
-        backdropFilter: (style.backdropFilter && style.backdropFilter !== "none") ? style.backdropFilter : undefined
+        backdropFilter: (style.backdropFilter && style.backdropFilter !== "none") ? style.backdropFilter : undefined,
       }
     }
 
@@ -215,7 +221,7 @@ const exportDOMTree = () => {
     let childData = [];
 
     // 特殊逻辑：如果是 iframe，尝试进入其内部
-    if (tabName === 'iframe') {
+    if (tagName === 'iframe') {
       try {
         const iframeDoc = node.contentDocument || node.contentWindow.document;
         if (iframeDoc && iframeDoc.body) {
@@ -226,7 +232,7 @@ const exportDOMTree = () => {
             .filter(c => c !== null);
         }
       } catch (e) {
-        data.info = 'Cross-origin iframe - Access Denied'
+        data.info = "Cross-origin iframe - Access Denied"
       }
     } else {
       childData = children
@@ -239,16 +245,31 @@ const exportDOMTree = () => {
   }
 
   // ── 根节点构造（viewport）──────────────────────────
-  return {
+  const root = {
     id: 3,
-    deviceType: 'web',
-    name: 'viewport',
-    type: 'container',
-    rect: { w: vWidth, h: vHeight, x: 0, y: 0 },
-    size: { w: vWidth, h: vHeight, x: 0, y: 0 },
-    w: vWidth, h: vHeight, x: 0, y: 0,
+    deviceType: "web",
+    name: "viewport",
+    type: "container",
+    rect: { 
+      w: vWidth, 
+      h: vHeight, 
+      x: 0, 
+      y: 0 
+    },
+    size: { 
+      w: vWidth, 
+      h: vHeight, 
+      x: 0, 
+      y: 0 
+    },
+    w: vWidth, 
+    h: vHeight, 
+    x: 0, 
+    y: 0,
     children: [getElementData(document.body)]
   };
+
+
   return root;
 }
 
