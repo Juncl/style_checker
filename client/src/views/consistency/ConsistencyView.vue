@@ -196,7 +196,7 @@ import { UXLINT_CHECKLIST_EVENT } from './init/detectIframe'
 import { processUxlintCheckList } from './init/processUxlintCheckList'
 import { setUrlParams, removeUrlParams } from '../utils/urlParams'
 import { parseOverrideValue } from './match/overrideValidator'
-import { generateManualDiff, formatStyleValue, readStyleValue } from './match/compareNodes'
+import { generateManualDiff, formatStyleValue } from './match/compareNodes'
 import { savePlatform } from './init/restorePlatform'
 import AppLayout from './components/AppLayout.vue'
 import AiChatDrawer from './components/AiChatDrawer.vue'
@@ -272,8 +272,8 @@ function diffKey(d) {
   return `${d.designNodeId ?? ''}|${d.arkuiNodeId ?? ''}|${d.property}`
 }
 
-function serializeSnapshot(r, manual) {
-  const diffs = (r?.diffs ?? [])
+function serializeSnapshot(r, manual, allDiffs) {
+  const diffs = (allDiffs ?? [])
     .map(d => [diffKey(d), d.designValue ?? '', d.arkuiValue ?? '', d.severity ?? '', d._isManual ?? false, d.diffSource ?? ''])
     .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
   const pairs = (r?.pairs ?? [])
@@ -285,15 +285,15 @@ function serializeSnapshot(r, manual) {
 const initialSnapshot = ref('')
 
 function snapshotInitial() {
-  initialSnapshot.value = result.value ? serializeSnapshot(result.value, nodeManualAttr.value) : ''
+  initialSnapshot.value = result.value
+    ? serializeSnapshot(result.value, nodeManualAttr.value, mergedDiffs.value)
+    : ''
 }
 
 const hasManualInReport = computed(() => {
   if (!result.value) return false
-  return serializeSnapshot(result.value, nodeManualAttr.value) !== initialSnapshot.value
+  return serializeSnapshot(result.value, nodeManualAttr.value, mergedDiffs.value) !== initialSnapshot.value
 })
-
-watch(() => result.value, () => snapshotInitial())
 
 // 从节点树上收集所有人工覆盖属性，结构：{ dev: { id: { key: val } }, design: { id: { key: val } } }
 const nodeManualAttr = computed(() => {
@@ -339,50 +339,32 @@ function mergePairs(existingPairs, tempPairs) {
   return merged
 }
 
-function mergeCheckResult({ tempPairs, tempDiffs, existingPairs, existingDiffs, mode }) {
-  const newPairs = mergePairs(existingPairs, tempPairs)
-  const pairDesignIds = new Set(newPairs.map(p => p.design?.id).filter(Boolean))
-  const pairArkuiIds = new Set(newPairs.map(p => p.arkui?.id).filter(Boolean))
-  const hasId = (v) => v != null && v !== ''
-
-  const conflictWith = (d) => tempDiffs.find(nd => {
-    if (mode === 'edit' && d.property !== nd.property) return false
-    const sameDesignId = hasId(d.designNodeId) && hasId(nd.designNodeId) && d.designNodeId === nd.designNodeId
-    const sameArkuiId = hasId(d.arkuiNodeId) && hasId(nd.arkuiNodeId) && d.arkuiNodeId === nd.arkuiNodeId
-    return sameDesignId || sameArkuiId
-  })
-
-  const kept = []
-  for (const d of existingDiffs) {
-    if (!conflictWith(d)) { kept.push(d); continue }
-    if (mode === 'edit') continue
-    if (!d._isManual) continue
-    const designHasPair = hasId(d.designNodeId) && pairDesignIds.has(d.designNodeId)
-    const arkuiHasPair = hasId(d.arkuiNodeId) && pairArkuiIds.has(d.arkuiNodeId)
-    if (designHasPair || arkuiHasPair) continue
-    kept.push({ ...d, designNodeId: null, arkuiNodeId: null })
-  }
-
-  let diffs = [...kept, ...tempDiffs]
-
-  if (mode === 'select') {
-    const pairKeySet = new Set(newPairs.map(p => `${p.design?.id ?? ''}|${p.arkui?.id ?? ''}`))
-    diffs = diffs.filter(d => d._isManual || pairKeySet.has(`${d.designNodeId ?? ''}|${d.arkuiNodeId ?? ''}`))
-  }
-
-  return { newPairs, newDiffs: diffs }
-}
-
-/** 从节点 manualStyle 重新生成 edit-diff，使用当前 newPairs 信息 */
-function rebuildEditDiffs(allDesignNodes, allArkuiNodes, pairs, platform) {
+/**
+ * 从节点 manualStyle 全量重建 edit 池（editDiffs ref）。
+ * 基于当前 result.value 的 pairs + 节点树，不依赖外部传参。
+ * 内置 key 走 generateManualDiff（含 _isResolved 处理）；
+ * 非内置 key 直接构造单侧 diff。
+ */
+function rebuildEditDiffs() {
+  if (!result.value) { editDiffs.value = []; resolvedKeys.value = new Set(); return }
+  const allDesignNodes = result.value.allDesignNodes ?? []
+  const allArkuiNodes  = result.value.allArkuiNodes  ?? []
+  const pairs          = result.value.pairs ?? []
+  const platform       = platformStore.currentPlatform
   const diffs = []
-  const manualKeys = new Set()
+  const resolved = new Set()
 
   const buildOne = (designNodeId, arkuiNodeId, property, designNode, arkuiNode) => {
-    manualKeys.add(`${property}|${designNodeId}|${arkuiNodeId}`)
     if (builtinStyleKeys.has(property) && designNode && arkuiNode) {
       const diff = generateManualDiff({ design: designNode, arkui: arkuiNode }, property, platform)
-      if (diff) diffs.push(diff)
+      if (diff) {
+        diffs.push(diff)
+      } else {
+        // generateManualDiff 返回 null 且有 manualStyle → 值一致，记录已解决
+        if (designNode?.manualStyle?.[property] !== undefined || arkuiNode?.manualStyle?.[property] !== undefined) {
+          resolved.add(`${property}|${designNodeId}|${arkuiNodeId}`)
+        }
+      }
       return
     }
     let mySide, myNode
@@ -422,51 +404,62 @@ function rebuildEditDiffs(allDesignNodes, allArkuiNodes, pairs, platform) {
     }
   }
 
-  return { diffs, manualKeys }
+  editDiffs.value = diffs
+  resolvedKeys.value = resolved
 }
 
-function upsertOneDiff(diffs, newDiff) {
-  const idx = diffs.findIndex(d =>
-    d.property === newDiff.property &&
-    d.designNodeId === newDiff.designNodeId &&
-    d.arkuiNodeId === newDiff.arkuiNodeId
-  )
-  if (idx >= 0) {
-    diffs[idx] = newDiff
-  } else {
-    diffs.push(newDiff)
+// ── 三池 diff 架构 ─────────────────────────────────────────────────────────────
+// 算法池：result.value.diffs（后端全量跑的原始算法 diff，只读不可变）
+// select 池：selectDiffs（select 局部对比结果，节点级覆盖算法池）
+// edit 池：editDiffs（edit 人工标注，三元组级覆盖 select 池/算法池）
+// resolvedKeys：值一致的已解决三元组集合（不生成 diff 卡片，但需删除算法池对应条目）
+const selectDiffs = ref([])
+const editDiffs   = ref([])
+const resolvedKeys = ref(new Set())
+
+/**
+ * 将算法池、select 池、edit 池按优先级叠加（edit > select > 算法）。
+ * - select 池节点级覆盖：selectDiffs 涉及的节点 id 集合，算法池中命中该集合的 diff 被排除
+ * - edit 池三元组级覆盖：editDiffs 的 (property, designNodeId, arkuiNodeId) 集合，前序结果命中则排除
+ */
+function overlayDiffs(algorithmDiffs, selDiffs, edtDiffs, resolvedSet) {
+  const selectCoverIds = new Set()
+  for (const d of selDiffs) {
+    if (d.designNodeId) selectCoverIds.add(d.designNodeId)
+    if (d.arkuiNodeId)  selectCoverIds.add(d.arkuiNodeId)
   }
-  return diffs
-}
-
-function upsertManualDiff(newDiff) {
-  if (!result.value) return
-  const { newDiffs } = mergeCheckResult({
-    tempPairs: [],
-    tempDiffs: [newDiff],
-    existingPairs: result.value.pairs ?? [],
-    existingDiffs: result.value.diffs ?? [],
-    mode: 'edit',
-  })
-  result.value.diffs = newDiffs
-}
-
-function removeDiff(designId, arkuiId, property) {
-  if (!result.value?.diffs) return
-  result.value.diffs = result.value.diffs.filter(d =>
-    !(d.property === property && d.designNodeId === designId && d.arkuiNodeId === arkuiId)
+  const base = (algorithmDiffs ?? []).filter(d =>
+    !selectCoverIds.has(d.designNodeId) && !selectCoverIds.has(d.arkuiNodeId)
   )
+  const selectAndAlgo = [...base, ...selDiffs]
+
+  const editKeys = new Set(edtDiffs.map(d => `${d.property}|${d.designNodeId ?? ''}|${d.arkuiNodeId ?? ''}`))
+  const withoutEdit = selectAndAlgo.filter(d => {
+    const k = `${d.property}|${d.designNodeId ?? ''}|${d.arkuiNodeId ?? ''}`
+    if (editKeys.has(k)) return false      // edit 池覆盖
+    if (resolvedSet?.has(k)) return false  // 已解决，直接删除
+    return true
+  })
+  return [...withoutEdit, ...edtDiffs]
 }
 
-const mergedDiffs = computed(() => tempResultStore.tempDiffs ?? result.value?.diffs ?? [])
+const canvasMode = useCanvasModeStore()
+const devReuploading    = ref(false)
+const designReuploading = ref(false)
+
+const mergedDiffs = computed(() => {
+  if (canvasMode.mode === 'select' && tempResultStore.tempDiffs) return tempResultStore.tempDiffs
+  return overlayDiffs(result.value?.diffs ?? [], selectDiffs.value, editDiffs.value, resolvedKeys.value)
+})
 
 watch(() => result.value, () => {
   tempResultStore.clear()
+  // selectDiffs 由各场景手动清空/赋值（selectCase / rerunCheck 清空，loadHistoryVersion 赋值）
+  // editDiffs 基于 result 新 pairs + 节点树重建
+  rebuildEditDiffs()
+  // 快照基线需在 rebuild 后记录，确保 mergedDiffs 已反映新 edit 池
+  snapshotInitial()
 })
-
-const devReuploading    = ref(false)
-const designReuploading = ref(false)
-const canvasMode = useCanvasModeStore()
 
 const deliverables     = ref([])
 const pages            = ref([])
@@ -1061,7 +1054,7 @@ async function onSave() {
       fileToText(uploadFiles.value.designJson),
     ])
     const { problems, nodeMatchs } = buildProblems(result.value, {
-      diffs: result.value?.diffs ?? [],
+      diffs: [...(result.value?.diffs ?? []), ...selectDiffs.value],
       nodeManualAttr: nodeManualAttr.value,
     })
     await addConsistencyCheckPage({
@@ -1090,7 +1083,7 @@ async function onSave() {
     ElMessage.success('存储成功')
     snapshotInitial()
     try {
-      const manualDiffs = (result.value?.diffs ?? []).filter(d => d._isManual)
+      const manualDiffs = [...editDiffs.value, ...selectDiffs.value]
       const nodeIds = new Set()
       for (const d of manualDiffs) {
         if (d.arkuiNodeId) nodeIds.add(`arkui:${d.arkuiNodeId}`)
@@ -1133,67 +1126,16 @@ function onSaveManualStyle({ side, nodeId, key, parsedValue }) {
   if (!node) return
   node.manualStyle = { ...(node.manualStyle || {}), [key]: parsedValue }
 
-  const mySide    = side === 'design' ? 'design' : 'arkui'
-  const otherSide = side === 'design' ? 'arkui' : 'design'
-  const pairs = result.value?.pairs ?? []
-  const pair = pairs.find(p => p[mySide]?.id === nodeId)
+  // 全量重建 edit 池（算法池、select 池不动，算法 diff 自动在 mergedDiffs 中保留/恢复）
+  rebuildEditDiffs()
 
-  // 非内置 key：直接用用户填写值创建 diff，不通过 generateManualDiff
-  if (!builtinStyleKeys.has(key)) {
-    const diff = {
-      property: key,
-      [`${mySide}Value`]:    formatStyleValue(key, parsedValue, platformStore.currentPlatform),
-      [`${otherSide}Value`]: '—',
-      severity: 'warning',
-      confidence: 'high',
-      [`${mySide}NodeId`]:    nodeId,
-      [`${otherSide}NodeId`]: pair?.[otherSide]?.id ?? null,
-      _isManual: true,
-      diffSource: 'edit-diff',
-      textContent: node.textContent ?? node.name ?? '',
-      designName: pair?.design?.name ?? node.name,
-    }
-    upsertManualDiff(diff)
-    if (pair) selectionStore.select(pair)
-    return
-  }
-
+  // 维持选中态（供 Inspector 展示已保存行）
+  const mySide = side === 'design' ? 'design' : 'arkui'
+  const pairs  = result.value?.pairs ?? []
+  const pair   = pairs.find(p => p[mySide]?.id === nodeId)
   if (pair) {
-    const manualDiff = generateManualDiff(pair, key, platformStore.currentPlatform)
-    if (manualDiff) {
-      upsertManualDiff(manualDiff)
-      selectionStore.select(pair)
-    } else {
-      upsertManualDiff({
-        property:      key,
-        designValue:   formatStyleValue(key, readStyleValue(pair.design, key), platformStore.currentPlatform),
-        arkuiValue:    formatStyleValue(key, readStyleValue(pair.arkui,  key), platformStore.currentPlatform),
-        severity:      'warning',
-        confidence:    'high',
-        designNodeId:  pair.design?.id ?? null,
-        arkuiNodeId:   pair.arkui?.id  ?? null,
-        _isManual:     true,
-        diffSource:    'edit-diff',
-        _isResolved:   true,
-        textContent:   pair.design?.textContent ?? pair.design?.name ?? pair.arkui?.textContent ?? '',
-        designName:    pair.design?.name,
-      })
-    }
+    selectionStore.select(pair)
   } else {
-    const diff = {
-      property: key,
-      [`${mySide}Value`]: formatStyleValue(key, parsedValue, platformStore.currentPlatform),
-      [`${otherSide}Value`]: '—',
-      severity: 'warning',
-      confidence: 'high',
-      [`${mySide}NodeId`]: nodeId,
-      [`${otherSide}NodeId`]: null,
-      _isManual: true,
-      diffSource: 'edit-diff',
-      textContent: node.textContent ?? node.name ?? '',
-      designName: side === 'design' ? (node.name ?? '') : undefined,
-    }
-    upsertManualDiff(diff)
     selectionStore.selectUnmatched(mySide === 'design' ? 'design' : 'arkui', node)
   }
 }
@@ -1206,24 +1148,8 @@ function onRemoveManualStyle({ side, nodeId, key }) {
   delete updated[key]
   node.manualStyle = Object.keys(updated).length ? updated : undefined
 
-  const mySide    = side === 'design' ? 'design' : 'arkui'
-  const otherSide = side === 'design' ? 'arkui' : 'design'
-  const pairs = result.value?.pairs ?? []
-  const pair = pairs.find(p => p[mySide]?.id === nodeId)
-  if (pair) {
-    const manualDiff = generateManualDiff(pair, key, platformStore.currentPlatform)
-    if (manualDiff) {
-      upsertManualDiff(manualDiff)
-    } else {
-      removeDiff(pair.design?.id ?? null, pair.arkui?.id ?? null, key)
-    }
-  } else {
-    removeDiff(
-      mySide === 'design' ? nodeId : null,
-      mySide === 'arkui' ? nodeId : null,
-      key
-    )
-  }
+  // 全量重建 edit 池；算法 diff / select diff 自动在 mergedDiffs 中恢复显示
+  rebuildEditDiffs()
 }
 
 function applyExtraOverride(nodes, override) {
@@ -1241,35 +1167,26 @@ function applyExtraOverride(nodes, override) {
 function mergeTempToResult() {
   if (!tempResultStore.tempDiffs || !tempResultStore.tempPairs || !result.value) return
 
-  const _beforePairs = result.value.pairs ?? []
-  const _beforeDiffs = result.value.diffs ?? []
-  const { newPairs, newDiffs } = mergeCheckResult({
-    tempPairs: tempResultStore.tempPairs,
-    tempDiffs: tempResultStore.tempDiffs,
-    existingPairs: _beforePairs,
-    existingDiffs: result.value.diffs ?? [],
-    mode: 'select',
-  })
+  // 1. pairs 合并（temp 覆盖 existing）
+  const newPairs = mergePairs(result.value.pairs ?? [], tempResultStore.tempPairs)
 
-  let finalDiffs = [...newDiffs]
-  const { diffs: rebuilt, manualKeys } = rebuildEditDiffs(
-    result.value.allDesignNodes ?? [],
-    result.value.allArkuiNodes ?? [],
-    newPairs,
-    platformStore.currentPlatform,
-  )
-  const newPairKeySet = new Set(newPairs.map(p => `${p.design?.id ?? ''}|${p.arkui?.id ?? ''}`))
-  finalDiffs = finalDiffs.filter(d =>
-    d._isManual
-      ? newPairKeySet.has(`${d.designNodeId ?? ''}|${d.arkuiNodeId ?? ''}`)
-      : !manualKeys.has(`${d.property}|${d.designNodeId}|${d.arkuiNodeId}`)
-  )
-  for (const rd of rebuilt) {
-    finalDiffs = upsertOneDiff(finalDiffs, rd)
+  // 2. select 池更新：tempDiffs 涉及的节点 id 集合，覆盖旧 select-diff（节点级）
+  const tempDiffs = tempResultStore.tempDiffs
+  const newCoverIds = new Set()
+  for (const d of tempDiffs) {
+    if (d.designNodeId) newCoverIds.add(d.designNodeId)
+    if (d.arkuiNodeId)  newCoverIds.add(d.arkuiNodeId)
   }
+  const keptSelect = selectDiffs.value.filter(d =>
+    !newCoverIds.has(d.designNodeId) && !newCoverIds.has(d.arkuiNodeId)
+  )
+  selectDiffs.value = [...keptSelect, ...tempDiffs]
 
-  result.value.diffs = finalDiffs
+  // 3. 算法池不动（result.value.diffs 保持只读）
   result.value.pairs = resolvePairsToNodes(newPairs, result.value.allDesignNodes, result.value.allArkuiNodes)
+
+  // 4. 基于 newPairs 全量重建 edit 池
+  rebuildEditDiffs()
 
   // 清除 temp 状态，回到 select-select
   tempResultStore.clear()
@@ -1322,6 +1239,7 @@ async function rerunCheck() {
       unmatchedArkuiNodes:  matchResult.unmatchedArkuiNodes,
       stats:                matchResult.stats,
     }
+    selectDiffs.value = []
     devReuploading.value    = false
     designReuploading.value = false
     devPreview.value        = null
@@ -1390,6 +1308,7 @@ async function selectCase(id) {
     delete data._rawDevContent
     delete data._devImgExt
     result.value = data
+    selectDiffs.value = []
     result.value.pairs = resolvePairsToNodes(result.value.pairs, result.value.allDesignNodes, result.value.allArkuiNodes)
 
     const designJsonFile = jsonToFile(rawDesignJson, 'design.json')
@@ -1486,6 +1405,10 @@ async function loadHistoryVersion(rawVersion, deviceType) {
   const errorCount   = diffs.filter(d => d.severity === 'error').length
   const warningCount = diffs.filter(d => d.severity === 'warning').length
 
+  // 三池分离：算法池（无 diffSource）+ select 池（select-diff）；edit-diff 丢弃后由 manualStyle rebuild
+  const algoDiffs    = diffs.filter(d => !d.diffSource)
+  const loadedSelect = diffs.filter(d => d.diffSource === 'select-diff')
+
   // 空侧停在上传卡片状态；非空侧正常渲染报告画布
   devReuploading.value    = devEmpty
   designReuploading.value = designEmpty
@@ -1508,13 +1431,15 @@ async function loadHistoryVersion(rawVersion, deviceType) {
 
   result.value = {
     pairs:                resolvePairsToNodes(pairs, _allDesign, _allArkui),
-    diffs,
+    diffs:                algoDiffs,
     canvas:               { arkui: devParsed.canvas ?? designParsed.canvas, design: designParsed.canvas ?? devParsed.canvas },
     stats:                { errorCount, warningCount },
     allArkuiNodes:        _allArkui,
     allDesignNodes:       _allDesign,
     unmatchedDesignNodes: [],
   }
+  // select 池与 edit 池：edit 池由 watch(result) 触发 rebuildEditDiffs 重建
+  selectDiffs.value = loadedSelect
   blobUrls.value = {
     arkui:  devEmpty    ? '' : version.devBase64Data,
     design: designEmpty ? '' : version.designBase64Data,
@@ -1706,7 +1631,7 @@ async function runUpload(platform) {
 }
 
 function reportCompareResult() {
-  const diffs = result.value?.diffs ?? []
+  const diffs = mergedDiffs.value ?? []
   const errorlist = { all: diffs.length }
   for (const d of diffs) {
     const key = d.property

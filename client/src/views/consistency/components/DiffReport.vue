@@ -256,10 +256,7 @@ const visibleDiffs = computed(() => {
       ? props.diffs.filter(d => !isHighOrMedium(d))
       : props.diffs.filter(d => isHighOrMedium(d))
   }
-  return list.filter(d => {
-    if (!d._isResolved) return true
-    return issueKey(d.property) === 'other'
-  })
+  return list.filter(d => !d._isResolved)
 })
 const IGNORED_ISSUE_PROPS = new Set(['textAlign'])
 const issueGroups = computed(() =>

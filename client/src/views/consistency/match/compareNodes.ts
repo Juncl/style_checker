@@ -78,14 +78,20 @@ export function generateManualDiff(
   key:      string,
   platform: string,
 ): ManualStyleDiff | null {
-  if (pair.design?.manualStyle?.[key] === undefined && pair.arkui?.manualStyle?.[key] === undefined) return null
+  const designHasManual = pair.design?.manualStyle?.[key] !== undefined
+  const arkuiHasManual  = pair.arkui?.manualStyle?.[key] !== undefined
+  if (!designHasManual && !arkuiHasManual) return null
+
   const designVal = readStyleValue(pair.design, key)
   const arkuiVal  = readStyleValue(pair.arkui, key)
 
   const designStr = formatStyleValue(key, designVal, platform)
   const arkuiStr  = formatStyleValue(key, arkuiVal, platform)
 
-  if (designStr === arkuiStr) return null
+  // 两侧值一致 → 返回 null（不生成 diff 卡片），
+  // 由 overlayDiffs 用 resolvedKeys 删除算法池对应条目
+  // 例外：'other' 类型是用户自定义属性，即使值一致也必须展示
+  if (designStr === arkuiStr && key !== 'other') return null
 
   return {
     property:      key,
@@ -94,7 +100,7 @@ export function generateManualDiff(
     severity:      'warning',
     confidence:    'high',
     designNodeId:  pair.design?.id ?? null,
-    arkuiNodeId:   pair.arkui?.id ?? null,
+    arkuiNodeId:   pair.arkui?.id  ?? null,
     _isManual:     true,
     diffSource:    'edit-diff',
     textContent:   (pair.design?.textContent ?? pair.design?.name ?? pair.arkui?.textContent ?? ''),

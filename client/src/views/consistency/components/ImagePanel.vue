@@ -79,7 +79,7 @@
             <div
               v-for="item in displayStyle"
               :key="item.key"
-              :class="['prop-row', item.diff ? (item.diff.confidence === 'low' ? 'diff-weak' : 'diff-strong') : '']"
+              :class="['prop-row', item.diff ? (item.diff._isResolved ? '' : (item.diff.confidence === 'low' ? 'diff-weak' : 'diff-strong')) : '']"
               :title="item.diff?.description || ''"
             >
               <span class="prop-key">{{ item.label }}</span>
@@ -92,7 +92,8 @@
             <div
               v-for="row in savedRows"
               :key="row.key"
-              class="prop-row prop-row--saved"
+              :class="['prop-row', 'prop-row--saved', diffClass(row.key)]"
+              :title="diffForStyleKey(row.key)?.description || ''"
               @click.stop
             >
               <span class="prop-key">{{ rowLabel(row.key) }}</span>
@@ -119,7 +120,7 @@
                     v-model="pendingValue"
                     class="extra-input"
                     :class="{ 'extra-input--error': extraError }"
-                    :placeholder="'请输入内容'"
+                    :placeholder="pendingKey ? getInputPlaceholder(pendingKey) : '请输入内容'"
                   />
                   <span class="extra-error-tip" :class="{ 'is-empty': !extraError }">
                     <template v-if="extraError">
@@ -154,7 +155,7 @@ import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { toWebColorDisplay } from '../../utils/tools.ts'
 import { TEXT_STYLE_OPTIONS, CONTAINER_STYLE_OPTIONS } from '../../utils/constants'
-import { validateOverrideInput, parseOverrideValue } from '../match/overrideValidator'
+import { validateOverrideInput, parseOverrideValue, getInputPlaceholder, normalizeOverrideDisplay } from '../match/overrideValidator'
 import '../../../styles/image-panel.css'
 import { useDebugStore } from '../../../stores/debug'
 
@@ -1171,7 +1172,8 @@ const displayStyle = computed(() => {
     label: label || key,
     val: String(val),
     color: toCssColor(color),
-    diff: diffForStyleKey(key),
+    // 已有 manualStyle 的属性不在原始 style 行高亮（高亮移至 savedRows）
+    diff: props.inspectorNode?.manualStyle?.[key] !== undefined ? null : diffForStyleKey(key),
     truncate,
   })
 
@@ -1221,6 +1223,13 @@ function diffForStyleKey(key) {
   return props.styleDiffs.find(d => aliases.includes(d.property)) || null
 }
 
+/** 根据 diff 返回高亮 class 名：已解决→空，不一致→diff-strong/diff-weak，无 diff→空 */
+function diffClass(key) {
+  const d = diffForStyleKey(key)
+  if (!d || d._isResolved) return ''
+  return d.confidence === 'low' ? 'diff-weak' : 'diff-strong'
+}
+
 
 // ── 自定义对比行 ─────────────────────────────────────────────────────────────
 const showPendingRow = ref(false)
@@ -1268,11 +1277,12 @@ function confirmExtra() {
   const key       = pendingKey.value
   const rawValue  = pendingValue.value.trim()
   const parsedVal = parseOverrideValue(key, rawValue)
+  const displayVal = normalizeOverrideDisplay(key, rawValue)
 
   // 同 key 已存在则覆盖
   const idx = savedRows.value.findIndex(r => r.key === key)
-  if (idx >= 0) savedRows.value.splice(idx, 1, { key, rawValue })
-  else          savedRows.value.push({ key, rawValue })
+  if (idx >= 0) savedRows.value.splice(idx, 1, { key, rawValue: displayVal })
+  else          savedRows.value.push({ key, rawValue: displayVal })
 
   // 清空待确认面板
   showPendingRow.value = false
