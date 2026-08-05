@@ -46,7 +46,7 @@ async function compressMessagesImages(messages) {
     }
   }
   if (totalBefore > 0) {
-    console.log(`[图片压缩] 合计  压缩前: ${totalBefore.toLocaleString()} 字符  →  压缩后: ${totalAfter.toLocaleString()} 字符  |  缩减 ${((1 - totalAfter / totalBefore) * 100).toFixed(1)}%`)
+    // console.log(`[图片压缩] 合计  压缩前: ${totalBefore.toLocaleString()} 字符  →  压缩后: ${totalAfter.toLocaleString()} 字符  |  缩减 ${((1 - totalAfter / totalBefore) * 100).toFixed(1)}%`)
   }
 }
 

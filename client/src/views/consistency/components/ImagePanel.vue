@@ -76,6 +76,10 @@
                 <el-icon class="copy-icon" @click.stop="copyId"><CopyDocument /></el-icon>
               </span>
             </div>
+            <div v-if="debugStore.debugMode && inspectorNode?.size" class="prop-row">
+              <span class="prop-key">size</span>
+              <span class="prop-val">({{ fmtNum(inspectorNode.size.x) }},{{ fmtNum(inspectorNode.size.y) }}) w:{{ fmtNum(inspectorNode.size.w) }}, h:{{ fmtNum(inspectorNode.size.h) }}</span>
+            </div>
             <div
               v-for="item in displayStyle"
               :key="item.key"
@@ -153,7 +157,7 @@
 <script setup>
 import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { toWebColorDisplay } from '../../utils/tools.ts'
+import { toWebColorDisplay, fmtNum } from '../../utils/tools.ts'
 import { TEXT_STYLE_OPTIONS, CONTAINER_STYLE_OPTIONS } from '../../utils/constants'
 import { validateOverrideInput, parseOverrideValue, getInputPlaceholder, normalizeOverrideDisplay } from '../match/overrideValidator'
 import '../../../styles/image-panel.css'
@@ -379,8 +383,21 @@ function hitNodesAt(px, py) {
     .sort((a, b) => {
       const typeDelta = hitTypePriority(a) - hitTypePriority(b)
       if (typeDelta !== 0) return typeDelta
-      return a.rect.w * a.rect.h - b.rect.w * b.rect.h
+      const areaDelta = a.rect.w * a.rect.h - b.rect.w * b.rect.h
+      // 面积差异明显时，沿用"面积小=上层"启发式
+      if (Math.abs(areaDelta) > 1) return areaDelta
+      // 面积几乎相等（如父子同框）：用 path 前缀判断祖先关系，子节点排前
+      if (isAncestorPath(a, b)) return 1
+      if (isAncestorPath(b, a)) return -1
+      return areaDelta
     })
+}
+
+/** 判断 a 是否为 b 的祖先（a.path 是 b.path 的前缀且更短） */
+function isAncestorPath(a, b) {
+  const ap = a.path, bp = b.path
+  if (!Array.isArray(ap) || !Array.isArray(bp) || ap.length >= bp.length) return false
+  return ap.every((v, i) => v === bp[i])
 }
 
 function findHitNode(px, py) {

@@ -9,6 +9,13 @@ export function formatDateTime(date: Date): string {
   return `${y}年${m}月${d}号 ${hh}:${mm}:${ss}`
 }
 
+// 数值四舍五入保留2位小数，去掉多余的0（0→"0"，123→"123"，123.4→"123.4"，123.456→"123.46"）
+export function fmtNum(v: any): string {
+  const n = Number(v)
+  if (!isFinite(n)) return String(v)
+  return String(parseFloat(n.toFixed(2)))
+}
+
 // File 对象 → Base64 DataURL 字符串
 export function fileToBase64(file: File | null | undefined): Promise<string> {
   return new Promise((resolve) => {
