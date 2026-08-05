@@ -157,20 +157,16 @@ function moveFile(src, dst) {
 /**
  * 关闭采集程序进程
  *
- * Windows 下 child.kill() 只杀父进程、不杀子进程树，需用 taskkill /T /F
- * 杀整个进程树（exe 可能拉起子进程）。已退出则跳过，避免误杀。
+ * 通过 cmd /c start 启动后，cmd 会立即退出，child.pid 失效，
+ * 无法按 PID 杀进程。改用按映像名 taskkill，杀掉所有名为 EXE_NAME 的进程。
  */
-function killExe(child) {
-  if (!child || child.exitCode !== null) return
+function killExe() {
   try {
     if (platform() === 'win32') {
-      // Windows：taskkill 杀整个进程树（/T 递归子进程，/F 强制）
-      spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+      // Windows：按映像名强制杀（/IM 映像名，/F 强制）
+      spawnSync('taskkill', ['/IM', EXE_NAME, '/F'], {
         windowsHide: true,
       })
-    } else {
-      // 非 Windows（理论上不会走到，collectArkui 入口已校验）
-      child.kill()
     }
   } catch {
     // 杀进程失败不阻塞主流程，仅吞掉异常
@@ -210,8 +206,12 @@ export async function collectArkui(options = {}) {
   // 3. 快照现有文件
   const existing = snapshotExisting()
 
-  // 4. 启动 exe（detached，模拟双击，Node 进程不等待 exe 退出）
-  const child = spawn(exePath, [], {
+  // 4. 启动 exe（通过 cmd /c start，等同双击行为）
+  //    直接 spawn(exePath) 在 Windows 上常因 stdio/shell 上下文缺失导致 exe 立即退出；
+  //    cmd /c start 让 exe 在独立窗口中运行，提供完整 shell 上下文。
+  //    cmd 启动后立即退出（start 是异步的），exe 成为独立进程，child.pid 仅指向 cmd，
+  //    因此进程清理改为按映像名 taskkill（见 killExe）。
+  const child = spawn('cmd', ['/c', 'start', '', exePath], {
     cwd: EXE_DIR,
     detached: true,
     stdio: 'ignore',
@@ -252,6 +252,6 @@ export async function collectArkui(options = {}) {
     return { devJsonPath, devImagePath }
   } finally {
     // 采集完成 / 超时 / 启动失败，都关闭 exe 进程，避免残留
-    killExe(child)
+    killExe()
   }
 }
