@@ -94,8 +94,13 @@ function isFileStable(file, lastSize, stableCount) {
 /**
  * 轮询等待 script 目录中出现新的 json + 图片文件并写入完成
  *
+ * 同时等待两个文件（不分先后），各自独立判定稳定性：
+ *   - json 和图片都出现且稳定 → resolve
+ *   - 总超时到达 → 若 json 已稳定但图片缺失，视为无截图 resolve；
+ *     若 json 仍未稳定，reject
+ *
  * @param {Set<string>} existing - 启动前已存在的文件名集合
- * @param {number} timeout - 超时 ms
+ * @param {number} timeout - 总超时 ms
  * @returns {Promise<{ jsonFile: string, imageFile: string|null }>}
  */
 function waitForOutput(existing, timeout) {
@@ -105,16 +110,7 @@ function waitForOutput(existing, timeout) {
     const stableCount = new Map()
 
     const tick = () => {
-      if (Date.now() > deadline) {
-        clearInterval(timer)
-        reject(
-          new Error(
-            `等待采集文件超时（${timeout / 1000}秒），请确认采集程序是否正常运行并已导出数据`
-          )
-        )
-        return
-      }
-
+      const now = Date.now()
       const current = readdirSync(EXE_DIR)
       const newJson = current.filter(
         f => extname(f).toLowerCase() === JSON_EXT && !existing.has(f)
@@ -123,16 +119,32 @@ function waitForOutput(existing, timeout) {
         f => IMAGE_EXTS.includes(extname(f).toLowerCase()) && !existing.has(f)
       )
 
-      // json 是必须项；图片可选（部分场景可能不产出截图）
       const jsonReady = newJson.find(f =>
         isFileStable(f, lastSize, stableCount)
       )
-      if (jsonReady) {
-        const imgReady = newImg.find(f =>
-          isFileStable(f, lastSize, stableCount)
-        )
+      const imgReady = newImg.find(f =>
+        isFileStable(f, lastSize, stableCount)
+      )
+
+      // 两个都稳定 → 完成
+      if (jsonReady && imgReady) {
         clearInterval(timer)
-        resolve({ jsonFile: jsonReady, imageFile: imgReady || null })
+        resolve({ jsonFile: jsonReady, imageFile: imgReady })
+        return
+      }
+
+      // 超时：json 必须有，图片可选
+      if (now > deadline) {
+        clearInterval(timer)
+        if (jsonReady) {
+          resolve({ jsonFile: jsonReady, imageFile: null })
+        } else {
+          reject(
+            new Error(
+              `等待采集文件超时（${timeout / 1000}秒），请确认采集程序是否正常运行并已导出数据`
+            )
+          )
+        }
       }
     }
 
