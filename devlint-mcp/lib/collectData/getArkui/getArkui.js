@@ -9,7 +9,7 @@
  * 不写死文件名。
  */
 
-import { spawn } from 'child_process'
+import { spawn, spawnSync } from 'child_process'
 import {
   existsSync,
   mkdirSync,
@@ -155,6 +155,29 @@ function moveFile(src, dst) {
 }
 
 /**
+ * 关闭采集程序进程
+ *
+ * Windows 下 child.kill() 只杀父进程、不杀子进程树，需用 taskkill /T /F
+ * 杀整个进程树（exe 可能拉起子进程）。已退出则跳过，避免误杀。
+ */
+function killExe(child) {
+  if (!child || child.exitCode !== null) return
+  try {
+    if (platform() === 'win32') {
+      // Windows：taskkill 杀整个进程树（/T 递归子进程，/F 强制）
+      spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+        windowsHide: true,
+      })
+    } else {
+      // 非 Windows（理论上不会走到，collectArkui 入口已校验）
+      child.kill()
+    }
+  } catch {
+    // 杀进程失败不阻塞主流程，仅吞掉异常
+  }
+}
+
+/**
  * 采集 ArkUI 开发侧数据
  *
  * 模拟用户双击 exe 的完整过程：
@@ -203,26 +226,32 @@ export async function collectArkui(options = {}) {
     )
   })
 
-  // 5. 等待输出（exe 启动失败会抢先 reject）
-  const output = await Promise.race([
-    waitForOutput(existing, timeout),
-    exeError,
-  ])
+  // 5. 等待输出 + 移动文件；无论成功/超时/失败，finally 都关闭 exe 进程
+  try {
+    // exe 启动失败会抢先 reject
+    const output = await Promise.race([
+      waitForOutput(existing, timeout),
+      exeError,
+    ])
 
-  // 6. 移动到 .devlint
-  const dir = join(process.cwd(), config.DIR_NAME)
-  mkdirSync(dir, { recursive: true })
+    // 6. 移动到配置目录（config.DIR_NAME）
+    const dir = join(process.cwd(), config.DIR_NAME)
+    mkdirSync(dir, { recursive: true })
 
-  const ts = timestamp()
-  const devJsonPath = join(dir, `arkui_${ts}.json`)
-  const devImagePath = output.imageFile
-    ? join(dir, `arkui_${ts}${extname(output.imageFile)}`)
-    : null
+    const ts = timestamp()
+    const devJsonPath = join(dir, `arkui_${ts}.json`)
+    const devImagePath = output.imageFile
+      ? join(dir, `arkui_${ts}${extname(output.imageFile)}`)
+      : null
 
-  moveFile(join(EXE_DIR, output.jsonFile), devJsonPath)
-  if (devImagePath) {
-    moveFile(join(EXE_DIR, output.imageFile), devImagePath)
+    moveFile(join(EXE_DIR, output.jsonFile), devJsonPath)
+    if (devImagePath) {
+      moveFile(join(EXE_DIR, output.imageFile), devImagePath)
+    }
+
+    return { devJsonPath, devImagePath }
+  } finally {
+    // 采集完成 / 超时 / 启动失败，都关闭 exe 进程，避免残留
+    killExe(child)
   }
-
-  return { devJsonPath, devImagePath }
 }
