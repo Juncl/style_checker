@@ -13,7 +13,8 @@
   "files": [
     "index.js",
     "lib/",
-    "config.json"
+    "config.json",
+    "script/"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -2,10 +2,10 @@
  * ArkUI 开发侧数据采集（鸿蒙）
  *
  * 模拟用户双击 .exe 采集程序的过程：
- *   启动 exe → 轮询等待 .exe 目录出现新的 json + 图片文件 → 移动到 .devlint 目录
+ *   启动 exe → 轮询等待 script 目录出现新的 json + 图片文件 → 移动到配置目录（config.DIR_NAME）
  *
  * 限制：arkui 采集只能在 Windows 电脑上执行（依赖 ArkUI Inspector 导出工具）。
- * 真实 .exe 文件部署时替换 devlint-mcp/.exe/aaa.exe 即可，本模块按扩展名扫描，
+ * 真实 .exe 文件部署时替换 devlint-mcp/script/export_arkui.exe 即可，本模块按扩展名扫描，
  * 不写死文件名。
  */
 
@@ -28,8 +28,8 @@ import { timestamp } from '../../utils/tools.js'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-// .exe 目录：devlint-mcp/.exe（相对当前文件向上 3 级到包根）
-const EXE_DIR = join(__dirname, '../../../.exe')
+// script 目录：devlint-mcp/script（相对当前文件向上 3 级到包根）
+const EXE_DIR = join(__dirname, '../../../script')
 
 // 默认采集超时时间（ms）
 const DEFAULT_TIMEOUT = 60000
@@ -52,14 +52,14 @@ const EXE_PATH = join(EXE_DIR, EXE_NAME)
 function findExe() {
   if (!existsSync(EXE_PATH)) {
     throw new Error(
-      `未找到采集程序 ${EXE_PATH}，请确认 devlint-mcp/.exe/ 目录下存在 ${EXE_NAME}`
+      `未找到采集程序 ${EXE_PATH}，请确认 devlint-mcp/script/ 目录下存在 ${EXE_NAME}`
     )
   }
   return EXE_PATH
 }
 
 /**
- * 快照 .exe 目录中现有的 json/图片文件名（用于后续判断哪些是新增）
+ * 快照 script 目录中现有的 json/图片文件名（用于后续判断哪些是新增）
  * @returns {Set<string>}
  */
 function snapshotExisting() {
@@ -92,7 +92,7 @@ function isFileStable(file, lastSize, stableCount) {
 }
 
 /**
- * 轮询等待 .exe 目录中出现新的 json + 图片文件并写入完成
+ * 轮询等待 script 目录中出现新的 json + 图片文件并写入完成
  *
  * @param {Set<string>} existing - 启动前已存在的文件名集合
  * @param {number} timeout - 超时 ms
@@ -159,7 +159,7 @@ function moveFile(src, dst) {
  *
  * 模拟用户双击 exe 的完整过程：
  *   1. 校验 Windows 平台（arkui 采集仅限 Windows）
- *   2. 定位 .exe 目录下的采集程序
+ *   2. 定位 script 目录下的采集程序
  *   3. 快照目录现有文件（区分新旧，避免误移历史文件）
  *   4. spawn 启动 exe（detached 独立进程，不阻塞 Node，模拟双击）
  *   5. 轮询等待新的 json + 图片文件出现且写入完成
