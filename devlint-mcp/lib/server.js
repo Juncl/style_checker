@@ -6,6 +6,7 @@ import { generateReport } from './utils/report.js'
 import { fileToBlob } from './utils/tools.js'
 import { config } from './config.js'
 import { collectWebDom } from './collectData/getWebDom/getWebDom.js'
+import { collectArkui } from './collectData/getArkui/getArkui.js'
 import { collectDesign } from './collectData/getPixData/getPixData.js'
 
 /**
@@ -176,8 +177,82 @@ export function createMcpServer() {
     },
   )
 
-  // ── collect_hm：hm arkui 开发侧数据采集 ──
-  // 占个空~ 后续需要实现
+  // ── collect_arkui：hm arkui 开发侧数据采集 ──
+  mcp.tool(
+    'collect_arkui',
+    [
+      '鸿蒙 ArkUI 开发侧数据采集工具。启动本地 ArkUI Inspector 采集程序，采集 ArkUI 节点树 + 截图，',
+      '生成 arkui.json 和 arkui.png 保存到本地，返回文件路径。',
+      '',
+      '【触发场景】',
+      '当用户说以下任何一种时触发：采集鸿蒙、采集 arkui、采集 hm、采集鸿蒙开发侧数据、',
+      '导出 arkui 数据、arkui 截图、采集开发侧数据（鸿蒙场景）。',
+      '采集结果可直接用于 ui_style_check 进行 UI 一致性检查。',
+      '',
+      '【平台限制】',
+      'ArkUI 采集只能在 Windows 电脑上执行（依赖 ArkUI Inspector 导出工具）。',
+      '非 Windows 环境调用会直接失败，此时需提示用户：',
+      '  · 在 Windows 环境运行，或',
+      '  · 用户手动导出 arkui.json / arkui.png 文件，提供本地路径直接调用 ui_style_check',
+      '',
+      '【参数说明】',
+      '- timeout: 采集超时时间（ms），默认 60000（60 秒）',
+      '  · 从启动采集程序开始计时，超时未检测到导出文件则报错',
+      '  · 若用户采集过程较慢（需在设备上多步操作），可适当调大此值',
+      '',
+      '【输出格式】',
+      '返回 JSON，包含：',
+      '- devJsonPath: 采集的 ArkUI 节点树 JSON 文件路径',
+      '- devImagePath: 截图 PNG/JPG 文件路径（部分场景可能无截图，此时为 null）',
+      '',
+      '【使用指引】',
+      '采集完成后，将返回值直接传给 ui_style_check 工具进行 UI 一致性检查：',
+      '  collect_arkui 返回的 devJsonPath  → ui_style_check 的 devJsonPath 参数',
+      '  collect_arkui 返回的 devImagePath → ui_style_check 的 devImagePath 参数',
+      '同时设 platform 为 hmPhone（默认），配合用户提供的设计稿路径（designJsonPath / designImagePath）完成检查。',
+      '即：collect_arkui → ui_style_check 是固定串联流程，采集完应自动调用 ui_style_check。',
+      '',
+      '【采集中断处理】',
+      'collect_arkui 与 collect_design 互相独立，arkui 侧采集中断不阻塞设计侧采集：',
+      '- 若 collect_arkui 返回错误（非 Windows 平台、采集程序启动失败、等待文件超时等），',
+      '  仍应继续执行 collect_design 完成设计侧采集，然后根据错误提示向用户提供恢复选项，',
+      '  待用户补齐 arkui 侧数据后再调用 ui_style_check。',
+      '- 等待文件超时时，可提示用户确认采集程序是否正常运行、是否已导出数据后重新调用 collect_arkui。',
+      '- 用户也可手动提供 arkui.json / arkui.png 文件路径，跳过 collect_arkui 直接调用 ui_style_check。',
+    ].join('\n'),
+    {
+      timeout: z
+        .number()
+        .default(60000)
+        .describe('采集超时时间（ms），默认 60000'),
+    },
+    async (params) => {
+      try {
+        const { devJsonPath, devImagePath } = await collectArkui({
+          timeout: params.timeout,
+        })
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ devJsonPath, devImagePath }, null, 2),
+            },
+          ],
+        }
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `采集过程出错: ${err.message}`,
+            },
+          ],
+          isError: true,
+        }
+      }
+    },
+  )
 
   // ── collect_web：Web 开发侧数据采集 ──
   mcp.tool(
