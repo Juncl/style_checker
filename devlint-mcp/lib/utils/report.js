@@ -1,6 +1,6 @@
 import { writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
-import { config } from '../config.js'
+import { getSessionDir, getSessionTimestamp } from './session.js'
 
 /**
  * 从 runCheck 原始结果构建 path → node 映射
@@ -84,15 +84,15 @@ function describePosition(rect) {
 }
 
 /**
- * 将 runCheck 原始结果生成 Markdown 报告，写入配置目录下的 devlint_result.md
+ * 将 runCheck 原始结果生成 Markdown 报告，写入当前会话目录下的 devlint_result.md
  * 包含所有 diffs（error + warning），以设计侧节点为维度组织
  *
  * @param {Object} result - server /check/upload 返回的完整结果
- * @param {string} [dir] - 输出目录，默认 process.cwd() 下的 config.DIR_NAME
+ * @param {string} [dir] - 输出目录，默认当前会话目录（.devlint/<年月日_时分秒>）
  * @returns {string} md 文件路径
  */
 export function generateReport(result, dir) {
-  const outDir = dir || join(process.cwd(), config.DIR_NAME)
+  const outDir = dir || getSessionDir()
   mkdirSync(outDir, { recursive: true })
 
   const diffs = result.diffs || []
@@ -193,7 +193,7 @@ export function generateReport(result, dir) {
     })
   }
 
-  const mdPath = join(outDir, 'devlint_result.md')
+  const mdPath = join(outDir, `devlint_result_${getSessionTimestamp()}.md`)
   writeFileSync(mdPath, lines.join('\n'), 'utf-8')
   return mdPath
 }

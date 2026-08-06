@@ -17,10 +17,10 @@
  */
 
 import { run } from './puppeteer.js'
-import { writeFileSync, mkdirSync } from 'fs'
+import { writeFileSync } from 'fs'
 import { join } from 'path'
-import { config } from '../../config.js'
 import { timestamp } from '../../utils/tools.js'
+import { getSessionDir } from '../../utils/session.js'
 
 /**
  * 在浏览器上下文执行的 DOM 采集函数
@@ -289,8 +289,7 @@ const exportDOMTree = () => {
 export async function collectWebDom(url, options = {}) {
   const { domData, screenshotBuffer } = await run(url, { ...options, collectFn: exportDOMTree })
 
-  const dir = join(process.cwd(), config.DIR_NAME)
-  mkdirSync(dir, { recursive: true })
+  const dir = getSessionDir()
 
   const vp = options.viewport || {}
   const w = vp.width || 1920

@@ -2,7 +2,7 @@
  * ArkUI 开发侧数据采集（鸿蒙）
  *
  * 模拟用户双击 .exe 采集程序的过程：
- *   启动 exe → 轮询等待 script 目录出现新的 json + 图片文件 → 移动到配置目录（config.DIR_NAME）
+ *   启动 exe → 轮询等待 script 目录出现新的 json + 图片文件 → 移动到会话目录（.devlint/<年月日_时分秒>）
  *
  * 限制：arkui 采集只能在 Windows 电脑上执行（依赖 ArkUI Inspector 导出工具）。
  * 真实 .exe 文件部署时替换 devlint-mcp/script/export_arkui.exe 即可，本模块按扩展名扫描，
@@ -12,7 +12,6 @@
 import { spawn, spawnSync } from 'child_process'
 import {
   existsSync,
-  mkdirSync,
   readdirSync,
   renameSync,
   statSync,
@@ -22,8 +21,8 @@ import {
 import { fileURLToPath } from 'url'
 import { dirname, join, extname } from 'path'
 import { platform } from 'os'
-import { config } from '../../config.js'
 import { timestamp } from '../../utils/tools.js'
+import { getSessionDir } from '../../utils/session.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -194,7 +193,7 @@ function killExe() {
  *   3. 快照目录现有文件（区分新旧，避免误移历史文件）
  *   4. spawn 启动 exe（detached 独立进程，不阻塞 Node，模拟双击）
  *   5. 轮询等待新的 json + 图片文件出现且写入完成
- *   6. 将随机名文件重命名为规范名（arkui_<timestamp>.<ext>）后移动到配置目录（config.DIR_NAME）
+ *   6. 将随机名文件重命名为规范名（arkui_<timestamp>.<ext>）后移动到会话目录（.devlint/<年月日_时分秒>）
  *
  * @param {Object} [options]
  * @param {number} [options.timeout=60000] 采集超时时间 ms
@@ -246,9 +245,8 @@ export async function collectArkui(options = {}) {
       exeError,
     ])
 
-    // 6. 移动到配置目录（config.DIR_NAME）
-    const dir = join(process.cwd(), config.DIR_NAME)
-    mkdirSync(dir, { recursive: true })
+    // 6. 移动到当前会话目录（.devlint/<年月日_时分秒>）
+    const dir = getSessionDir()
 
     const ts = timestamp()
     const devJsonPath = join(dir, `arkui_${ts}.json`)

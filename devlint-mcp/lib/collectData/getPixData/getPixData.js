@@ -5,6 +5,7 @@
 
 import { join } from 'path'
 import { getChromePath, timestamp } from "../../utils/tools.js";
+import { getSessionDir } from "../../utils/session.js";
 
 const CHROME_PATH = getChromePath()
 
@@ -16,9 +17,10 @@ export async function collectDesign(code, url, filePath) {
     )
   }
 
-  const dir = process.cwd()
-  const jsonPath = join(dir, `./devlint/design_${timestamp()}.json`);
-  const imgPath = join(dir, `./devlint/design_${timestamp()}.png`);
+  const dir = getSessionDir()
+  const ts = timestamp()
+  const jsonPath = join(dir, `design_${ts}.json`);
+  const imgPath = join(dir, `design_${ts}.png`);
 
   return {
     content: [{

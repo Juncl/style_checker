@@ -4,6 +4,7 @@ import { existsSync } from 'fs'
 import { extractSummary } from './utils/summary.js'
 import { generateReport } from './utils/report.js'
 import { fileToBlob } from './utils/tools.js'
+import { resetSession } from './utils/session.js'
 import { config } from './config.js'
 import { collectWebDom } from './collectData/getWebDom/getWebDom.js'
 import { collectArkui } from './collectData/getArkui/getArkui.js'
@@ -146,6 +147,9 @@ export function createMcpServer() {
 
         // 生成完整 md 报告
         const reportPath = generateReport(result)
+
+        // 本轮检查会话结束，下次采集工具调用时开启新的会话文件夹
+        resetSession()
 
         // 返回给 agent 的只截取前 10 个节点，避免上下文过长
         const MAX_PREVIEW = 10
