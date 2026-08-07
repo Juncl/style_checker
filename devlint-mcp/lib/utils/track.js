@@ -14,24 +14,24 @@ import { config } from '../config.js'
  * 上报事件
  *
  * @param {Object} opts
- * @param {Object} opts.userInfo - 用户信息（取 account）
- * @param {string} opts.eventName - 事件名，如 "devlint_mcp_uiCheck"
+ * @param {string} opts.account - 用户账号
+ * @param {string} opts.name - 事件名，如 "devlint_mcp_uiCheck"
  * @param {Object} opts.extend - 扩展数据，序列化为 JSON 字符串放入 datas[0].extend
  * @param {string} [opts.subType] - 子类型，默认 "AI"
  * @param {string} [opts.type] - 事件类型，默认 "interaction"
  */
-export function reportInteraction({ userInfo, eventName, extend, subType = 'AI', type = 'interaction' }) {
+export function reportInteraction({ account, name, extend, subType = 'AI', type = 'interaction' }) {
   const url = config.TRACK_URL
   if (!url) return
 
   const payload = {
-    account: (userInfo && userInfo.account) ? userInfo.account : '',
+    account: account || '',
     browserName: 'unknown',
     browserVersion: 'unknown',
     datas: [
       {
         extend: JSON.stringify(extend || {}),
-        name: eventName,
+        name,
         path: 'unknown',
         subType,
         type,
@@ -51,7 +51,7 @@ export function reportInteraction({ userInfo, eventName, extend, subType = 'AI',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }).catch(() => {})
+    }).catch(() => { })
   } catch (err) {
     console.warn('dc-report error: ', err.message)
   }
@@ -61,24 +61,19 @@ export function reportInteraction({ userInfo, eventName, extend, subType = 'AI',
  * 上报 UI 一致性检查完成事件
  *
  * @param {Object} data
- * @param {Object} data.userInfo - 用户信息（来自 collect_design）
+ * @param {string} data.account - 用户账号（来自 collect_design 的 userInfo.account）
  * @param {string} data.platform - 平台 hmPhone/hmWatch/web
  * @param {Object} data.stats - server 返回的统计信息
  * @param {number} data.diffCount - 差异项总数
- * @param {number} data.devImgSize - 开发侧图片大小（字节）
- * @param {number} data.designImgSize - 设计侧图片大小（字节）
  */
-export function trackCheckComplete({ userInfo, platform, stats, diffCount, devImgSize, designImgSize }) {
+export function trackCheckComplete({ account, platform, stats, diffCount }) {
   reportInteraction({
-    userInfo,
-    eventName: 'devlint_mcp_uiCheck',
+    account,
+    name: 'devlint_mcp_uiCheck',
     extend: {
-      diffCount: diffCount ?? 0,
-      devImgSize: devImgSize ?? null,
-      designImgSize: designImgSize ?? null,
       platform: platform || 'hmPhone',
-      isFrom: 'octo',
       score: stats?.score ?? null,
+      diffCount: diffCount ?? 0,
       errorCount: stats?.errorCount ?? 0,
       warningCount: stats?.warningCount ?? 0,
     },

@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { existsSync, statSync } from 'fs'
+import { existsSync } from 'fs'
 import { extractSummary, generateReport } from './utils/report.js'
 import { fileToBlob } from './utils/tools.js'
 import { resetSession, getUserInfo } from './utils/session.js'
@@ -148,14 +148,12 @@ export function createMcpServer() {
         // 生成完整 md 报告
         const reportPath = generateReport(result)
 
-        // 打点：上报检查完成事件（与 client reportInteraction 格式对齐，fire-and-forget 不阻塞）
+        // 打点：上报检查完成事件（fire-and-forget 不阻塞）
         trackCheckComplete({
-          userInfo: getUserInfo(),
+          account: getUserInfo()?.account || '',
           platform: result.platform,
           stats: result.stats,
           diffCount: (result.diffs || []).length,
-          devImgSize: params.devImagePath ? statSync(params.devImagePath).size : null,
-          designImgSize: params.designImagePath ? statSync(params.designImagePath).size : null,
         })
 
         // 本轮检查会话结束，下次采集工具调用时开启新的会话文件夹
