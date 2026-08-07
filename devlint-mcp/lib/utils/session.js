@@ -1,4 +1,4 @@
-import { mkdirSync, appendFileSync } from 'fs'
+import { mkdirSync } from 'fs'
 import { join } from 'path'
 import { config } from '../config.js'
 
@@ -30,19 +30,6 @@ let lastUsedAt = 0
 // 当前会话用户信息（由 collect_design 写入，ui_style_check 读取用于打点）
 let currentUserInfo = null
 
-// debug 日志文件路径
-const DEBUG_FILE = join(process.cwd(), config.DIR_NAME, '_debug.log')
-
-/**
- * 写 debug 日志到 .devlint/_debug.log
- */
-function debug(tag, msg) {
-  try {
-    mkdirSync(join(process.cwd(), config.DIR_NAME), { recursive: true })
-    appendFileSync(DEBUG_FILE, `[${new Date().toISOString()}] [${tag}] ${msg}\n`, 'utf-8')
-  } catch {}
-}
-
 /**
  * 生成会话文件夹时间戳：年月日_时分秒
  * 形如 20260806_164959
@@ -65,7 +52,6 @@ export function getSessionDir() {
   // 复用未超时的当前会话
   if (currentDir && now - lastUsedAt < SESSION_TIMEOUT) {
     lastUsedAt = now
-    debug('getSessionDir', `复用 currentDir=${currentDir}`)
     return currentDir
   }
 
@@ -74,7 +60,6 @@ export function getSessionDir() {
   currentDir = join(process.cwd(), config.DIR_NAME, currentTimestamp)
   mkdirSync(currentDir, { recursive: true })
   lastUsedAt = now
-  debug('getSessionDir', `新建 currentDir=${currentDir}`)
   return currentDir
 }
 
@@ -100,7 +85,6 @@ export function getSessionTimestamp() {
  * 下次采集工具调用时自动开启新的会话文件夹。
  */
 export function resetSession() {
-  debug('resetSession', `清空前 currentUserInfo=${JSON.stringify(currentUserInfo)}`)
   currentDir = null
   currentTimestamp = null
   lastUsedAt = 0
@@ -115,8 +99,10 @@ export function resetSession() {
  * @param {Object} info - 用户信息对象
  */
 export function setUserInfo(info) {
+  if (typeof info === 'string') {
+    try { info = JSON.parse(info) } catch { info = null }
+  }
   currentUserInfo = info || null
-  debug('setUserInfo', `写入 currentUserInfo=${JSON.stringify(currentUserInfo)}`)
 }
 
 /**
@@ -124,6 +110,5 @@ export function setUserInfo(info) {
  * @returns {Object|null}
  */
 export function getUserInfo() {
-  debug('getUserInfo', `读取返回 currentUserInfo=${JSON.stringify(currentUserInfo)}`)
   return currentUserInfo
 }
