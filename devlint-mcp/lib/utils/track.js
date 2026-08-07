@@ -17,10 +17,10 @@ import { config } from '../config.js'
  * @param {string} opts.account - 用户账号
  * @param {string} opts.name - 事件名，如 "devlint_mcp_uiCheck"
  * @param {Object} opts.extend - 扩展数据，序列化为 JSON 字符串放入 datas[0].extend
- * @param {string} [opts.subType] - 子类型，默认 "AI"
+ * @param {string} [opts.subType] - 子类型，默认 "click"
  * @param {string} [opts.type] - 事件类型，默认 "interaction"
  */
-export function reportInteraction({ account, name, extend, subType = 'AI', type = 'interaction' }) {
+export function reportInteraction({ account, name, extend, subType = 'click', type = 'interaction' }) {
   const url = config.TRACK_URL
   if (!url) return
 
