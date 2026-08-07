@@ -27,6 +27,8 @@ let currentDir = null
 let currentTimestamp = null
 // 上次使用时间戳（ms）
 let lastUsedAt = 0
+// 当前会话用户信息（由 collect_design 写入，ui_style_check 读取用于打点）
+let currentUserInfo = null
 
 /**
  * 生成会话文件夹时间戳：年月日_时分秒
@@ -86,4 +88,24 @@ export function resetSession() {
   currentDir = null
   currentTimestamp = null
   lastUsedAt = 0
+  currentUserInfo = null
+}
+
+/**
+ * 写入当前会话的用户信息
+ *
+ * 由 collect_design（getPixData）在采集时获取到 userInfo 后调用，
+ * 供后续 ui_style_check 打点使用。
+ * @param {Object} info - 用户信息对象
+ */
+export function setUserInfo(info) {
+  currentUserInfo = info || null
+}
+
+/**
+ * 读取当前会话的用户信息
+ * @returns {Object|null}
+ */
+export function getUserInfo() {
+  return currentUserInfo
 }

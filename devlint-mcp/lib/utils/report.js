@@ -2,8 +2,10 @@ import { writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { getSessionDir, getSessionTimestamp } from './session.js'
 
+// ── 公共辅助函数 ──────────────────────────────────────
+
 /**
- * 从 runCheck 原始结果构建 path → node 映射
+ * 从 runCheck 原始结果构建 path/id → node 映射
  */
 function buildPathMaps(result) {
   const arkuiByPath = new Map()
@@ -33,6 +35,7 @@ function findPathByNodeId(nodes, id) {
 
 /**
  * 根据 path 构建组件层级链
+ * 如 path=[0,0,0,0,1,0] → "Navigation > NavBar > TitleBar > HdsTitleBar > Text"
  */
 function buildComponentChain(byPathMap, path) {
   if (!path || !Array.isArray(path) || path.length === 0) return null
@@ -83,9 +86,69 @@ function describePosition(rect) {
   return `${vPos}（${hPos}），坐标 (${Math.round(x)}, ${Math.round(y)})，尺寸 ${Math.round(w)}×${Math.round(h)}`
 }
 
+// ── 结果提取与报告生成 ──────────────────────────────────────
+
 /**
- * 将 runCheck 原始结果生成 Markdown 报告，写入当前会话目录下的 devlint_result.md
- * 包含所有 diffs（error + warning），以设计侧节点为维度组织
+ * 从 runCheck 完整结果中提取精简摘要（返回给 AI）
+ *
+ * 以设计侧节点为维度，只含精准检查结果（error），不含模糊比对（warning）。
+ * 不含评分、匹配覆盖率、检查耗时等统计信息。
+ *
+ * @param {Object} result - server /check/upload 返回的完整结果
+ * @returns {{ platform: string, nodes: Array }}
+ */
+export function extractSummary(result) {
+  const diffs = result.diffs || []
+  const { arkuiByPath, designRectMap } = buildPathMaps(result)
+
+  // 按设计侧节点 id 分组
+  const byDesignNode = new Map()
+
+  for (const d of diffs) {
+    // 只取精准检查结果（error），跳过模糊比对（warning）
+    if (d.severity !== 'error') continue
+
+    const designId = d.designNodeId
+    if (!byDesignNode.has(designId)) {
+      const rect = designRectMap.get(designId) || { y: 0, x: 0 }
+
+      byDesignNode.set(designId, {
+        nodeName: (d.textContent || d.arkuiName) || null,
+        textContent: d.textContent || null,
+        nodeType: d.nodeType || null,
+        designRect: rect,
+        componentChain: buildComponentChain(
+          arkuiByPath,
+          findPathByNodeId(result.allArkuiNodes, d.arkuiNodeId),
+        ),
+        devClassName: d.arkuiName || null,
+        issues: [],
+        _rect: rect,
+      })
+    }
+
+    byDesignNode.get(designId).issues.push({
+      property: d.property,
+      description: d.description || null,
+      expected: d.designValue,
+      actual: d.arkuiValue,
+    })
+  }
+
+  // 按设计侧节点在画布上的顺序排序（y 优先，再 x）
+  const nodes = Array.from(byDesignNode.values())
+  nodes.sort((a, b) => a._rect.y - b._rect.y || a._rect.x - b._rect.x)
+  for (const n of nodes) delete n._rect
+
+  return {
+    platform: result.platform,
+    nodes,
+  }
+}
+
+/**
+ * 将 runCheck 原始结果生成 Markdown 报告，写入当前会话目录
+ * 包含所有 diffs（error + warning），以开发侧节点为维度组织
  *
  * @param {Object} result - server /check/upload 返回的完整结果
  * @param {string} [dir] - 输出目录，默认当前会话目录（.devlint/<年月日_时分秒>）
@@ -104,11 +167,9 @@ export function generateReport(result, dir) {
   for (const d of diffs) {
     const devId = d.arkuiNodeId
     if (!byDevNode.has(devId)) {
-      // 开发侧节点坐标（用于排序和位置描述）
       const devNode = arkuiById.get(devId)
       const rect = (devNode && devNode.rect) || designRectMap.get(d.designNodeId) || { y: 0, x: 0, w: 0, h: 0 }
       byDevNode.set(devId, {
-        // 节点名用开发侧：文本节点用文本内容，非文本节点用组件名
         nodeName: (d.textContent || d.arkuiName) || null,
         textContent: d.textContent || null,
         devRect: rect,
@@ -166,7 +227,6 @@ export function generateReport(result, dir) {
       if (node.componentChain) {
         lines.push(`> 定位：${node.componentChain}`)
       }
-      // 标题已是 nodeName（textContent 或 devClassName），仅补充未用于标题的信息
       if (node.textContent && node.devClassName) {
         const isWeb = result.platform === 'web'
         const label = isWeb ? 'className' : '组件类型'
