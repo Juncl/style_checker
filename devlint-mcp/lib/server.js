@@ -9,6 +9,7 @@ import { config } from './config.js'
 import { collectWebDom } from './collectData/getWebDom/getWebDom.js'
 import { collectArkui } from './collectData/getArkui/getArkui.js'
 import { collectDesign } from './collectData/getPixData/getPixData.js'
+import { uxCheck } from './collectData/uxCheckOut/index.js'
 
 /**
  * 创建一个 McpServer 实例，注册所有工具
@@ -459,6 +460,87 @@ export function createMcpServer() {
             {
               type: 'text',
               text: `采集过程出错: ${err.message}`,
+            },
+          ],
+          isError: true,
+        }
+      }
+    },
+  )
+
+  // ── design_spec_check：设计规范一致性检查 ──
+  mcp.tool(
+    'design_spec_check',
+    [
+      '设计规范一致性检查工具。检查 HTML 页面或 Web 链接是否符合指定的设计规范，',
+      '采集页面 document.body，对照规范规则输出不一致的问题清单和修改建议。',
+      '',
+      '【触发场景】',
+      '当用户说以下任何一种时触发：设计规范检查、规范一致性检查、检查是否符合规范、',
+      '检查设计规范、规范走查、检查页面是否符合 Octo 规范、代码规范检查。',
+      '',
+      '【参数说明】',
+      '- source: 检查目标，支持两种格式：',
+      '  · 本地 HTML 文件路径（如 /path/to/page.html）',
+      '  · Web 页面 URL（如 https://example.com/page）',
+      '- specName: 规范名称（用户指定，如 "Octo"）',
+      '',
+      '【输出格式】',
+      '返回报告 JSON，包含问题列表和统计信息，结构由检查方法决定。',
+    ].join('\n'),
+    {
+      source: z
+        .string()
+        .describe('检查目标：本地 HTML 文件路径或 Web 页面 URL'),
+      specName: z
+        .string()
+        .describe('规范名称（如 "Octo"）'),
+    },
+    async (params) => {
+      try {
+        const report = await uxCheck(
+          params.source,
+          params.specName,
+        )
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(report, null, 2),
+            },
+          ],
+        }
+      } catch (err) {
+        if (err.code === 'LOGIN_TIMEOUT') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: [
+                  '【规范检查中断 - 登录超时】',
+                  `原因：${err.message}`,
+                  '',
+                  '当前页面需要登录才能访问，采集因等待登录超时而中断。',
+                  '',
+                  '请向用户说明中断原因，并提供以下选项让用户选择如何继续：',
+                  '',
+                  '选项1：重新检查',
+                  '  重新调用 design_spec_check，在弹出的有头浏览器窗口中尽快完成登录（120秒内）。',
+                  '',
+                  '选项2：手动提供本地 HTML 文件',
+                  '  用户自行在浏览器中打开页面，另存为 HTML 文件后提供本地路径，直接调用 design_spec_check 检查本地文件。',
+                ].join('\n'),
+              },
+            ],
+            isError: true,
+          }
+        }
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `检查过程出错: ${err.message}`,
             },
           ],
           isError: true,
