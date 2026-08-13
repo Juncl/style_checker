@@ -331,7 +331,7 @@ async function runHeadedWithProfile(url, options = {}) {
     const client = await emulateDevice(page, vp)
     // 仿真后等待 3 秒缓冲让页面按新尺寸重新布局
     await new Promise(r => setTimeout(r, 3000))
-    const domData = collectFn ? await evalInPage(page, collectFn) : null
+    const domData = collectFn ? await evalInPage(page, collectFn, ...(options.evaluateArgs || [])) : null
     const screenshotBuffer = needScreenshot ? await screenshot(client) : null
 
     return { domData, screenshotBuffer }
@@ -413,7 +413,7 @@ export async function run(url, options = {}) {
       closed = true
       return await runHeadedWithProfile(url, options)
     }
-    const domData = collectFn ? await evalInPage(page, collectFn) : null
+    const domData = collectFn ? await evalInPage(page, collectFn, ...(options.evaluateArgs || [])) : null
     const screenshotBuffer = needScreenshot ? await screenshot(client) : null
     return { domData, screenshotBuffer }
   } catch (headlessErr) {

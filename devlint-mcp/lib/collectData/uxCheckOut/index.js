@@ -2,19 +2,15 @@
  * 设计规范一致性检查 - 入口函数
  *
  * 【职责】
- * 1. puppeteer 打开 html 文件或 web 链接
- * 2. 拿到 document.body（outerHTML）
- * 3. body + specName 丢进 specCheck（内网实现，外网空逻辑占位）
- * 4. 返回报告 JSON
+ * 1. puppeteer 打开 html 文件或 web 链接（含登录检测、无头降级有头等完整流程）
+ * 2. specCheck 注入浏览器上下文执行，直接访问 document
+ * 3. 返回报告 JSON
  */
 
 import { run } from '../getWebDom/puppeteer.js'
 import { specCheck } from './specCheck.js'
-
-/**
- * 在浏览器上下文获取 document.body.outerHTML
- */
-const collectBodyHtml = () => document.body.outerHTML
+import { existsSync } from 'fs'
+import { resolve, isAbsolute } from 'path'
 
 /**
  * 设计规范一致性检查入口函数
@@ -34,8 +30,6 @@ export async function uxCheck(source, specName, options = {}) {
   if (isUrl) {
     targetUrl = source
   } else {
-    const { existsSync } = await import('fs')
-    const { resolve, isAbsolute } = await import('path')
     if (!existsSync(source)) {
       throw new Error(`文件不存在: ${source}`)
     }
@@ -43,16 +37,14 @@ export async function uxCheck(source, specName, options = {}) {
     targetUrl = 'file://' + absPath
   }
 
-  // puppeteer 打开页面，拿 document.body.outerHTML
-  const { domData: bodyHtml } = await run(targetUrl, {
-    collectFn: collectBodyHtml,
+  // puppeteer 打开页面，specCheck 在浏览器内执行，直接访问 document
+  const { domData: report } = await run(targetUrl, {
+    collectFn: specCheck,
+    evaluateArgs: [specName],
     needScreenshot: false,
     headless: options.headless !== undefined ? options.headless : true,
     viewport: options.viewport,
   })
-
-  // 丢进检查方法（内网实现，外网空逻辑占位）
-  const report = await specCheck(bodyHtml, specName)
 
   return report
 }
