@@ -46,10 +46,10 @@ export async function uxCheck(source, specName, options = {}) {
     headless: options.headless !== undefined ? options.headless : true,
   })
 
-  // 临时写入 .devlint 目录，便于调试
-  const dir = join(process.cwd(), config.DIR_NAME)
-  const domPath = join(dir, `uxcheck_dom_data_${timestamp()}.json`)
-  writeFileSync(domPath, JSON.stringify(domData), 'utf-8')
+  // // 临时写入 .devlint 目录，便于调试
+  // const dir = join(process.cwd(), config.DIR_NAME)
+  // const domPath = join(dir, `uxcheck_dom_data_${timestamp()}.json`)
+  // writeFileSync(domPath, JSON.stringify(domData), 'utf-8')
 
   // 丢进检查方法（内网实现，外网空逻辑占位）
   const report = await specCheck(domData, specName)

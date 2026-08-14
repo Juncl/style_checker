@@ -8,12 +8,12 @@
   },
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "build": "npm pack"
   },
   "files": [
     "index.js",
     "lib/",
-    "config.json",
     "script/"
   ],
   "dependencies": {
