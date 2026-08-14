@@ -1,0 +1,16 @@
+{
+  "name": "devlint-skill",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "DevLint Skill — UI 一致性检查与设计规范检查的命令行工具",
+  "bin": {
+    "devlint-skill": "bin/devlint-skill.js"
+  },
+  "scripts": {
+    "build": "node build.js"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.3.0",
+    "zod": "^3.23.0"
+  }
+}
