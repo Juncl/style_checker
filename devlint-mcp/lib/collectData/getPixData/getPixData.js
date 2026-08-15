@@ -9,7 +9,7 @@ import { getSessionDir, setUserInfo } from "../../utils/session.js";
 
 const CHROME_PATH = getChromePath()
 
-export async function collectDesign(code, url, filePath) {
+export async function collectDesign(code, url) {
   if (!CHROME_PATH) {
     throw new Error(
       '未找到 Chrome 浏览器。请通过 env 配置 CHROME_PATH 指定 Chrome 可执行文件路径，' +
@@ -29,7 +29,7 @@ export async function collectDesign(code, url, filePath) {
   return {
     content: [{
       type: "text",
-      text: JSON.stringify({ designJsonPath: jsonPath, designImagePath: imgPath }, null, 2)
+      text: JSON.stringify({ designJsonPath: jsonPath, designImagePath: imgPath, userInfo }, null, 2)
     }]
   }
 

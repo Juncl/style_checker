@@ -9,7 +9,10 @@
  *
  * 使用方式：
  *   import { collectWebDom } from './getWebDom.js'
- *   const { devJsonPath, devImagePath } = await collectWebDom(url)
+ *   // 采集 URL：
+ *   const { devJsonPath, devImagePath } = await collectWebDom('https://example.com')
+ *   // 采集本地 HTML 文件（自动转 file:// 协议）：
+ *   const result = await collectWebDom('/path/to/page.html')
  *   // 自定义尺寸：
  *   const result = await collectWebDom(url, { viewport: { width: 1440, height: 900 } })
  *
@@ -17,8 +20,8 @@
  */
 
 import { run } from './puppeteer.js'
-import { writeFileSync } from 'fs'
-import { join } from 'path'
+import { existsSync, writeFileSync } from 'fs'
+import { resolve, isAbsolute, join } from 'path'
 import { timestamp } from '../../utils/tools.js'
 import { getSessionDir } from '../../utils/session.js'
 
@@ -276,7 +279,9 @@ const exportDOMTree = () => {
 /**
  * 采集 Web 页面 DOM 数据 + 截图，写入配置目录
  *
- * @param {string} url - 目标页面地址
+ * @param {string} source - 目标页面地址，支持：
+ *   · Web 页面 URL（http:// 或 https:// 开头）
+ *   · 本地 HTML 文件路径（相对或绝对路径，自动转 file:// 协议打开）
  * @param {Object} options
  *   - viewport: { width, height, deviceScaleFactor } 视口尺寸，默认 1920×1080
  *   - waitUntil: 页面加载策略，默认 networkidle0
@@ -286,8 +291,22 @@ const exportDOMTree = () => {
  *   - launchOptions: puppeteer.launch 额外选项（如 headless: false 调试）
  * @returns {Promise<{ devJsonPath: string, devImagePath: string|null }>}
  */
-export async function collectWebDom(url, options = {}) {
-  const { domData, screenshotBuffer } = await run(url, { ...options, collectFn: exportDOMTree })
+export async function collectWebDom(source, options = {}) {
+  // 判断 source 类型：URL 还是本地 html 文件
+  const isUrl = /^https?:\/\//i.test(source)
+  let targetUrl
+
+  if (isUrl) {
+    targetUrl = source
+  } else {
+    if (!existsSync(source)) {
+      throw new Error(`文件不存在: ${source}`)
+    }
+    const absPath = isAbsolute(source) ? source : resolve(process.cwd(), source)
+    targetUrl = 'file://' + absPath
+  }
+
+  const { domData, screenshotBuffer } = await run(targetUrl, { ...options, collectFn: exportDOMTree })
 
   const dir = getSessionDir()
 

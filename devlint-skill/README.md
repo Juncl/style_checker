@@ -32,7 +32,8 @@ devlint-skill --help
 | `collect-web` | 采集 Web 页面 DOM 树 + 截图 | 需 Chrome |
 | `collect-design` | 采集 Pixso 设计稿数据 + 截图 | 需 Chrome |
 | `ui-style-check` | 对比设计稿与开发实现，输出差异清单 | 需 Chrome |
-| `design-spec-check` | 检查 HTML/URL 是否符合设计规范 | 需 Chrome |
+| `list-design-specs` | 模糊匹配规范名/场景名，返回规则文件路径列表 | 无 |
+| `design-spec-check` | 检查 HTML/URL 是否符合设计规范（需先调 list-design-specs） | 需 Chrome |
 
 ## 环境要求
 
@@ -74,8 +75,11 @@ AI 执行流程：
 用户：检查这个页面是否符合 Octo 规范：https://example.com/page
 
 AI 执行流程：
-  1. devlint-skill design-spec-check --source https://example.com/page --spec Octo
-  2. 展示问题清单和修改建议
+  1. devlint-skill list-design-specs --standard-name Octo
+     → matched=true 时返回 { filePaths: ["/.../rule1.json", ...] }
+     → matched=false 时展示候选，用户选定后重新调用直到 matched=true
+  2. devlint-skill design-spec-check --source https://example.com/page --spec-file-paths <filePaths 逗号分隔>
+  3. 展示问题清单和修改建议
 ```
 
 ## 打包方式（开发者）

@@ -10,6 +10,8 @@ import { collectWebDom } from './collectData/getWebDom/getWebDom.js'
 import { collectArkui } from './collectData/getArkui/getArkui.js'
 import { collectDesign } from './collectData/getPixData/getPixData.js'
 import { uxCheck } from './collectData/uxCheckOut/index.js'
+import { fetchSpecList } from './collectData/uxCheckOut/fetchSpecList.js'
+import { resolveSpec } from './collectData/uxCheckOut/resolveSpec.js'
 
 /**
  * 创建一个 McpServer 实例，注册所有工具
@@ -271,16 +273,18 @@ export function createMcpServer() {
   mcp.tool(
     'collect_web',
     [
-      'Web 页面数据采集工具。通过 puppeteer 打开网页，采集 DOM 树结构 + 计算样式 + 截图，',
+      'Web 页面数据采集工具。通过 puppeteer 打开网页或本地 HTML 文件，采集 DOM 树结构 + 计算样式 + 截图，',
       '生成 web.json 和 web.png 保存到本地，返回文件路径。',
       '',
       '【触发场景】',
       '当用户说以下任何一种时触发：采集网页、采集 web 页面、抓取网页 DOM、采集开发侧数据、',
-      '导出 web 页面数据、获取网页截图、采集前端页面。',
+      '导出 web 页面数据、获取网页截图、采集前端页面、采集本地 HTML 文件。',
       '采集结果可直接用于 ui_style_check 进行 UI 一致性检查。',
       '',
       '【参数说明】',
-      '- url: 目标页面地址（必填）',
+      '- url: 目标页面地址（必填），支持两种格式：',
+      '  · Web 页面 URL（http:// 或 https:// 开头）→ puppeteer 打开网页采集',
+      '  · 本地 HTML 文件路径（如 /path/to/page.html）→ 自动转 file:// 协议打开本地文件采集',
       '- width: 视口宽度，默认 1920',
       '- height: 视口高度，默认 1080',
       '- deviceScaleFactor: 截图质量倍率，默认 2（1x/2x/3x）',
@@ -315,7 +319,7 @@ export function createMcpServer() {
     {
       url: z
         .string()
-        .describe('目标页面地址'),
+        .describe('目标页面地址：Web URL（http/https 开头）或本地 HTML 文件路径'),
       width: z
         .number()
         .default(1920)
@@ -414,7 +418,6 @@ export function createMcpServer() {
       '- code: 传送码，如 "111"，通过传送码服务解析为 Pixso 页面地址',
       '- url: 设计稿 URL 地址',
       '  · code 和 url 至少传一个，同时传时 code 优先',
-      '- filePath: 当前打开的工程目录地址（必填），采集结果保存到此目录下',
       '',
       '【输出格式】',
       '返回 JSON，包含：',
@@ -437,13 +440,10 @@ export function createMcpServer() {
         .string()
         .optional()
         .describe('设计稿 URL 地址'),
-      filePath: z
-        .string()
-        .describe('当前打开的工程目录地址'),
     },
     async args => {
       try {
-        const { code, url, filePath } = args || {};
+        const { code, url } = args || {};
         // 参数校验：code 和 url 至少传一个
         if (!code && !url) {
           return {
@@ -452,7 +452,7 @@ export function createMcpServer() {
           }
         }
 
-        return await collectDesign(code, url, filePath);
+        return await collectDesign(code, url);
 
       } catch (err) {
         return {
@@ -460,6 +460,86 @@ export function createMcpServer() {
             {
               type: 'text',
               text: `采集过程出错: ${err.message}`,
+            },
+          ],
+          isError: true,
+        }
+      }
+    },
+  )
+
+  // ── list_design_specs：规范名称模糊匹配 ──
+  mcp.tool(
+    'list_design_specs',
+    [
+      '设计规范列表查询与模糊匹配工具。根据用户给出的规范名称和场景名称（都可能是模糊的），',
+      '在规则库中分两阶段匹配，返回规范对应的规则文件路径列表。',
+      '',
+      '【触发场景】',
+      '当用户要进行设计规范检查（design_spec_check）时，先调用本工具匹配规范，',
+      '拿到 filePaths 后再传给 design_spec_check。',
+      '',
+      '【参数说明】',
+      '- standardName: 规范名或分类名（可选，模糊匹配）',
+      '  · 用户给的可能是规范名（如 "Octo-1.1.0"）、分类名（如 "ICT 领域组件库"）、',
+      '    或模糊文本（如 "octo"、"ict"）',
+      '- sceneName: 场景名（可选，模糊匹配）',
+      '  · 如 "Web端_深色"、"Web端_浅色"、"移动端" 等',
+      '  · 用户给的是 standardName + sceneName 组合时（如 "Octo Web端深色"），请拆分后分别传入',
+      '',
+      '【输出格式】',
+      '返回 JSON，三种情况：',
+      '',
+      '1. 唯一匹配（matched=true）：',
+      '   { matched: true, standardId, standardName, sceneName?, filePaths: ["路径1", ...] }',
+      '   → 将 filePaths 直接传给 design_spec_check 的 specFilePaths 参数',
+      '',
+      '2. 需要选规范（matched=false, stage="standard"）：',
+      '   { matched: false, stage: "standard", message, candidates: [{standardId, standardName, categoryName}, ...] }',
+      '   → 展示候选给用户，选定后用完整 standardName 重新调用本工具',
+      '',
+      '3. 已确定规范但需要选场景（matched=false, stage="scene"）：',
+      '   { matched: false, stage: "scene", standardId, standardName, message, candidates: [{sceneId, sceneName, sceneCategory}, ...] }',
+      '   → 展示场景候选给用户，选定后用 standardName + sceneName 重新调用本工具',
+      '',
+      '【使用指引】',
+      '- 用户说"检查 octo" → 调 list_design_specs(standardName="octo")',
+      '  · matched=true → 直接拿 filePaths 调 design_spec_check',
+      '  · stage="standard" → 展示规范候选，用户选定后重新调用',
+      '  · stage="scene" → 展示场景候选，用户选定后用 standardName + sceneName 重新调用',
+      '- 用户说"检查 octo web端深色" → 调 list_design_specs(standardName="octo", sceneName="web端深色")',
+      '- 用户没给任何名称 → 调 list_design_specs() 获取全量规范列表',
+      '- 本工具与 design_spec_check 是固定串联流程：list_design_specs → design_spec_check',
+    ].join('\n'),
+    {
+      standardName: z
+        .string()
+        .optional()
+        .describe('规范名或分类名（模糊匹配，如 "octo"、"ICT 领域组件库" 等）'),
+      sceneName: z
+        .string()
+        .optional()
+        .describe('场景名（模糊匹配，如 "Web端_深色"、"移动端" 等）'),
+    },
+    async (params) => {
+      try {
+        const specData = await fetchSpecList()
+        const result = resolveSpec(specData, params.standardName, params.sceneName)
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        }
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `查询规范列表出错: ${err.message}`,
             },
           ],
           isError: true,
@@ -479,11 +559,18 @@ export function createMcpServer() {
       '当用户说以下任何一种时触发：设计规范检查、规范一致性检查、检查是否符合规范、',
       '检查设计规范、规范走查、检查页面是否符合 Octo 规范、代码规范检查。',
       '',
+      '【调用前：必须先匹配规范】',
+      '本工具的 specFilePaths 参数需要精确的规则文件路径列表，来自 list_design_specs 工具的返回值。',
+      '调用流程：',
+      '  1. 先调 list_design_specs(standardName, sceneName) 进行模糊匹配',
+      '  2. 拿到 matched=true 的 filePaths 后，传入本工具的 specFilePaths 参数',
+      '  3. 如果 list_design_specs 返回 matched=false，展示候选给用户，选定后重新匹配',
+      '',
       '【参数说明】',
       '- source: 检查目标，支持两种格式：',
       '  · 本地 HTML 文件路径（如 /path/to/page.html）',
       '  · Web 页面 URL（如 https://example.com/page）',
-      '- specName: 规范名称（用户指定，如 "Octo"）',
+      '- specFilePaths: 规范规则文件路径数组（来自 list_design_specs 返回的 filePaths）',
       '',
       '【输出格式】',
       '返回报告 JSON，包含问题列表和统计信息，结构由检查方法决定。',
@@ -492,15 +579,15 @@ export function createMcpServer() {
       source: z
         .string()
         .describe('检查目标：本地 HTML 文件路径或 Web 页面 URL'),
-      specName: z
-        .string()
-        .describe('规范名称（如 "Octo"）'),
+      specFilePaths: z
+        .array(z.string())
+        .describe('规范规则文件路径数组（来自 list_design_specs 返回的 filePaths）'),
     },
     async (params) => {
       try {
         const report = await uxCheck(
           params.source,
-          params.specName,
+          params.specFilePaths,
         )
 
         return {

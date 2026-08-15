@@ -1,19 +1,38 @@
 ---
 name: devlint-skill
-description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 ArkUI 开发侧数据、采集 Web 页面 DOM 数据、采集 Pixso 设计稿数据、对比设计稿与开发实现输出差异修改清单、检查页面是否符合设计规范。当用户提到 UI 一致性检查、设计稿对比、采集开发侧/设计侧数据、设计规范检查等场景时加载本 skill。
+description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 ArkUI 开发侧数据、采集 Web 页面 DOM 数据、采集 Pixso 设计稿数据、对比设计稿与开发实现输出差异修改清单、模糊匹配设计规范名并检查页面是否符合规范。当用户提到 UI 一致性检查、设计稿对比、采集开发侧/设计侧数据、设计规范检查、规范名匹配等场景时加载本 skill。
+---
+
+## 🔴 硬性规则：禁止修改 skill 源码
+
+**skill 的所有文件（`bin/`、`src/`、`SKILL.md`、`install.js`、`package.json` 等）均为只读，绝对不允许修改。**
+
+- ❌ 禁止：tool 失败时尝试"修复"skill 源码（改 `bin/devlint-skill.js`、改 `src/lib/` 下任何文件）
+- ❌ 禁止：新增/删除/重命名 skill 目录下的文件
+- ❌ 禁止：编辑 `SKILL.md` 内容
+- ❌ 禁止：修改 `package.json` 依赖或版本号
+
+**tool 失败时的正确处理**：
+1. 读取 stderr 错误信息，分析失败原因
+2. 向用户说明原因并提供恢复选项（重新采集 / 手动提供文件路径）
+3. 如确认是 skill 本身的 bug，告知用户联系维护者，**不要自己动手改源码**
+
+> ⚠️ 之前出现过 tool 失败后 agent 陷入死循环、擅自修改 skill 源码导致环境损坏的事故。任何失败都只能通过重新调用、调整参数或向用户求助来解决，绝不修改源码。
+
 ---
 
 ## 能力总览
 
-本 skill 通过 `devlint-skill` 命令行工具提供 5 个能力，使用 bash 工具调用：
+本 skill 通过 `devlint-skill` 命令行工具提供 6 个能力，使用 bash 工具调用：
 
 | 命令 | 用途 | 输出 |
 |------|------|------|
 | `collect-arkui` | 采集鸿蒙 ArkUI 开发侧数据（仅 Windows） | devJsonPath, devImagePath |
 | `collect-web` | 采集 Web 页面 DOM 树 + 截图 | devJsonPath, devImagePath |
-| `collect-design` | 采集 Pixso 设计稿数据 + 截图 | designJsonPath, designImagePath |
+| `collect-design` | 采集 Pixso 设计稿数据 + 截图 | designJsonPath, designImagePath, userInfo |
 | `ui-style-check` | 对比设计稿与开发实现，输出差异清单 | 问题节点 JSON + md 报告路径 |
-| `design-spec-check` | 检查 HTML/URL 是否符合设计规范 | 问题清单 JSON |
+| `list-design-specs` | 模糊匹配规范名/场景名，返回规则文件路径列表 | filePaths 或候选列表 JSON |
+| `design-spec-check` | 检查 HTML/URL 是否符合设计规范（需先调 list-design-specs） | 问题清单 JSON |
 
 ---
 
@@ -25,12 +44,12 @@ description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 
 
 1. 如果 `devlint-skill` 已注册到 PATH：
    ```bash
-   devlint-skill <command> --cwd <项目目录> [options]
+   devlint-skill <command> [options]
    ```
 
 2. 如果 `command not found`，使用 node 直接执行 skill 目录下的入口：
    ```bash
-   node <skill目录>/bin/devlint-skill.js <command> --cwd <项目目录> [options]
+   node <skill目录>/bin/devlint-skill.js <command> [options]
    ```
 
 **首次使用前**，如果依赖未安装，需先在 skill 目录执行 `npm install --omit=dev`。
@@ -47,7 +66,8 @@ description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 
 用户意图：UI 一致性检查 / 设计稿对比 / 找差异
   │
   ├── 判断开发侧数据来源
-  │   ├── 本地文件路径 → 直接作为 --dev-json / --dev-image
+  │   ├── 本地 .json 文件路径 → 已采集数据，直接作为 --dev-json / --dev-image
+  │   ├── 本地 .html 文件路径 → 先执行 collect-web（采集 HTML 的 DOM）
   │   ├── 网页 URL → 先执行 collect-web
   │   └── 鸿蒙设备 → 先执行 collect-arkui（仅 Windows）
   │
@@ -61,7 +81,9 @@ description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 
 **数据来源判断规则：**
 - `http://` 或 `https://` 开头 → URL
 - 纯数字或短字符串（如 `111`）→ 传送码
-- `/` 或盘符（如 `C:\`）开头 → 本地文件路径
+- `.json` 结尾 → 已采集的 JSON 数据文件，直接传给 `ui-style-check`
+- `.html` 结尾 → 本地 HTML 源文件，走 `collect-web` 采集 DOM
+- `/` 或盘符（如 `C:\`）开头且无上述后缀 → 按本地文件路径，根据上下文判断是 JSON 数据还是 HTML 源文件
 
 **两侧采集相互独立**：一侧中断不阻塞另一侧。中断后向用户提供恢复选项（重新采集 / 手动提供文件路径），待两侧都就绪后再执行 `ui-style-check`。
 
@@ -70,19 +92,28 @@ description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 
 ```
 用户意图：设计规范检查 / 规范走查 / 检查是否符合 Octo 规范
   │
-  └── 执行 design-spec-check --source <HTML路径或URL> --spec <规范名>
+  ├── 1. 先调 list-design-specs 匹配规范
+  │     list-design-specs [--standard-name <规范名>] [--scene-name <场景名>]
+  │     ├── matched=true  → 拿到 filePaths，进入步骤 2
+  │     ├── stage=standard → 展示规范候选，用户选定后用完整 standardName 重新调用
+  │     └── stage=scene    → 展示场景候选，用户选定后用 standardName + sceneName 重新调用
+  │
+  └── 2. 拿到 filePaths 后调 design-spec-check
+        design-spec-check --source <HTML路径或URL> --spec-file-paths <path1,path2,...>
 ```
+
+**规范名拆分规则**：用户给"Octo Web端深色"这种组合时，拆成 `--standard-name Octo --scene-name Web端深色` 分别传入。用户只说"octo"则只传 `--standard-name octo`。用户没给任何名称则都不传，返回全量规范列表让用户选。
 
 ---
 
 ## 命令详细参数
 
-> **通用参数**：所有命令都支持 `--cwd <项目目录>`，用于指定采集结果和报告的保存位置。执行时务必传入当前项目目录，确保产物保存在项目下而非 skill 目录下。
+> **通用参数**：所有命令都支持 `--cwd <项目目录>`（可选），用于指定采集结果和报告的保存位置。**默认使用当前工作目录，无需向用户询问**。仅在用户明确要求保存到其他目录时才需要传入。
 
 ### collect-arkui
 
 ```bash
-devlint-skill collect-arkui --cwd <项目目录> [--timeout 60000]
+devlint-skill collect-arkui [--cwd <项目目录>] [--timeout 60000]
 ```
 
 - `--timeout`: 采集超时时间（ms），默认 60000
@@ -92,10 +123,12 @@ devlint-skill collect-arkui --cwd <项目目录> [--timeout 60000]
 ### collect-web
 
 ```bash
-devlint-skill collect-web --cwd <项目目录> --url <url> [--width 1920] [--height 1080] [--scale-factor 2] [--headless true]
+devlint-skill collect-web [--cwd <项目目录>] --url <url或本地HTML路径> [--width 1920] [--height 1080] [--scale-factor 2] [--headless true]
 ```
 
-- `--url`: 目标页面地址（必填）
+- `--url`: 目标页面地址（必填），支持两种格式：
+  - Web 页面 URL（`http://` 或 `https://` 开头）→ puppeteer 打开网页采集
+  - 本地 HTML 文件路径（如 `/path/to/page.html`）→ 自动转 `file://` 协议打开本地文件采集
 - `--width`: 视口宽度，默认 1920
 - `--height`: 视口高度，默认 1080
 - `--scale-factor`: 截图倍率，默认 2
@@ -105,24 +138,25 @@ devlint-skill collect-web --cwd <项目目录> --url <url> [--width 1920] [--hei
 ### collect-design
 
 ```bash
-devlint-skill collect-design --cwd <项目目录> --code <传送码> | --url <设计稿URL> --path <工程目录>
+devlint-skill collect-design [--cwd <项目目录>] --code <传送码> | --url <设计稿URL>
 ```
 
 - `--code`: 传送码（如 `111`）
 - `--url`: 设计稿 URL
 - `--code` 和 `--url` 至少传一个，同时传时 code 优先
-- `--path`: 工程目录地址（必填）
-- 输出：`{"designJsonPath":"...","designImagePath":"..."}`
+- 采集结果保存到 `--cwd` 指定的项目目录下的 `.devlint/` 子目录中
+- 输出：`{"designJsonPath":"...","designImagePath":"...","userInfo":{...}}`
 
 ### ui-style-check
 
 ```bash
-devlint-skill ui-style-check --cwd <项目目录> \
+devlint-skill ui-style-check [--cwd <项目目录>] \
   --design-json <path> \
   --dev-json <path> \
   [--platform hmPhone|hmWatch|web] \
   [--design-image <path>] \
-  [--dev-image <path>]
+  [--dev-image <path>] \
+  [--user-info <JSON>]
 ```
 
 - `--design-json`: 设计稿 JSON 文件路径（必填）
@@ -130,18 +164,36 @@ devlint-skill ui-style-check --cwd <项目目录> \
 - `--platform`: 平台类型，默认 hmPhone
 - `--design-image`: 设计稿截图路径（可选）
 - `--dev-image`: 开发侧截图路径（可选）
+- `--user-info`: 用户信息 JSON 字符串（可选），来自 collect-design 返回的 userInfo，透传用于打点
 - 输出：`{"platform":"...","nodes":[...],"totalNodes":N,"reportPath":"..."}`
 - 工具内部读取文件，**文件内容不占用 AI 上下文**
+
+### list-design-specs
+
+```bash
+devlint-skill list-design-specs [--cwd <项目目录>] [--standard-name <规范名>] [--scene-name <场景名>]
+```
+
+- `--standard-name`: 规范名或分类名（可选，模糊匹配），如 `Octo`、`ICT 领域组件库`、`octo`
+- `--scene-name`: 场景名（可选，模糊匹配），如 `Web端_深色`、`移动端`
+- 两个参数都可选；都不传时返回全量规范列表
+- 输出 JSON，三种情况：
+  1. **唯一匹配** `matched:true`：含 `standardId` / `standardName` / `sceneName?` / `filePaths` → 把 `filePaths` 传给 `design-spec-check`
+  2. **需选规范** `matched:false, stage:"standard"`：含 `candidates:[{standardId,standardName,categoryName}]` → 展示候选，用户选定后用完整 `standardName` 重新调用
+  3. **需选场景** `matched:false, stage:"scene"`：含 `standardId` / `standardName` / `candidates:[{sceneId,sceneName,sceneCategory}]` → 展示候选，用户选定后用 `standardName + sceneName` 重新调用
 
 ### design-spec-check
 
 ```bash
-devlint-skill design-spec-check --cwd <项目目录> --source <HTML路径或URL> --spec <规范名>
+devlint-skill design-spec-check [--cwd <项目目录>] --source <HTML路径或URL> --spec-file-paths <path1,path2,...>
 ```
 
 - `--source`: 本地 HTML 文件路径 或 Web 页面 URL（必填）
-- `--spec`: 规范名称，如 `Octo`（必填）
-- 输出：问题清单 JSON
+- `--spec-file-paths`: 规则文件路径数组（必填），来自 `list-design-specs` 返回的 `filePaths`。CLI 传参方式：
+  - 逗号分隔字符串：`--spec-file-paths "/a.json,/b.json,/c.json"`
+  - 或 JSON 数组字符串：`--spec-file-paths '["/a.json","/b.json"]'`
+- **必须先调 `list-design-specs`** 拿到 `filePaths`，再传入本命令，不要直接传规范名
+- 输出：问题清单 JSON（结构由检查方法决定，外网环境为空结果占位，内网替换为真实检查实现）
 
 ---
 
@@ -155,8 +207,21 @@ devlint-skill design-spec-check --cwd <项目目录> --source <HTML路径或URL>
 | `devImagePath` | `--dev-image` |
 | `designJsonPath` | `--design-json` |
 | `designImagePath` | `--design-image` |
+| `userInfo` | `--user-info`（JSON 字符串） |
 
 采集完成后应**自动执行** `ui-style-check`，不需要用户再次确认。
+
+### 规范检查串联（list-design-specs → design-spec-check）
+
+`list-design-specs` 返回的 `filePaths` **直接传给** `design-spec-check`：
+
+| list-design-specs 返回字段 | design-spec-check 参数 |
+|---|---|
+| `filePaths`（数组） | `--spec-file-paths`（逗号分隔或 JSON 数组字符串） |
+
+- `matched=true` 时，拿到 `filePaths` 后应**自动执行** `design-spec-check`，不需要用户再次确认
+- `matched=false` 时，必须先展示候选让用户选定，重新调用 `list-design-specs` 直到 `matched=true`，再执行 `design-spec-check`
+- 不要跳过 `list-design-specs` 直接给 `design-spec-check` 传规范名，`--spec-file-paths` 只接受规则文件路径
 
 ### platform 设置
 
@@ -168,27 +233,37 @@ devlint-skill design-spec-check --cwd <项目目录> --source <HTML路径或URL>
 
 ---
 
-## 采集中断恢复
+## 🔴 硬性规则：tool 失败处理策略
 
-### collect-arkui 失败
+**任何 tool 调用失败时，必须遵守以下原则，禁止自行修复或绕过：**
 
-常见原因：非 Windows 平台、采集程序启动失败、等待超时。
+### 总原则
 
-处理：**继续执行设计侧采集**，然后向用户提供选项：
-1. 在 Windows 环境重新运行
-2. 手动提供 arkui.json / arkui.png 文件路径，跳过采集直接执行 `ui-style-check`
+1. **失败即止步**：tool 返回错误（非零退出码 / stderr 有 `✗` / `isError: true`）时，**立即停止当前串联流程**，不要假装成功继续往下走
+2. **重试上限 2 次**：同一 tool 同一参数最多重试 2 次（含首次共 3 次调用）。超过后**停止重试**，向用户报告失败
+3. **禁止改源码**：失败原因不在 skill 源码，**绝不修改 `bin/`、`src/` 下任何文件**（参见顶部硬性规则）
+4. **禁止静默吞错**：不要忽略 stderr 错误信息继续执行，必须将错误原因如实告知用户
+5. **向用户求助**：重试耗尽或无法自动恢复时，**停下来让用户决定下一步**，不要自行猜测原因反复尝试
 
-### collect-web 登录超时
+### 各 tool 失败处理
 
-处理：**继续执行设计侧采集**，然后向用户提供选项：
-1. 重新执行 `collect-web --headless false`，在有头浏览器窗口中完成登录（120 秒内）
-2. 手动提供 web.json / web.png 文件路径，跳过采集直接执行 `ui-style-check`
+| tool | 失败场景 | 处理方式 |
+|---|---|---|
+| `collect-arkui` | 非 Windows / 启动失败 / 超时 | 继续设计侧采集；向用户提供：① Windows 环境重试 ② 手动提供 arkui.json/arkui.png 路径跳过采集 |
+| `collect-web` | 登录超时 / 导航超时 / 证书拦截 | 继续设计侧采集；向用户提供：① `--headless false` 有头模式重试 ② 手动提供 web.json/web.png 路径跳过采集 |
+| `collect-design` | 传送码无效 / 采集超时 / 网络错误 | 向用户提供：① 检查传送码后重新采集 ② 手动提供 design.json/design.png 路径 |
+| `ui-style-check` | server 不可达 / 文件不存在 / 检查超时 | 向用户提供：① 确认检查服务是否正常运行 ② 确认文件路径是否正确 ③ 重试一次 |
+| `list-design-specs` | 规则库拉取失败 / 网络错误 | 向用户报告错误，询问是否重试；不要自行假设规范名直接调 design-spec-check |
+| `design-spec-check` | source 不可达 / 规则文件不存在 / 检查超时 | 向用户提供：① 确认 source 路径/URL 可访问 ② 确认 spec-file-paths 来自 list-design-specs ③ 重试一次 |
 
-### collect-design 失败
+### 严格禁止的失败处理方式
 
-向用户提供选项：
-1. 检查传送码是否正确后重新采集
-2. 手动提供 design.json / design.png 文件路径
+- ❌ 失败后修改 skill 源码（改 `bin/devlint-skill.js`、改 `src/lib/` 下文件）
+- ❌ 失败后修改 `SKILL.md` 或 `package.json`
+- ❌ 失败后跳过该 tool，用空数据或假数据继续往下走
+- ❌ 失败后无限重试（同一参数调用超过 3 次）
+- ❌ 失败后不告知用户，自行更换参数反复尝试
+- ❌ 忽略 stderr 错误信息，假装成功
 
 ---
 
@@ -227,3 +302,5 @@ devlint-skill design-spec-check --cwd <项目目录> --source <HTML路径或URL>
 - [ ] 两侧数据是否都已就绪？（未就绪先采集，采集完自动串联）
 - [ ] platform 设置是否正确？
 - [ ] 采集中断后是否继续了另一侧的采集？
+- [ ] 设计规范检查是否先调了 list-design-specs？（不能直接给 design-spec-check 传规范名）
+- [ ] list-design-specs 返回 matched=false 时，是否展示了候选让用户选定后重新匹配？
