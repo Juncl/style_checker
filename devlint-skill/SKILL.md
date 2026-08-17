@@ -1,6 +1,6 @@
 ---
 name: devlint-skill
-description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 ArkUI 开发侧数据、采集 Web 页面 DOM 数据、采集 Pixso 设计稿数据、对比设计稿与开发实现输出差异修改清单、模糊匹配设计规范名并检查页面是否符合规范。当用户提到 UI 一致性检查、设计稿对比、采集开发侧/设计侧数据、设计规范检查、规范名匹配等场景时加载本 skill。
+description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 ArkUI 开发侧数据、采集 Web 页面 DOM 数据、采集 Pixso 设计稿数据、对比设计稿与开发实现输出差异修改清单、模糊匹配设计规范名并检查页面是否符合规范、视觉检查对比两张截图输出差异清单。当用户提到 UI 一致性检查、设计稿对比、采集开发侧/设计侧数据、设计规范检查、规范名匹配、图图对比、视觉检查、对比图片等场景时加载本 skill。
 ---
 
 ## 🔴 硬性规则：禁止修改 skill 源码
@@ -23,16 +23,17 @@ description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 
 
 ## 能力总览
 
-本 skill 通过 `devlint-skill` 命令行工具提供 6 个能力，使用 bash 工具调用：
+本 skill 通过 `devlint-skill` 命令行工具提供 7 个能力，使用 bash 工具调用：
 
 | 命令 | 用途 | 输出 |
 |------|------|------|
 | `collect-arkui` | 采集鸿蒙 ArkUI 开发侧数据（仅 Windows） | devJsonPath, devImagePath |
 | `collect-web` | 采集 Web 页面 DOM 树 + 截图 | devJsonPath, devImagePath |
 | `collect-design` | 采集 Pixso 设计稿数据 + 截图 | designJsonPath, designImagePath, userInfo |
-| `ui-style-check` | 对比设计稿与开发实现，输出差异清单 | 问题节点 JSON + md 报告路径 |
+| `ui-style-check` | 对比设计稿与开发实现，输出差异清单（基于节点树 JSON 算法比对） | 问题节点 JSON + md 报告路径 |
 | `list-design-specs` | 模糊匹配规范名/场景名，返回规则文件路径列表 | filePaths 或候选列表 JSON |
 | `design-spec-check` | 检查 HTML/URL 是否符合设计规范（需先调 list-design-specs） | 问题清单 JSON |
+| `ai-img-check` | 视觉检查，对比两张截图输出差异清单（耗时 30-90 秒） | overallLevel + score + diffs preview + reportPath |
 
 ---
 
@@ -103,6 +104,29 @@ description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 
 ```
 
 **规范名拆分规则**：用户给"Octo Web端深色"这种组合时，拆成 `--standard-name Octo --scene-name Web端深色` 分别传入。用户只说"octo"则只传 `--standard-name octo`。用户没给任何名称则都不传，返回全量规范列表让用户选。
+
+### 主线三：视觉检查
+
+需要**设计稿截图**和**开发侧截图**两张图片，直接执行 `ai-img-check`。无需采集节点树 JSON，仅基于截图做视觉比对。
+
+```
+用户意图：图图对比 / 视觉检查 / 对比图片
+  │
+  ├── 判断截图来源
+  │   ├── 本地图片文件路径 → 直接作为 --design-image / --dev-image
+  │   ├── collect-design 返回的 designImagePath → 直接作为 --design-image
+  │   ├── collect-web / collect-arkui 返回的 devImagePath → 直接作为 --dev-image
+  │   └── 未提供 → 提示用户提供两张截图（设计稿 + 开发实现）
+  │
+  └── 两张图就绪 → ai-img-check
+```
+
+**与 `ui-style-check` 的区别与关系**：
+- `ui-style-check`：基于**节点树 JSON** 的算法比对，精确到属性值，需要采集结构化数据
+- `ai-img-check`：基于**截图**的视觉比对，直观但耗时较长（30-90 秒），适合无结构化数据的场景或作为算法结果的补充
+- 两者可独立使用，也可先后使用互相印证
+
+**耗时提示**：本命令通常耗时 30-90 秒，调用前应告知用户耐心等待。
 
 ---
 
@@ -195,6 +219,27 @@ devlint-skill design-spec-check [--cwd <项目目录>] --source <HTML路径或UR
 - **必须先调 `list-design-specs`** 拿到 `filePaths`，再传入本命令，不要直接传规范名
 - 输出：问题清单 JSON（结构由检查方法决定，外网环境为空结果占位，内网替换为真实检查实现）
 
+### ai-img-check
+
+```bash
+devlint-skill ai-img-check [--cwd <项目目录>] --design-image <path> --dev-image <path> [--prompt <补充说明>]
+```
+
+- `--design-image`: 设计稿截图文件路径（必填，png/jpg/webp/bmp）
+- `--dev-image`: 开发侧截图文件路径（必填，png/jpg/webp/bmp）
+- `--prompt`: 补充说明文字（可选，默认"请对比这两张图的 UI 还原差异"），如"重点检查顶部导航栏"
+- 耗时较长：通常 30-90 秒，调用前应告知用户耐心等待
+- **bash 超时设置**：调用本命令时**必须**在 bash 工具中设置 `timeout: 300000`（5 分钟），避免默认 120 秒超时杀进程
+- 工具内部读取图片转 base64 上传，**图片内容不占用 AI 上下文**
+- 依赖 server 运行（`POST /api/img/checker` + `POST /api/img/checker/diff`）
+- 输出：`{ overallLevel, score, stats, diffs: 前10条, totalDiffs, reportPath }`
+  - `overallLevel`: 还原度等级（"高"/"中"/"低"）
+  - `score`: 还原度评分（0-100）
+  - `stats`: 统计信息（errorCount / warningCount / designNodes / arkuiNodes / matchedPairs 等）
+  - `diffs`: 差异清单前 10 条，每条含 property / designValue / arkuiValue / severity / suggestion / textContent 等
+  - `totalDiffs`: 差异总数
+  - `reportPath`: 完整 Markdown 报告路径，后续修改代码时直接读该文件
+
 ---
 
 ## 采集 → 检查串联规则
@@ -255,6 +300,7 @@ devlint-skill design-spec-check [--cwd <项目目录>] --source <HTML路径或UR
 | `ui-style-check` | server 不可达 / 文件不存在 / 检查超时 | 向用户提供：① 确认检查服务是否正常运行 ② 确认文件路径是否正确 ③ 重试一次 |
 | `list-design-specs` | 规则库拉取失败 / 网络错误 | 向用户报告错误，询问是否重试；不要自行假设规范名直接调 design-spec-check |
 | `design-spec-check` | source 不可达 / 规则文件不存在 / 检查超时 | 向用户提供：① 确认 source 路径/URL 可访问 ② 确认 spec-file-paths 来自 list-design-specs ③ 重试一次 |
+| `ai-img-check` | server 不可达 / 图片不存在 / 检查超时（>120秒） | 向用户提供：① 确认 server 运行正常 ② 确认图片路径正确 ③ 偶发慢可重试一次 |
 
 ### 严格禁止的失败处理方式
 
@@ -284,6 +330,22 @@ devlint-skill design-spec-check [--cwd <项目目录>] --source <HTML路径或UR
 
 ---
 
+## ai-img-check 结果呈现规则
+
+拿到结果后，按以下格式展示给用户：
+
+1. 先展示**整体还原度**：等级（高/中/低）+ 评分（0-100），如"整体还原度：中（72/100）"
+2. 再展示**差异统计**：error 数 / warning 数 / 缺失数 / 多余数
+3. 然后按**修改指令**格式逐条展示差异（前 10 条）：
+   - 「属性」期望 designValue，当前为 arkuiValue，建议改为 suggestion
+   - 标注 severity（error 为明显差异，warning 为轻微差异）
+   - 如有 textContent（元素文本），用『』括起帮助定位
+4. **不要展示** designNodeId / arkuiNodeId / matchType 等内部技术字段
+5. 如果没有差异，直接说 **"视觉检查未发现明显还原差异"**
+6. 完整报告见 **reportPath** 指向的 md 文件
+
+---
+
 ## 环境要求
 
 - `collect-arkui` 只能在 **Windows** 上执行（依赖 ArkUI Inspector 导出工具）
@@ -296,7 +358,7 @@ devlint-skill design-spec-check [--cwd <项目目录>] --source <HTML路径或UR
 
 执行命令前逐项确认：
 
-- [ ] 用户意图是 UI 一致性检查还是设计规范检查？
+- [ ] 用户意图是 UI 一致性检查、设计规范检查还是视觉检查？
 - [ ] 开发侧数据来源是什么？（本地文件 / URL / 鸿蒙设备）
 - [ ] 设计侧数据来源是什么？（本地文件 / 传送码 / URL）
 - [ ] 两侧数据是否都已就绪？（未就绪先采集，采集完自动串联）
@@ -304,3 +366,4 @@ devlint-skill design-spec-check [--cwd <项目目录>] --source <HTML路径或UR
 - [ ] 采集中断后是否继续了另一侧的采集？
 - [ ] 设计规范检查是否先调了 list-design-specs？（不能直接给 design-spec-check 传规范名）
 - [ ] list-design-specs 返回 matched=false 时，是否展示了候选让用户选定后重新匹配？
+- [ ] 视觉检查时，是否已告知用户耗时较长（30-90 秒）？

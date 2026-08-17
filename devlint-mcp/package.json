@@ -1,6 +1,6 @@
 {
   "name": "devlint-mcp",
-  "version": "1.0.0",
+  "version": "1.0.7",
   "type": "module",
   "description": "DevLint MCP Server - UI 一致性检查能力",
   "bin": {

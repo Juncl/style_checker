@@ -2,7 +2,7 @@
 /**
  * devlint-skill CLI 入口
  *
- * 6 个子命令，直接调用 src/lib/ 下的底层函数。
+ * 7 个子命令，直接调用 src/lib/ 下的底层函数。
  * 不启动常驻进程，agent 通过 bash 工具调用。
  *
  * 用法：
@@ -12,6 +12,7 @@
  *   devlint-skill ui-style-check --design-json <path> --dev-json <path> [--platform hmPhone] [--design-image <path>] [--dev-image <path>]
  *   devlint-skill list-design-specs [--standard-name <规范名>] [--scene-name <场景名>]
  *   devlint-skill design-spec-check --source <html路径或URL> --spec-file-paths <path1,path2,...>
+ *   devlint-skill ai-img-check --design-image <path> --dev-image <path> [--prompt <补充说明>]
  *
  * 输出统一为 JSON 到 stdout，错误信息到 stderr 并以非零退出码退出。
  */
@@ -23,7 +24,7 @@ import { dirname, join } from 'path'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const libPath = join(__dirname, '..', 'src', 'lib')
 
-// ── 引擎函数（src/lib）──────────────────────────────────
+// ── 引擎函数（src/lib，mcp 共享）─────────────────────────
 
 import { collectArkui } from '../src/lib/collectData/getArkui/getArkui.js'
 import { collectWebDom } from '../src/lib/collectData/getWebDom/getWebDom.js'
@@ -36,6 +37,10 @@ import { fileToBlob } from '../src/lib/utils/tools.js'
 import { resetSession, getUserInfo } from '../src/lib/utils/session.js'
 import { trackCheckComplete } from '../src/lib/utils/track.js'
 import { config } from '../src/lib/config.js'
+
+// ── skill 独有模块（lib/，不依赖 mcp）─────────────────────
+
+import { aiImgCheck } from '../lib/aiImgCheck.js'
 
 // ── 辅助 ────────────────────────────────────────────────
 
@@ -220,6 +225,24 @@ async function cmdDesignSpecCheck(args) {
   output(report)
 }
 
+/**
+ * ai-img-check: 视觉检查（skill 独有，实现位于 lib/aiImgCheck.js）
+ *
+ * 耗时较长（通常 30-90 秒），skill 侧 fetch 超时 120 秒。
+ */
+async function cmdAiImgCheck(args) {
+  const { 'design-image': designImage, 'dev-image': devImage } = args
+  if (!designImage) fail('缺少必填参数: --design-image')
+  if (!devImage) fail('缺少必填参数: --dev-image')
+
+  const result = await aiImgCheck({
+    designImage,
+    devImage,
+    prompt: args.prompt,
+  })
+  output(result)
+}
+
 // ── 主调度 ──────────────────────────────────────────────
 
 const COMMANDS = {
@@ -229,6 +252,7 @@ const COMMANDS = {
   'ui-style-check': cmdUiStyleCheck,
   'list-design-specs': cmdListDesignSpecs,
   'design-spec-check': cmdDesignSpecCheck,
+  'ai-img-check': cmdAiImgCheck,
 }
 
 async function main() {
@@ -243,9 +267,10 @@ async function main() {
   collect-arkui        采集鸿蒙 ArkUI 开发侧数据（仅 Windows）
   collect-web          采集 Web 页面 DOM 树 + 截图
   collect-design       采集 Pixso 设计稿数据 + 截图
-  ui-style-check       对比设计稿与开发实现，输出差异清单
+  ui-style-check       对比设计稿与开发实现，输出差异清单（基于节点树 JSON）
   list-design-specs    模糊匹配规范名/场景名，返回规则文件路径列表
   design-spec-check    检查 HTML/URL 是否符合设计规范（需先调 list-design-specs）
+  ai-img-check         视觉检查，对比两张截图输出差异清单（耗时较长）
 
 选项:
   --help, -h           显示帮助

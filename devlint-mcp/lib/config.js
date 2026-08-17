@@ -2,19 +2,24 @@
  * devlint-mcp 配置文件
  */
 
-const CHECK_ENV = 'outer'
-// const CHECK_ENV = 'inner'
+const CHECK_ENV = 'outer';
+// const CHECK_ENV = 'inner_beta';
+// const CHECK_ENV = 'inner_pro';
+
 const CHECK_URL = {
-  outer:  'http://localhost:3012/api',
-  inner:  'http://xxx.aaa.com/devlint/api'
+  outer: 'http://localhost:3012/api',
+  inner_beta: 'https://octo-beta.hdesign.huawei.com/devlint/api',
+  inner_pro: 'https://octo.hdesign.huawei.com/devlint/api'
 }
 const TRACK_URL = {
-  outer:  'http://localhost:3001/report/interaction',  // 外网：mock 打点服务
-  inner:  'http://xxx.aaa.com/devlint/report/interaction'
+  outer: 'http://localhost:3001/report/interaction',  // 打点服务
+  inner_beta: 'https://beta.ucd.huawei.com/record/logger/interaction',
+  inner_pro: 'https://ucd.huawei.com/record/logger/interaction'
 }
 const SPEC_URL = {
-  outer:  'http://localhost:3001/mock/spec/list',   // 外网：mock 规范库接口
-  inner:  'http://xxx.aaa.com/devlint/spec/list'    // 内网：真实规范库接口
+  outer: 'http://localhost:3001/mock/spec/list',   // 规范库接口
+  inner_beta: 'http://7.192.170.117:3100/index.json',
+  inner_pro: 'http://7.192.170.117:3100/index.json'
 }
 
 export const config = {

@@ -39,6 +39,7 @@ function checkSrc() {
 // ── 2. 拷贝源码目录（整体拷贝，只排除 node_modules）──────
 
 function copyDirs(prodDir) {
+  // ── mcp 共享引擎：devlint-mcp/lib → prodDir/src/lib（排除 server.js）──
   const srcLib = join(SRC_DIR, 'lib')
   const dstLib = join(prodDir, 'src', 'lib')
   rmSync(join(prodDir, 'src'), { recursive: true, force: true })
@@ -48,6 +49,7 @@ function copyDirs(prodDir) {
     filter: (src) => !src.includes('node_modules') && !src.endsWith('server.js'),
   })
 
+  // ── mcp 共享脚本：devlint-mcp/script → prodDir/src/script ──
   const srcScript = join(SRC_DIR, 'script')
   const dstScript = join(prodDir, 'src', 'script')
   if (existsSync(srcScript)) {
@@ -59,7 +61,21 @@ function copyDirs(prodDir) {
     })
   }
 
-  // 统计拷贝的文件数
+  // ── skill 独有模块：devlint-skill/lib → prodDir/lib（不依赖 mcp）──
+  const skillLibSrc = join(ROOT, 'lib')
+  const skillLibDst = join(prodDir, 'lib')
+  if (!existsSync(skillLibSrc)) {
+    console.error(`✗ 缺少 skill 独有模块目录: ${skillLibSrc}`)
+    process.exit(1)
+  }
+  rmSync(skillLibDst, { recursive: true, force: true })
+  mkdirSync(skillLibDst, { recursive: true })
+  cpSync(skillLibSrc, skillLibDst, {
+    recursive: true,
+    filter: (src) => !src.includes('node_modules'),
+  })
+
+  // 统计拷贝的文件数（src + lib）
   const copied = []
   function walk(dir, base) {
     for (const name of readdirSync(dir)) {
@@ -73,6 +89,7 @@ function copyDirs(prodDir) {
     }
   }
   walk(join(prodDir, 'src'))
+  walk(join(prodDir, 'lib'))
   return copied
 }
 
@@ -169,7 +186,7 @@ function main() {
   console.log(`  产物:   ${zipPath}`)
   console.log(`  大小:   ${zipSize} MB`)
   console.log(`  版本:   ${version}`)
-  console.log(`  文件数: ${files.length + 4} (引擎 ${files.length} + skill 4)`)
+  console.log(`  文件数: ${files.length + 4} (源码 ${files.length}：mcp 共享 src/lib + skill 独有 lib；skill 专属 4)`)
   console.log('────────────────────────────────────────')
   console.log('\n  用户安装方式:')
   console.log('    1. 解压 devlint-skill-<ver>.zip')

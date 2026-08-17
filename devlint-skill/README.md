@@ -31,9 +31,10 @@ devlint-skill --help
 | `collect-arkui` | 采集鸿蒙 ArkUI 开发侧数据 | 仅 Windows |
 | `collect-web` | 采集 Web 页面 DOM 树 + 截图 | 需 Chrome |
 | `collect-design` | 采集 Pixso 设计稿数据 + 截图 | 需 Chrome |
-| `ui-style-check` | 对比设计稿与开发实现，输出差异清单 | 需 Chrome |
+| `ui-style-check` | 对比设计稿与开发实现，输出差异清单（基于节点树 JSON 算法） | 需 Chrome |
 | `list-design-specs` | 模糊匹配规范名/场景名，返回规则文件路径列表 | 无 |
 | `design-spec-check` | 检查 HTML/URL 是否符合设计规范（需先调 list-design-specs） | 需 Chrome |
+| `ai-img-check` | 视觉检查，对比两张截图输出差异清单（耗时 30-90 秒） | 需 server |
 
 ## 环境要求
 
@@ -80,6 +81,18 @@ AI 执行流程：
      → matched=false 时展示候选，用户选定后重新调用直到 matched=true
   2. devlint-skill design-spec-check --source https://example.com/page --spec-file-paths <filePaths 逗号分隔>
   3. 展示问题清单和修改建议
+```
+
+### 视觉检查
+
+```
+用户：用 AI 对比这两张图的 UI 还原差异，设计稿 design.png，开发实现 dev.png
+
+AI 执行流程：
+  1. devlint-skill ai-img-check --design-image ./design.png --dev-image ./dev.png
+     → { overallLevel:"中", score:72, stats:{...}, diffs:[...], reportPath:"..." }
+  2. 展示还原度评分 + 差异清单（修改指令格式）
+  3. 完整报告见 reportPath 指向的 md 文件
 ```
 
 ## 打包方式（开发者）
