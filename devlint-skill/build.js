@@ -49,6 +49,17 @@ function copyDirs(prodDir) {
     filter: (src) => !src.includes('node_modules') && !src.endsWith('server.js'),
   })
 
+  // skill 专属补丁：mcp 源码只读不改，在产物中替换 track.js 打点前缀 devlint_mcp_ → devlint_skill_
+  const trackFile = join(dstLib, 'utils', 'track.js')
+  if (existsSync(trackFile)) {
+    const trackSrc = readFileSync(trackFile, 'utf-8')
+    const patched = trackSrc.replace(/devlint_mcp_/g, 'devlint_skill_')
+    if (patched !== trackSrc) {
+      writeFileSync(trackFile, patched)
+      console.log('      ✓ 打点名称已替换: devlint_mcp_* → devlint_skill_*')
+    }
+  }
+
   // ── mcp 共享脚本：devlint-mcp/script → prodDir/src/script ──
   const srcScript = join(SRC_DIR, 'script')
   const dstScript = join(prodDir, 'src', 'script')

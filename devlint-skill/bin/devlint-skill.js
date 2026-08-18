@@ -35,7 +35,7 @@ import { resolveSpec } from '../src/lib/collectData/uxCheckOut/resolveSpec.js'
 import { extractSummary, generateReport } from '../src/lib/utils/report.js'
 import { fileToBlob } from '../src/lib/utils/tools.js'
 import { resetSession, getUserInfo } from '../src/lib/utils/session.js'
-import { trackCheckComplete } from '../src/lib/utils/track.js'
+import { trackCheckComplete, trackSpecCheckComplete } from '../src/lib/utils/track.js'
 import { config } from '../src/lib/config.js'
 
 // ── skill 独有模块（lib/，不依赖 mcp）─────────────────────
@@ -106,7 +106,13 @@ async function cmdCollectDesign(args) {
   const { code, url } = args
   if (!code && !url) fail('缺少参数: --code <传送码> 或 --url <设计稿URL> 至少传一个')
   const result = await collectDesign(code, url)
-  output(result)
+  // 解包 mcp 格式 {content:[{type:"text", text:"<JSON>"}]} → 直接输出 flat JSON
+  const text = result?.content?.[0]?.text
+  if (text) {
+    try { output(JSON.parse(text)) } catch { output({ raw: text }) }
+  } else {
+    output(result)
+  }
 }
 
 /**
@@ -123,10 +129,7 @@ async function cmdUiStyleCheck(args) {
   const designImagePath = args['design-image'] || null
   const devImagePath = args['dev-image'] || null
 
-  let userInfo = null
-  if (args['user-info']) {
-    try { userInfo = JSON.parse(args['user-info']) } catch {}
-  }
+  const account = args.account || ''
 
   // 校验文件存在
   for (const [label, path] of [
@@ -164,12 +167,14 @@ async function cmdUiStyleCheck(args) {
   const summary = extractSummary(result)
   const reportPath = generateReport(result)
 
-  trackCheckComplete({
-    account: userInfo?.account || getUserInfo()?.account || '',
-    platform: result.platform,
-    stats: result.stats,
-    diffCount: (result.diffs || []).length,
-  })
+  try {
+    trackCheckComplete({
+      account: account || getUserInfo()?.account || '',
+      platform: result.platform,
+      stats: result.stats,
+      diffCount: (result.diffs || []).length,
+    })
+  } catch {}
 
   resetSession()
 
@@ -222,6 +227,16 @@ async function cmdDesignSpecCheck(args) {
   }
 
   const report = await uxCheck(source, specFilePaths)
+
+  try {
+    trackSpecCheckComplete({
+      account: getUserInfo()?.account || '',
+      specFilePaths,
+      stats: report?.stats,
+      issueCount: (report?.issues || []).length,
+    })
+  } catch {}
+
   output(report)
 }
 

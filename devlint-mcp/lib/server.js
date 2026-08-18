@@ -4,7 +4,7 @@ import { existsSync } from 'fs'
 import { extractSummary, generateReport } from './utils/report.js'
 import { fileToBlob } from './utils/tools.js'
 import { resetSession, getUserInfo } from './utils/session.js'
-import { trackCheckComplete } from './utils/track.js'
+import { trackCheckComplete, trackSpecCheckComplete } from './utils/track.js'
 import { config } from './config.js'
 import { collectWebDom } from './collectData/getWebDom/getWebDom.js'
 import { collectArkui } from './collectData/getArkui/getArkui.js'
@@ -152,12 +152,14 @@ export function createMcpServer() {
         const reportPath = generateReport(result)
 
         // 打点：上报检查完成事件（fire-and-forget 不阻塞）
-        trackCheckComplete({
-          account: getUserInfo()?.account || '',
-          platform: result.platform,
-          stats: result.stats,
-          diffCount: (result.diffs || []).length,
-        })
+        try {
+          trackCheckComplete({
+            account: getUserInfo()?.account || '',
+            platform: result.platform,
+            stats: result.stats,
+            diffCount: (result.diffs || []).length,
+          })
+        } catch {}
 
         // 本轮检查会话结束，下次采集工具调用时开启新的会话文件夹
         resetSession()
@@ -589,6 +591,16 @@ export function createMcpServer() {
           params.source,
           params.specFilePaths,
         )
+
+        // 打点：上报规范检查完成事件（fire-and-forget 不阻塞）
+        try {
+          trackSpecCheckComplete({
+            account: getUserInfo()?.account || '',
+            specFilePaths: params.specFilePaths,
+            stats: report?.stats,
+            issueCount: (report?.issues || []).length,
+          })
+        } catch {}
 
         return {
           content: [

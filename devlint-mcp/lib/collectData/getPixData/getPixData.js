@@ -18,18 +18,23 @@ export async function collectDesign(code, url) {
   }
 
   // 内网真实采集逻辑中可获取到用户信息，写入 session 供 ui_style_check 打点使用
-  const userInfo = {account: "x123456"}
+  // 外网 mock 硬编码占位；内网替换后从真实登录态获取，可能为 null
+  const userInfo = { account: 'x123456' }
   setUserInfo(userInfo)
 
   const dir = getSessionDir()
   const ts = timestamp()
-  const jsonPath = join(dir, `design_${ts}.json`);
-  const imgPath = join(dir, `design_${ts}.png`);
+  const jsonPath = join(dir, `design_${ts}.json`)
+  const imgPath = join(dir, `design_${ts}.png`)
 
   return {
     content: [{
-      type: "text",
-      text: JSON.stringify({ designJsonPath: jsonPath, designImagePath: imgPath, userInfo }, null, 2)
+      type: 'text',
+      text: JSON.stringify({
+        designJsonPath: jsonPath,
+        designImagePath: imgPath,
+        account: userInfo?.account || '',
+      }, null, 2)
     }]
   }
 

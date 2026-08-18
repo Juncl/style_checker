@@ -29,7 +29,7 @@ description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 
 |------|------|------|
 | `collect-arkui` | 采集鸿蒙 ArkUI 开发侧数据（仅 Windows） | devJsonPath, devImagePath |
 | `collect-web` | 采集 Web 页面 DOM 树 + 截图 | devJsonPath, devImagePath |
-| `collect-design` | 采集 Pixso 设计稿数据 + 截图 | designJsonPath, designImagePath, userInfo |
+| `collect-design` | 采集 Pixso 设计稿数据 + 截图 | designJsonPath, designImagePath, account |
 | `ui-style-check` | 对比设计稿与开发实现，输出差异清单（基于节点树 JSON 算法比对） | 问题节点 JSON + md 报告路径 |
 | `list-design-specs` | 模糊匹配规范名/场景名，返回规则文件路径列表 | filePaths 或候选列表 JSON |
 | `design-spec-check` | 检查 HTML/URL 是否符合设计规范（需先调 list-design-specs） | 问题清单 JSON |
@@ -169,7 +169,7 @@ devlint-skill collect-design [--cwd <项目目录>] --code <传送码> | --url <
 - `--url`: 设计稿 URL
 - `--code` 和 `--url` 至少传一个，同时传时 code 优先
 - 采集结果保存到 `--cwd` 指定的项目目录下的 `.devlint/` 子目录中
-- 输出：`{"designJsonPath":"...","designImagePath":"...","userInfo":{...}}`
+- 输出：`{"designJsonPath":"...","designImagePath":"...","account":"x123456"}`
 
 ### ui-style-check
 
@@ -180,7 +180,7 @@ devlint-skill ui-style-check [--cwd <项目目录>] \
   [--platform hmPhone|hmWatch|web] \
   [--design-image <path>] \
   [--dev-image <path>] \
-  [--user-info <JSON>]
+  [--account <账号>]
 ```
 
 - `--design-json`: 设计稿 JSON 文件路径（必填）
@@ -188,7 +188,7 @@ devlint-skill ui-style-check [--cwd <项目目录>] \
 - `--platform`: 平台类型，默认 hmPhone
 - `--design-image`: 设计稿截图路径（可选）
 - `--dev-image`: 开发侧截图路径（可选）
-- `--user-info`: 用户信息 JSON 字符串（可选），来自 collect-design 返回的 userInfo，透传用于打点
+- `--account`: 用户账号字符串（可选），来自 collect-design 返回的 account，透传用于打点；未传时自动用本机 IP 兜底
 - 输出：`{"platform":"...","nodes":[...],"totalNodes":N,"reportPath":"..."}`
 - 工具内部读取文件，**文件内容不占用 AI 上下文**
 
@@ -252,7 +252,7 @@ devlint-skill ai-img-check [--cwd <项目目录>] --design-image <path> --dev-im
 | `devImagePath` | `--dev-image` |
 | `designJsonPath` | `--design-json` |
 | `designImagePath` | `--design-image` |
-| `userInfo` | `--user-info`（JSON 字符串） |
+| `account` | `--account` |
 
 采集完成后应**自动执行** `ui-style-check`，不需要用户再次确认。
 
