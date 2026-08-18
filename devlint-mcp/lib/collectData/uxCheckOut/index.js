@@ -4,17 +4,15 @@
  * 【职责】
  * 1. puppeteer 打开 html 文件或 web 链接（含登录检测、无头降级有头等完整流程）
  * 2. 采集 DOM 树 JSON（含计算样式，不过滤视口外节点）
- * 3. domData + specFilePaths 丢进 specCheck（内网实现，外网空逻辑占位）
+ * 3. domData + specFilePaths 丢进 specCheck（POST 合规检查接口）
  * 4. 返回报告 JSON
  */
 
 import { run } from '../../utils/puppeteer.js'
 import { collectDomTree } from './collectDom.js'
 import { specCheck } from './specCheck.js'
-import { existsSync, writeFileSync } from 'fs'
-import { resolve, isAbsolute, join } from 'path'
-import { timestamp } from '../../utils/tools.js'
-import { config } from '../../config.js'
+import { existsSync } from 'fs'
+import { resolve, isAbsolute } from 'path'
 
 /**
  * 设计规范一致性检查入口函数
@@ -51,7 +49,7 @@ export async function uxCheck(source, specFilePaths, options = {}) {
   // const domPath = join(dir, `uxcheck_dom_data_${timestamp()}.json`)
   // writeFileSync(domPath, JSON.stringify(domData), 'utf-8')
 
-  // 丢进检查方法（内网实现，外网空逻辑占位）
+  // POST 合规检查接口
   const report = await specCheck(domData, specFilePaths)
 
   return report

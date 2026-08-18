@@ -1,10 +1,19 @@
 /**
  * ai-img-check：视觉检查（skill 独有逻辑，配置复用 mcp config）
  *
- * 读两张图片 → base64 → POST server /img/checker（流式）
- * → 读完整 SSE 流累积 content → 拿到 Markdown 报告
- * → POST server /img/checker/diff 解析为结构化 diff
- * → 落盘完整 Markdown → 返回 preview
+ * 两种工作模式：
+ *
+ * 【模式 A：VLM agent 自检】—— AI 自身具备 VLM 能力时使用
+ *   1. getImgCheckPrompt() 取回 system prompt（复制自 server，不依赖 server 运行）
+ *   2. AI 自行读取两张截图、按 prompt 要求输出 Markdown 报告
+ *   3. parseImgCheckMarkdown(markdown) 调 server /img/checker/diff 解析为结构化 diff
+ *   全程不调 server /img/checker（不占 server VLM 额度），仅用 server 做 Markdown 解析
+ *
+ * 【模式 B：server 兜底】—— AI 非 VLM 时使用（原有逻辑）
+ *   aiImgCheck() 读两张图片 → base64 → POST server /img/checker（流式）
+ *   → 读完整 SSE 流累积 content → 拿到 Markdown 报告
+ *   → POST server /img/checker/diff 解析为结构化 diff
+ *   → 落盘完整 Markdown → 返回 preview
  *
  * 用流式而非非流式：非流式要等 VLM 完整生成才返回首字节（60-150s），
  * 容易撞 fetch/bash 超时；流式首字节几秒即到，连接持续有数据不会超时。
@@ -17,6 +26,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join, extname } from 'path'
 import { config } from '../src/lib/config.js'
+import { IMG_CHECKER_SYSTEM_PROMPT } from './imgCheckPrompt.js'
 
 /**
  * 生成时间戳：月日时分秒
@@ -146,12 +156,70 @@ export async function aiImgCheck({ designImage, devImage, prompt }) {
     diffReport = { markdown, diffs: [], stats: {}, overallLevel: null, score: null }
   }
 
-  // 3. 落盘完整 Markdown 报告
+  return finalizeReport(markdown, diffReport)
+}
+
+// ── 模式 A：VLM agent 自检 ──────────────────────────────────────────────────
+
+/**
+ * 取回 AI 图图对比的 system prompt（复制自 server，不依赖 server 运行）
+ *
+ * 模式 A 第 1 步：AI 自身具备 VLM 能力时，拿此 prompt + 两张截图路径，
+ * 自行看图、按 prompt 输出 Markdown 报告，再调 parseImgCheckMarkdown 解析。
+ *
+ * @returns {{ mode:'prompt', prompt:string, designImage?:string, devImage?:string,
+ *   hint:string }}
+ */
+export function getImgCheckPrompt({ designImage, devImage } = {}) {
+  return {
+    mode: 'prompt',
+    prompt: IMG_CHECKER_SYSTEM_PROMPT,
+    designImage: designImage || null,
+    devImage: devImage || null,
+    hint: '请用你的 VLM 能力读取两张截图，严格按照 prompt 约定的 Markdown 格式输出完整报告，再用 ai-img-check --mode parse 解析',
+  }
+}
+
+/**
+ * 解析 Markdown 报告为结构化 diff（调 server /img/checker/diff）
+ *
+ * 模式 A 第 3 步：AI 按 prompt 输出 Markdown 后，传入本函数解析。
+ * 与模式 B 共用同一解析接口与落盘逻辑，保证两侧结果结构一致。
+ *
+ * @param {string} markdown — AI 输出的完整 Markdown 报告
+ * @returns {Promise<Object>} { overallLevel, score, stats, diffs, totalDiffs, reportPath }
+ */
+export async function parseImgCheckMarkdown(markdown) {
+  if (!markdown || !markdown.trim()) {
+    throw new Error('缺少参数: markdown（AI 输出的报告内容为空）')
+  }
+
+  const diffRes = await fetch(`${config.CHECK_SERVER_URL}/img/checker/diff`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ markdown }),
+  })
+
+  let diffReport
+  if (diffRes.ok) {
+    diffReport = await diffRes.json()
+  } else {
+    diffReport = { markdown, diffs: [], stats: {}, overallLevel: null, score: null }
+  }
+
+  return finalizeReport(markdown, diffReport)
+}
+
+// ── 共享：落盘 + 返回 preview ───────────────────────────────────────────────
+
+/**
+ * 落盘完整 Markdown 报告，并返回 preview（前 10 条 diff，避免上下文过长）
+ */
+function finalizeReport(markdown, diffReport) {
   const dir = getOutputDir()
   const reportPath = join(dir, `ai_img_check_${timestamp()}.md`)
   writeFileSync(reportPath, markdown, 'utf-8')
 
-  // 4. 返回 preview（前 10 条 diff，避免上下文过长）
   const MAX_PREVIEW = 10
   const diffs = diffReport.diffs || []
   return {

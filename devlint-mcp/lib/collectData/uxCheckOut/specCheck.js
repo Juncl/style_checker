@@ -35,6 +35,7 @@ async function checkDesignTool({ domData, filePathList = [], options = {} }) {
     }
     return await res.json();
   } catch (error) {
-    console.error('error:', error);
+    console.error('合规检查失败:', error);
+    throw error;
   }
 }
