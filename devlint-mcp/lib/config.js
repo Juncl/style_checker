@@ -8,7 +8,7 @@ const CHECK_ENV = 'outer';
 
 const CHECK_URL = {
   outer: 'http://localhost:3012/api',
-  inner_beta: 'https://octo-beta.hdesign.huawei.com/devlint/api',
+  inner_beta: 'https://octo-beta.hdesign.huawei.com/devlint/api', // UI一致性检查的接口
   inner_pro: 'https://octo.hdesign.huawei.com/devlint/api'
 }
 const TRACK_URL = {
@@ -17,9 +17,9 @@ const TRACK_URL = {
   inner_pro: 'https://ucd.huawei.com/record/logger/interaction'
 }
 const SPEC_URL = {
-  outer: 'http://localhost:3001/mock/spec/list',   // 规范库接口
-  inner_beta: 'http://7.192.170.117:3100/index.json',
-  inner_pro: 'http://7.192.170.117:3100/index.json'
+  outer: 'http://localhost:3001/mock/spec',   // 规范库 base（与 inner 等价，拼后缀）
+  inner_beta: 'http://7.192.170.117:3100',
+  inner_pro: 'http://7.192.170.117:3100'
 }
 
 export const config = {

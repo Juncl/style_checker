@@ -6,9 +6,9 @@
  * resolveSpec.js 基于此数据做模糊匹配。
  *
  * 【内外网隔离】
- * - 外网环境（当前）：fetch mock 接口（config.SPEC_URL → localhost:3001/mock/spec/list）
- * - 内网环境：fetch 真实接口（config.SPEC_URL → 内网规范库接口）
- * - 接口地址切换由 config.js 的 SPEC_URL 控制，本文件无需修改
+ * - 外网环境（当前）：config.SPEC_URL → localhost:3001/mock/spec
+ * - 内网环境：config.SPEC_URL → 7.192.170.117:3100
+ * - 接口地址切换由 config.js 的 SPEC_URL 控制，本文件拼 /index.json 后缀
  *
  * @returns {Promise<Object>} 规则库全量数据，结构：
  *   {
@@ -27,7 +27,7 @@
 import { config } from '../../config.js'
 
 export async function fetchSpecList() {
-  const res = await fetch(config.SPEC_URL)
+  const res = await fetch(`${config.SPEC_URL}/index.json`)
 
   if (!res.ok) {
     throw new Error(`获取规范库数据失败 (${res.status}): ${await res.text()}`)
