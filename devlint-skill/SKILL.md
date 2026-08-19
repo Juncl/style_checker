@@ -109,18 +109,23 @@ description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 
 
 用户已把**设计稿截图**和**开发侧截图**两张图片传入对话，agent 直接看图做视觉比对。无需采集节点树 JSON。
 
-两步操作：
+三步操作：
 
+0. **确认图片角色（必须最先做）**：检查用户在对话中是否已明确指出哪张是设计稿、哪张是开发实现。
+   - 用户已明确指出（如"第一张是设计稿，第二张是开发"）→ 直接进入步骤 1
+   - 用户**没有明确指出** → **必须问清楚**："请确认哪张是设计稿、哪张是开发实现？"，拿到明确答复后才能继续。**禁止猜测图片角色**
 1. `ai-img-check --mode prompt` → 取回 system prompt
-2. 看对话中的两张截图 + prompt → **先确认哪张是设计稿、哪张是开发实现（分不清就问用户）** → 输出简短总结 + 差异 JSON（含归一化坐标）→ 把 JSON 写入文件 → 调 `ai-img-check --mode build --diff-file <json>` 生成 HTML 模板 → **把图片填入模板的占位符位置** → 生成最终带图标注视图 HTML → 告诉用户用浏览器打开
+2. 看对话中的两张截图 + prompt → 输出简短总结 + 差异 JSON（含归一化坐标）→ 把 JSON 写入文件 → 调 `ai-img-check --mode build --diff-file <json>` 生成 HTML 模板 → **把图片填入模板的占位符位置** → 生成最终带图标注视图 HTML → 告诉用户用浏览器打开
 
 ```
 用户意图：图图对比 / 视觉检查 / 对比图片
   │
   └── 用户已在对话中传入两张截图
-      ├── ai-img-check --mode prompt                                          取 prompt
-      ├── 确认哪张是设计稿、哪张是开发实现（分不清 → 问用户）
-      ├── 看对话中的两张图 + prompt → 输出简短总结 + 差异 JSON → 写入文件（如 diff.json）
+      ├── 步骤 0: 用户是否已明确指出哪张是设计稿、哪张是开发实现？
+      │   ├── 是 → 直接进入步骤 1
+      │   └── 否 → 必须问清楚，拿到明确答复后才能继续（禁止猜测）
+      ├── 步骤 1: ai-img-check --mode prompt                              取 prompt
+      ├── 步骤 2: 看对话中的两张图 + prompt → 输出简短总结 + 差异 JSON → 写入文件（如 diff.json）
       ├── ai-img-check --mode build --diff-file diff.json
       │   → 返回 { templatePath, designPlaceholder, devPlaceholder, ... }
       └── 读模板 → 把图片填入 designPlaceholder / devPlaceholder 位置 → 保存最终 HTML → 告诉用户浏览器打开
@@ -378,4 +383,4 @@ devlint-skill ai-img-check [--cwd <项目目录>] --mode build --diff-file <diff
 - [ ] 采集中断后是否继续了另一侧的采集？
 - [ ] 设计规范检查是否先调了 list-design-specs？（不能直接给 design-spec-check 传规范名）
 - [ ] list-design-specs 返回 matched=false 时，是否展示了候选让用户选定后重新匹配？
-- [ ] 视觉检查时，用户是否已在对话中传入两张截图？是 → 取 prompt → 看图输出差异 JSON → build 生成 HTML 标注图 → 告诉用户打开 htmlPath。
+- [ ] 视觉检查时，用户是否已明确指出哪张是设计稿、哪张是开发实现？没明确指出 → 必须问清楚，禁止猜测。确认后再取 prompt → 看图输出差异 JSON → build 生成 HTML 模板 → 填入图片 → 告诉用户打开。
