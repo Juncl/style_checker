@@ -231,7 +231,13 @@ devlint-skill design-spec-check [--cwd <项目目录>] --source <HTML路径或UR
 
 ### ai-img-check
 
-两步操作：取 prompt → 看图输出差异 JSON → 生成 HTML。
+三步操作：确认图片角色 → 取 prompt → 看图输出差异 JSON → 生成 HTML 模板。
+
+#### 第 0 步：确认图片角色
+
+- 检查用户在对话中是否已明确指出哪张是设计稿、哪张是开发实现
+- 用户已明确指出 → 直接进入第 1 步
+- 用户**没有明确指出** → **必须问清楚**："请确认哪张是设计稿、哪张是开发实现？"，拿到明确答复后才能继续。**禁止猜测图片角色**
 
 #### 第 1 步：取 prompt（`--mode prompt`）
 
@@ -239,6 +245,7 @@ devlint-skill design-spec-check [--cwd <项目目录>] --source <HTML路径或UR
 devlint-skill ai-img-check [--cwd <项目目录>] --mode prompt
 ```
 
+- 前提：用户已确认图片角色（第 0 步完成）
 - 返回 system prompt（针对对话场景优化，不依赖 server 运行）
 - 图片已在对话上下文中，agent 直接看图，无需额外传参
 - 输出：`{ mode:"prompt", prompt, hint }`
