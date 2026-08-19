@@ -112,17 +112,18 @@ description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 
 两步操作：
 
 1. `ai-img-check --mode prompt` → 取回 system prompt
-2. 看对话中的两张截图 + prompt → 输出简短总结 + 差异 JSON（含归一化坐标）→ 把 JSON 写入文件 → 调 `ai-img-check --mode build --diff-file <json> --design-image <img> --dev-image <img>` 生成 HTML 标注图
+2. 看对话中的两张截图 + prompt → **先确认哪张是设计稿、哪张是开发实现（分不清就问用户）** → 输出简短总结 + 差异 JSON（含归一化坐标）→ 把 JSON 写入文件 → 调 `ai-img-check --mode build --diff-file <json>` 生成 HTML 模板 → **用对话历史中的图片 base64 替换模板里的占位符** → 保存最终 HTML → 告诉用户用浏览器打开
 
 ```
 用户意图：图图对比 / 视觉检查 / 对比图片
   │
   └── 用户已在对话中传入两张截图
       ├── ai-img-check --mode prompt                                          取 prompt
+      ├── 确认哪张是设计稿、哪张是开发实现（分不清 → 问用户）
       ├── 看对话中的两张图 + prompt → 输出简短总结 + 差异 JSON → 写入文件（如 diff.json）
-      └── ai-img-check --mode build --diff-file diff.json --design-image <设计稿图> --dev-image <实现图>
-          → 生成 HTML 标注图（红框/黄框叠在图上 + 差异清单表格）→ 返回 htmlPath
-          → 告诉用户用浏览器打开 htmlPath 查看
+      ├── ai-img-check --mode build --diff-file diff.json
+      │   → 生成 HTML 模板（图片位置为占位符）→ 返回 { templatePath, designPlaceholder, devPlaceholder, instructions }
+      └── 读模板文件 → 用对话历史中的图片 base64 替换占位符 → 保存最终 HTML → 告诉用户浏览器打开
 ```
 
 全程不调 server `/img/checker`，不占 server VLM 额度。
@@ -238,18 +239,20 @@ devlint-skill ai-img-check [--cwd <项目目录>] --mode prompt
 - 输出：`{ mode:"prompt", prompt, hint }`
 - **下一步**：看对话中的两张截图 + prompt，输出简短总结 + 差异 JSON（含归一化坐标），把 JSON 写入文件后调第 2 步
 
-#### 第 2 步：生成 HTML 标注图（`--mode build`）
+#### 第 2 步：生成 HTML 模板（`--mode build`）
 
 ```bash
-devlint-skill ai-img-check [--cwd <项目目录>] --mode build --diff-file <diff.json> --design-image <设计稿图> --dev-image <实现图>
+devlint-skill ai-img-check [--cwd <项目目录>] --mode build --diff-file <diff.json>
 ```
 
 - `--diff-file`：agent 输出的差异 JSON 文件（纯 JSON 或含 json 代码块的 Markdown 均可）
-- `--design-image`：设计稿截图（png/jpg/webp/bmp）
-- `--dev-image`：开发侧截图（png/jpg/webp/bmp）
-- 生成自包含 HTML 文件（红框/黄框/蓝框叠在图上 + 差异清单表格），用户用浏览器打开即可查看
-- 输出：`{ htmlPath, totalDiffs, overallLevel, score }`
-  - `htmlPath`：HTML 标注图文件，告诉用户用浏览器打开
+- 生成 HTML 模板文件，图片位置为占位符（`__DESIGN_IMAGE_BASE64__` / `__DEV_IMAGE_BASE64__`），红框/黄框/蓝框已叠在占位图位置上 + 差异清单表格已填充
+- **agent 拿到模板后**：读模板文件，把占位符替换为对话历史中对应的图片 base64 data URL，保存为最终 HTML
+- 输出：`{ templatePath, totalDiffs, overallLevel, score, designPlaceholder, devPlaceholder, instructions }`
+  - `templatePath`：HTML 模板文件路径，agent 读取后替换占位符
+  - `designPlaceholder`：设计稿图片占位符（`__DESIGN_IMAGE_BASE64__`）
+  - `devPlaceholder`：开发实现图片占位符（`__DEV_IMAGE_BASE64__`）
+  - `instructions`：替换指引说明
   - `totalDiffs`：差异总数
   - `overallLevel`：还原度等级（"高"/"中"/"低"）
   - `score`：还原度评分（0-100）
@@ -349,9 +352,10 @@ devlint-skill ai-img-check [--cwd <项目目录>] --mode build --diff-file <diff
 拿到 build 结果后，按以下格式展示给用户：
 
 1. 展示**整体还原度**：等级（高/中/低）+ 评分（0-100）+ diff 总数
-2. 告诉用户**用浏览器打开 htmlPath** 查看带红框标注的对比图
-3. 简要口述前几条重点差异（从 agent 自己输出的简短总结中提取，不要复述全部）
-4. 如果没有差异（totalDiffs=0），直接说 **"视觉检查未发现明显还原差异，还原度良好"**
+2. 按 instructions 指引：读 templatePath 模板文件，把 designPlaceholder 替换为对话中设计稿的 base64、devPlaceholder 替换为对话中开发实现的 base64，保存为最终 HTML
+3. 告诉用户**用浏览器打开最终 HTML** 查看带红框标注的对比图
+4. 简要口述前几条重点差异（从 agent 自己输出的简短总结中提取，不要复述全部）
+5. 如果没有差异（totalDiffs=0），直接说 **"视觉检查未发现明显还原差异，还原度良好"**
 
 ---
 

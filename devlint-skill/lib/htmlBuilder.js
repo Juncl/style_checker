@@ -1,20 +1,27 @@
 /**
  * ai-img-check HTML 标注图生成器
  *
- * 接收 agent 输出的差异 JSON + 两张图路径 → 生成自包含 HTML 文件
- * （红框/黄框/蓝框叠在图上 + 差异清单表格），用户打开浏览器即可查看。
+ * 接收 agent 输出的差异 JSON → 生成带图片占位符的 HTML 模板文件
+ * （红框/黄框/蓝框叠在图上 + 差异清单表格）。
+ *
+ * 图片位置用占位符标记，agent 拿到模板后用对话历史中的图片 base64 替换占位符，
+ * 生成最终 HTML。skill 不接触图片数据，不依赖本地文件路径。
  *
  * 流程：
- *   buildHtmlReport({ diffFile, designImage, devImage })
+ *   buildHtmlReport({ diffFile })
  *   → 读 diff JSON（兼容纯 JSON 或 Markdown 内嵌 JSON 代码块）
- *   → 读两张图转 base64
- *   → 生成 HTML 字符串 → 落盘到 .devlint/
- *   → 返回 { htmlPath, totalDiffs, overallLevel, score }
+ *   → 生成 HTML 模板（图片位置为占位符）→ 落盘到 .devlint/
+ *   → 返回 { templatePath, totalDiffs, overallLevel, score,
+ *            designPlaceholder, devPlaceholder, instructions }
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { fileToBase64DataUrl, timestamp, getOutputDir } from './shared.js'
+import { timestamp, getOutputDir } from './shared.js'
+
+// 图片占位符，agent 替换为 base64 data URL
+const DESIGN_IMAGE_PLACEHOLDER = '__DESIGN_IMAGE_BASE64__'
+const DEV_IMAGE_PLACEHOLDER = '__DEV_IMAGE_BASE64__'
 
 const SEVERITY_STYLE = {
   error:   { color: '#FF4D4F', bg: 'rgba(255,77,79,0.12)',  label: '🔴', name: '明显' },
@@ -98,9 +105,9 @@ function escapeHtml(str) {
 }
 
 /**
- * 生成完整 HTML 报告
+ * 生成完整 HTML 报告（图片位置为占位符，待 agent 替换）
  */
-function generateHtml({ diffData, designImgDataUrl, devImgDataUrl }) {
+function generateHtml({ diffData }) {
   const diffs = diffData.diffs || []
   const level = diffData.overallLevel || '—'
   const score = diffData.score ?? '—'
@@ -174,14 +181,14 @@ function generateHtml({ diffData, designImgDataUrl, devImgDataUrl }) {
   <div class="image-panel">
     <h3>设计稿</h3>
     <div class="image-wrapper">
-      <img src="${designImgDataUrl}" alt="设计稿" />
+      <img src="${DESIGN_IMAGE_PLACEHOLDER}" alt="设计稿" />
 ${designBoxes}
     </div>
   </div>
   <div class="image-panel">
     <h3>开发实现</h3>
     <div class="image-wrapper">
-      <img src="${devImgDataUrl}" alt="开发实现" />
+      <img src="${DEV_IMAGE_PLACEHOLDER}" alt="开发实现" />
 ${devBoxes}
     </div>
   </div>
@@ -209,45 +216,37 @@ ${tableRows || '    <tr><td colspan="7" class="empty">视觉上未发现明显�
 }
 
 /**
- * 生成 HTML 标注图报告
+ * 生成 HTML 模板报告（图片位置为占位符，agent 替换后得到最终 HTML）
  *
  * @param {Object} params
- * @param {string} params.diffFile — agent 输出的 diff JSON 文件路径
- * @param {string} params.designImage — 设计稿图片本地路径
- * @param {string} params.devImage — 开发侧图片本地路径
- * @returns {Promise<Object>} { htmlPath, totalDiffs, overallLevel, score }
+ * @param {string} params.diffFile — agent 输出的 diff JSON 文件
+ * @returns {Promise<Object>} { templatePath, totalDiffs, overallLevel, score,
+ *   designPlaceholder, devPlaceholder, instructions }
  */
-export async function buildHtmlReport({ diffFile, designImage, devImage }) {
-  // 校验文件存在
-  for (const [label, path] of [
-    ['diff JSON 文件', diffFile],
-    ['设计稿截图', designImage],
-    ['开发侧截图', devImage],
-  ]) {
-    if (!path) throw new Error(`缺少参数: ${label}路径`)
-    if (!existsSync(path)) throw new Error(`${label}不存在: ${path}`)
-  }
+export async function buildHtmlReport({ diffFile }) {
+  // 校验 diff 文件
+  if (!diffFile) throw new Error('缺少参数: diff JSON 文件路径')
+  if (!existsSync(diffFile)) throw new Error(`diff JSON 文件不存在: ${diffFile}`)
 
   // 解析 diff JSON
   const raw = readFileSync(diffFile, 'utf-8')
   const diffData = parseDiffJson(raw)
 
-  // 读图转 base64
-  const designImgDataUrl = fileToBase64DataUrl(designImage)
-  const devImgDataUrl = fileToBase64DataUrl(devImage)
+  // 生成 HTML 模板（图片位置为占位符）
+  const html = generateHtml({ diffData })
 
-  // 生成 HTML
-  const html = generateHtml({ diffData, designImgDataUrl, devImgDataUrl })
-
-  // 落盘
+  // 落盘模板
   const dir = getOutputDir()
-  const htmlPath = join(dir, `ai_img_check_${timestamp()}.html`)
-  writeFileSync(htmlPath, html, 'utf-8')
+  const templatePath = join(dir, `ai_img_check_${timestamp()}.html`)
+  writeFileSync(templatePath, html, 'utf-8')
 
   return {
-    htmlPath,
+    templatePath,
     totalDiffs: (diffData.diffs || []).length,
     overallLevel: diffData.overallLevel || null,
     score: diffData.score ?? null,
+    designPlaceholder: DESIGN_IMAGE_PLACEHOLDER,
+    devPlaceholder: DEV_IMAGE_PLACEHOLDER,
+    instructions: `读取模板文件，把 ${DESIGN_IMAGE_PLACEHOLDER} 替换为设计稿截图的 base64 data URL（data:image/png;base64,...），把 ${DEV_IMAGE_PLACEHOLDER} 替换为开发实现截图的 base64 data URL，然后保存为最终 HTML 文件。用浏览器打开即可查看标注图。`,
   }
 }

@@ -12,7 +12,7 @@
  *   devlint-skill ui-style-check --design-json <path> --dev-json <path> [--platform hmPhone] [--design-image <path>] [--dev-image <path>]
  *   devlint-skill list-design-specs [--standard-name <规范名>] [--scene-name <场景名>]
  *   devlint-skill design-spec-check --source <html路径或URL> --spec-file-paths <path1,path2,...>
- *   devlint-skill ai-img-check --mode prompt | --mode build --diff-file <json> --design-image <img> --dev-image <img>
+ *   devlint-skill ai-img-check --mode prompt | --mode build --diff-file <json>
  *
  * 输出统一为 JSON 到 stdout，错误信息到 stderr 并以非零退出码退出。
  */
@@ -246,7 +246,7 @@ async function cmdDesignSpecCheck(args) {
  *
  * 两步操作：
  *   --mode prompt   取 system prompt，agent 看对话中的图输出差异 JSON（lib/vlmCheck.js）
- *   --mode build    用 agent 输出的 diff JSON + 两张图路径生成 HTML 标注图（lib/htmlBuilder.js）
+ *   --mode build    用 agent 输出的 diff JSON 生成 HTML 模板（含图片占位符，agent 替换后得到最终 HTML）（lib/htmlBuilder.js）
  *
  * server 兜底方案（lib/serverCheck.js）为备选，暂未启用。
  */
@@ -260,12 +260,10 @@ async function cmdAiImgCheck(args) {
     return
   }
 
-  // 第 2 步：生成 HTML 标注图
+  // 第 2 步：生成 HTML 模板（agent 替换图片占位符后得到最终 HTML）
   if (mode === 'build') {
     const result = await buildHtmlReport({
       diffFile: args['diff-file'],
-      designImage: args['design-image'],
-      devImage: args['dev-image'],
     })
 
     try {
