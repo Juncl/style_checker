@@ -1,34 +1,26 @@
 /**
  * ai-img-check HTML 标注图生成器
  *
- * 接收 agent 输出的差异 JSON → 生成带图片占位符的 HTML 模板文件
- * （红框/黄框/蓝框叠在图上 + 差异清单表格）。
+ * 接收 agent 输出的差异 JSON → 生成带占位符的 HTML 模板文件
+ * （红框/黄框/蓝框叠在图片位置上 + 差异清单表格已填充）。
  *
- * 图片位置用占位符标记，agent 拿到模板后用对话历史中的图片 base64 替换占位符，
- * 生成最终 HTML。skill 不接触图片数据，不依赖本地文件路径。
+ * 图片位置用占位符标记，agent 需要自行把图片数据填入占位符位置，
+ * 生成最终的带图标注视图 HTML。skill 不接触图片数据，不指导 agent 如何获取图片。
  *
  * 流程：
  *   buildHtmlReport({ diffFile })
  *   → 读 diff JSON（兼容纯 JSON 或 Markdown 内嵌 JSON 代码块）
  *   → 生成 HTML 模板（图片位置为占位符）→ 落盘到 .devlint/
- *   → 返回 { templatePath, totalDiffs, overallLevel, score,
- *            designPlaceholder, devPlaceholder, instructions }
+ *   → 返回 { templatePath, totalDiffs, overallLevel, score, designPlaceholder, devPlaceholder }
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { timestamp, getOutputDir } from './shared.js'
 
-// 图片占位符，agent 替换为 base64 data URL
+// 图片占位符，agent 替换为图片数据
 const DESIGN_IMAGE_PLACEHOLDER = '__DESIGN_IMAGE_BASE64__'
 const DEV_IMAGE_PLACEHOLDER = '__DEV_IMAGE_BASE64__'
-
-const SEVERITY_STYLE = {
-  error:   { color: '#FF4D4F', bg: 'rgba(255,77,79,0.12)',  label: '🔴', name: '明显' },
-  warning: { color: '#FAAD14', bg: 'rgba(250,173,20,0.12)',  label: '🟡', name: '轻微' },
-  missing: { color: '#0067D1', bg: 'rgba(0,103,209,0.08)',   label: '⚪', name: '缺失' },
-  extra:   { color: '#0067D1', bg: 'rgba(0,103,209,0.08)',   label: '⚪', name: '多余' },
-}
 
 /**
  * 从文件内容中解析 diff JSON
@@ -104,8 +96,15 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
 }
 
+const SEVERITY_STYLE = {
+  error:   { color: '#FF4D4F', bg: 'rgba(255,77,79,0.12)',  label: '🔴', name: '明显' },
+  warning: { color: '#FAAD14', bg: 'rgba(250,173,20,0.12)',  label: '🟡', name: '轻微' },
+  missing: { color: '#0067D1', bg: 'rgba(0,103,209,0.08)',   label: '⚪', name: '缺失' },
+  extra:   { color: '#0067D1', bg: 'rgba(0,103,209,0.08)',   label: '⚪', name: '多余' },
+}
+
 /**
- * 生成完整 HTML 报告（图片位置为占位符，待 agent 替换）
+ * 生成完整 HTML 模板（图片位置为占位符，差异标注框 + 表格已填充）
  */
 function generateHtml({ diffData }) {
   const diffs = diffData.diffs || []
@@ -216,12 +215,11 @@ ${tableRows || '    <tr><td colspan="7" class="empty">视觉上未发现明显�
 }
 
 /**
- * 生成 HTML 模板报告（图片位置为占位符，agent 替换后得到最终 HTML）
+ * 生成 HTML 标注图模板（图片位置为占位符，agent 填入图片后得到最终 HTML）
  *
  * @param {Object} params
  * @param {string} params.diffFile — agent 输出的 diff JSON 文件
- * @returns {Promise<Object>} { templatePath, totalDiffs, overallLevel, score,
- *   designPlaceholder, devPlaceholder, instructions }
+ * @returns {Promise<Object>} { templatePath, totalDiffs, overallLevel, score, designPlaceholder, devPlaceholder }
  */
 export async function buildHtmlReport({ diffFile }) {
   // 校验 diff 文件
@@ -235,7 +233,7 @@ export async function buildHtmlReport({ diffFile }) {
   // 生成 HTML 模板（图片位置为占位符）
   const html = generateHtml({ diffData })
 
-  // 落盘模板
+  // 落盘
   const dir = getOutputDir()
   const templatePath = join(dir, `ai_img_check_${timestamp()}.html`)
   writeFileSync(templatePath, html, 'utf-8')
@@ -247,6 +245,5 @@ export async function buildHtmlReport({ diffFile }) {
     score: diffData.score ?? null,
     designPlaceholder: DESIGN_IMAGE_PLACEHOLDER,
     devPlaceholder: DEV_IMAGE_PLACEHOLDER,
-    instructions: `读取模板文件，把 ${DESIGN_IMAGE_PLACEHOLDER} 替换为设计稿截图的 base64 data URL（data:image/png;base64,...），把 ${DEV_IMAGE_PLACEHOLDER} 替换为开发实现截图的 base64 data URL，然后保存为最终 HTML 文件。用浏览器打开即可查看标注图。`,
   }
 }

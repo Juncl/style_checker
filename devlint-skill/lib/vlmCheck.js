@@ -21,6 +21,6 @@ export function getImgCheckPrompt() {
   return {
     mode: 'prompt',
     prompt: IMG_CHECKER_SYSTEM_PROMPT,
-    hint: '看对话中的两张截图，先确认哪张是设计稿哪张是开发实现（分不清就问用户），按 prompt 输出简短总结 + 差异 JSON（含归一化坐标），把 JSON 写文件后调 ai-img-check --mode build 生成 HTML 模板，再用对话里的图片 base64 替换模板中的占位符得到最终 HTML',
+    hint: '看对话中的两张截图，先确认哪张是设计稿哪张是开发实现（分不清就问用户），按 prompt 输出简短总结 + 差异 JSON（含归一化坐标），把 JSON 写文件后调 ai-img-check --mode build 生成带占位符的 HTML 模板，把图片填入占位符位置得到最终带图标注视图 HTML',
   }
 }

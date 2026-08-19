@@ -246,7 +246,7 @@ async function cmdDesignSpecCheck(args) {
  *
  * 两步操作：
  *   --mode prompt   取 system prompt，agent 看对话中的图输出差异 JSON（lib/vlmCheck.js）
- *   --mode build    用 agent 输出的 diff JSON 生成 HTML 模板（含图片占位符，agent 替换后得到最终 HTML）（lib/htmlBuilder.js）
+ *   --mode build    用 agent 输出的 diff JSON 生成 HTML 模板（图片位置为占位符，agent 填入图片后得到最终 HTML）（lib/htmlBuilder.js）
  *
  * server 兜底方案（lib/serverCheck.js）为备选，暂未启用。
  */
@@ -260,7 +260,7 @@ async function cmdAiImgCheck(args) {
     return
   }
 
-  // 第 2 步：生成 HTML 模板（agent 替换图片占位符后得到最终 HTML）
+  // 第 2 步：生成 HTML 模板（agent 填入图片后得到最终 HTML）
   if (mode === 'build') {
     const result = await buildHtmlReport({
       diffFile: args['diff-file'],
