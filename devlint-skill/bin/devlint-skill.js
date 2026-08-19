@@ -12,7 +12,7 @@
  *   devlint-skill ui-style-check --design-json <path> --dev-json <path> [--platform hmPhone] [--design-image <path>] [--dev-image <path>]
  *   devlint-skill list-design-specs [--standard-name <规范名>] [--scene-name <场景名>]
  *   devlint-skill design-spec-check --source <html路径或URL> --spec-file-paths <path1,path2,...>
- *   devlint-skill ai-img-check [--mode prompt|parse|server] --design-image <path> --dev-image <path> [--prompt <补充说明>]
+ *   devlint-skill ai-img-check --mode prompt | --mode build --diff-file <json> --design-image <img> --dev-image <img>
  *
  * 输出统一为 JSON 到 stdout，错误信息到 stderr 并以非零退出码退出。
  */
@@ -35,12 +35,13 @@ import { resolveSpec } from '../src/lib/collectData/uxCheckOut/resolveSpec.js'
 import { extractSummary, generateReport } from '../src/lib/utils/report.js'
 import { fileToBlob } from '../src/lib/utils/tools.js'
 import { resetSession, getUserInfo } from '../src/lib/utils/session.js'
-import { trackCheckComplete, trackSpecCheckComplete } from '../src/lib/utils/track.js'
+import { trackCheckComplete, trackSpecCheckComplete, reportInteraction } from '../src/lib/utils/track.js'
 import { config } from '../src/lib/config.js'
 
 // ── skill 独有模块（lib/，不依赖 mcp）─────────────────────
 
-import { aiImgCheck, getImgCheckPrompt, parseImgCheckMarkdown } from '../lib/aiImgCheck.js'
+import { getImgCheckPrompt } from '../lib/vlmCheck.js'
+import { buildHtmlReport } from '../lib/htmlBuilder.js'
 
 // ── 辅助 ────────────────────────────────────────────────
 
@@ -241,55 +242,49 @@ async function cmdDesignSpecCheck(args) {
 }
 
 /**
- * ai-img-check: 视觉检查（skill 独有，实现位于 lib/aiImgCheck.js）
+ * ai-img-check: 视觉检查（skill 独有）
  *
- * 三种模式：
- *   --mode prompt   模式 A 第 1 步：返回 system prompt，由 AI 自身 VLM 能力看图检查
- *   --mode parse    模式 A 第 3 步：解析 AI 输出的 Markdown 报告（--markdown 或 --markdown-file）
- *   --mode server   模式 B（--mode 省略时默认）：server 兜底调 VLM，需用户提供两张图的本地文件路径 --design-image + --dev-image
+ * 两步操作：
+ *   --mode prompt   取 system prompt，agent 看对话中的图输出差异 JSON（lib/vlmCheck.js）
+ *   --mode build    用 agent 输出的 diff JSON + 两张图路径生成 HTML 标注图（lib/htmlBuilder.js）
  *
- * 模式 B 耗时较长（通常 30-90 秒），skill 侧 fetch 超时 120 秒。
+ * server 兜底方案（lib/serverCheck.js）为备选，暂未启用。
  */
 async function cmdAiImgCheck(args) {
-  const mode = args.mode || 'server'
+  const mode = args.mode
 
-  // 模式 A-1：返回 prompt
+  // 第 1 步：返回 prompt
   if (mode === 'prompt') {
-    const result = getImgCheckPrompt({
-      designImage: args['design-image'] || undefined,
-      devImage: args['dev-image'] || undefined,
+    const result = getImgCheckPrompt()
+    output(result)
+    return
+  }
+
+  // 第 2 步：生成 HTML 标注图
+  if (mode === 'build') {
+    const result = await buildHtmlReport({
+      diffFile: args['diff-file'],
+      designImage: args['design-image'],
+      devImage: args['dev-image'],
     })
+
+    try {
+      reportInteraction({
+        account: getUserInfo()?.account || '',
+        name: 'devlint-skill-aiCheck',
+        extend: {
+          overallLevel: result.overallLevel,
+          score: result.score,
+          totalDiffs: result.totalDiffs,
+        },
+      })
+    } catch {}
+
     output(result)
     return
   }
 
-  // 模式 A-3：解析 Markdown
-  if (mode === 'parse') {
-    let markdown = args.markdown
-    const markdownFile = args['markdown-file']
-    if (!markdown && !markdownFile) {
-      fail('缺少参数: --markdown <报告文本> 或 --markdown-file <报告文件路径>（二选一）')
-    }
-    if (!markdown && markdownFile) {
-      if (!existsSync(markdownFile)) fail('Markdown 报告文件不存在: ' + markdownFile)
-      markdown = readFileSync(markdownFile, 'utf-8')
-    }
-    const result = await parseImgCheckMarkdown(markdown)
-    output(result)
-    return
-  }
-
-  // 模式 B（默认）：server 兜底
-  const { 'design-image': designImage, 'dev-image': devImage } = args
-  if (!designImage) fail('缺少必填参数: --design-image')
-  if (!devImage) fail('缺少必填参数: --dev-image')
-
-  const result = await aiImgCheck({
-    designImage,
-    devImage,
-    prompt: args.prompt,
-  })
-  output(result)
+  fail('不支持的 --mode: ' + (mode || '（未指定）') + '，当前支持 prompt / build')
 }
 
 // ── 主调度 ──────────────────────────────────────────────
@@ -319,7 +314,7 @@ async function main() {
   ui-style-check       对比设计稿与开发实现，输出差异清单（基于节点树 JSON）
   list-design-specs    模糊匹配规范名/场景名，返回规则文件路径列表
   design-spec-check    检查 HTML/URL 是否符合设计规范（需先调 list-design-specs）
-  ai-img-check         视觉检查，对比两张截图输出差异清单（支持 VLM 自检 / server 兜底）
+  ai-img-check         视觉检查，取 prompt → 看对话图 → 输出差异 JSON → 生成 HTML 标注图
 
 选项:
   --help, -h           显示帮助

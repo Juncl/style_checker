@@ -33,7 +33,7 @@ description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 
 | `ui-style-check` | 对比设计稿与开发实现，输出差异清单（基于节点树 JSON 算法比对） | 问题节点 JSON + md 报告路径 |
 | `list-design-specs` | 模糊匹配规范名/场景名，返回规则文件路径列表 | filePaths 或候选列表 JSON |
 | `design-spec-check` | 检查 HTML/URL 是否符合设计规范（需先调 list-design-specs） | 问题清单 JSON |
-| `ai-img-check` | 视觉检查，对比两张截图输出差异清单（模式 A VLM 自检 / 模式 B server 兜底 30-90 秒） | overallLevel + score + diffs preview + reportPath |
+| `ai-img-check` | 视觉检查，取 prompt → 看对话图 → 输出差异 JSON → 生成 HTML 标注图 | htmlPath + totalDiffs + overallLevel + score |
 
 ---
 
@@ -107,47 +107,30 @@ description: UI 一致性检查与设计规范检查能力。支持采集鸿蒙 
 
 ### 主线三：视觉检查
 
-需要**设计稿截图**和**开发侧截图**两张图片，执行 `ai-img-check`。无需采集节点树 JSON，仅基于截图做视觉比对。
+用户已把**设计稿截图**和**开发侧截图**两张图片传入对话，agent 直接看图做视觉比对。无需采集节点树 JSON。
 
-**默认走模式 A，失败回退模式 B**：
+两步操作：
 
-- **模式 A：VLM agent 自检**（默认首选）
-  1. `ai-img-check --mode prompt --design-image <path> --dev-image <path>` → 取回 system prompt
-  2. 用你的 Read 工具读取 `--design-image` 和 `--dev-image` 两张截图
-     - **判定回退**：若 Read 工具读图片返回的是乱码/纯文本而非图像内容，或你的模型不支持图片输入 → **说明你不是 VLM，立即改走模式 B**
-  3. 按 prompt 约定的 Markdown 格式输出完整报告（纯 Markdown 文本，不要包代码块）
-  4. 将报告写入文件（或通过 `--markdown` 传文本），调 `ai-img-check --mode parse --markdown-file <path>` 解析为结构化 diff
-  - 全程不调 server `/img/checker`，不占 server VLM 额度，仅用 server 做 Markdown 解析（`/img/checker/diff`）
-
-- **模式 B：server 兜底**（模式 A 回退时使用）
-  - **必须由用户提供两张图片的本地文件路径**（`--design-image` + `--dev-image`），server 读取本地文件转 base64 调 VLM。若用户只给了 URL / 传送码 / 远程图片而未提供本地路径，需先提示用户下载到本地或给出本地绝对路径，拿到后再调用
-  - `ai-img-check --design-image <本地路径> --dev-image <本地路径>`（不传 `--mode`，默认即 server）→ server 代理调 VLM，耗时 30-90 秒
+1. `ai-img-check --mode prompt` → 取回 system prompt
+2. 看对话中的两张截图 + prompt → 输出简短总结 + 差异 JSON（含归一化坐标）→ 把 JSON 写入文件 → 调 `ai-img-check --mode build --diff-file <json> --design-image <img> --dev-image <img>` 生成 HTML 标注图
 
 ```
 用户意图：图图对比 / 视觉检查 / 对比图片
   │
-  ├── 判断截图来源
-  │   ├── 本地图片文件路径 → 直接作为 --design-image / --dev-image
-  │   ├── collect-design 返回的 designImagePath → 直接作为 --design-image
-  │   ├── collect-web / collect-arkui 返回的 devImagePath → 直接作为 --dev-image
-  │   └── 未提供 → 提示用户提供两张截图（设计稿 + 开发实现）
-  │
-  └── 两张图就绪 → 默认走模式 A，失败回退 B
-      ├── 步骤 1: ai-img-check --mode prompt --design-image .. --dev-image ..  取 prompt
-      ├── 步骤 2: Read 两张截图 → 看得到图像内容？
-      │   ├── 是 → 按 prompt 输出 Markdown 报告
-      │   │        → ai-img-check --mode parse --markdown-file <报告路径>  解析为 diff
-      │   └── 否（乱码/不支持图片）→ 回退模式 B
-      │                             → 需用户提供两张图的**本地文件路径**
-      │                             → ai-img-check --design-image <本地路径> --dev-image <本地路径>  server 兜底
+  └── 用户已在对话中传入两张截图
+      ├── ai-img-check --mode prompt                                          取 prompt
+      ├── 看对话中的两张图 + prompt → 输出简短总结 + 差异 JSON → 写入文件（如 diff.json）
+      └── ai-img-check --mode build --diff-file diff.json --design-image <设计稿图> --dev-image <实现图>
+          → 生成 HTML 标注图（红框/黄框叠在图上 + 差异清单表格）→ 返回 htmlPath
+          → 告诉用户用浏览器打开 htmlPath 查看
 ```
+
+全程不调 server `/img/checker`，不占 server VLM 额度。
 
 **与 `ui-style-check` 的区别与关系**：
 - `ui-style-check`：基于**节点树 JSON** 的算法比对，精确到属性值，需要采集结构化数据
-- `ai-img-check`：基于**截图**的视觉比对，直观但耗时较长（模式 B 30-90 秒），适合无结构化数据的场景或作为算法结果的补充
+- `ai-img-check`：基于**截图**的视觉比对，直观，适合无结构化数据的场景或作为算法结果的补充
 - 两者可独立使用，也可先后使用互相印证
-
-**耗时提示**：模式 B 通常耗时 30-90 秒，回退到模式 B 时应告知用户耐心等待。模式 A 由 AI 自身看图，耗时取决于 AI。
 
 ---
 
@@ -242,52 +225,34 @@ devlint-skill design-spec-check [--cwd <项目目录>] --source <HTML路径或UR
 
 ### ai-img-check
 
-支持三种模式，通过 `--mode` 切换。`--mode` 省略时参数默认值为 `server`（模式 B）；**但 agent 应按主线三流程，先尝试模式 A，Read 图片看不到图像时才回退模式 B。**
+两步操作：取 prompt → 看图输出差异 JSON → 生成 HTML 标注图。
 
-#### 模式 A-1：取 prompt（`--mode prompt`）
-
-```bash
-devlint-skill ai-img-check [--cwd <项目目录>] --mode prompt [--design-image <path>] [--dev-image <path>]
-```
-
-- 返回 system prompt（复制自 server，不依赖 server 运行）
-- `--design-image` / `--dev-image` 可选，仅用于回传给 AI 记录图路径
-- 输出：`{ mode:"prompt", prompt, designImage, devImage, hint }`
-- **下一步**：AI 自行读取两张截图、按 `prompt` 约定的 Markdown 格式输出完整报告，再调模式 A-3 解析
-
-#### 模式 A-3：解析报告（`--mode parse`）
+#### 第 1 步：取 prompt（`--mode prompt`）
 
 ```bash
-devlint-skill ai-img-check [--cwd <项目目录>] --mode parse --markdown-file <报告文件路径>
-# 或
-devlint-skill ai-img-check [--cwd <项目目录>] --mode parse --markdown <报告文本>
+devlint-skill ai-img-check [--cwd <项目目录>] --mode prompt
 ```
 
-- `--markdown-file` 与 `--markdown` 二选一；文件优先
-- 调 server `POST /api/img/checker/diff` 解析 Markdown 为结构化 diff
-- 输出与模式 B 一致：`{ overallLevel, score, stats, diffs, totalDiffs, reportPath }`
+- 返回 system prompt（针对对话场景优化，不依赖 server 运行）
+- 图片已在对话上下文中，agent 直接看图，无需额外传参
+- 输出：`{ mode:"prompt", prompt, hint }`
+- **下一步**：看对话中的两张截图 + prompt，输出简短总结 + 差异 JSON（含归一化坐标），把 JSON 写入文件后调第 2 步
 
-#### 模式 B：server 兜底（`--mode server` 或省略）
+#### 第 2 步：生成 HTML 标注图（`--mode build`）
 
 ```bash
-devlint-skill ai-img-check [--cwd <项目目录>] [--mode server] --design-image <本地路径> --dev-image <本地路径> [--prompt <补充说明>]
+devlint-skill ai-img-check [--cwd <项目目录>] --mode build --diff-file <diff.json> --design-image <设计稿图> --dev-image <实现图>
 ```
 
-- `--design-image`: 设计稿截图的**本地文件路径**（必填，png/jpg/webp/bmp）
-- `--dev-image`: 开发侧截图的**本地文件路径**（必填，png/jpg/webp/bmp）
-- ⚠️ **必须是本地文件绝对路径**，不接受 URL / 传送码 / 远程图片。用户只给了远程地址时，先提示用户下载到本地或给出本地路径，拿到后再调用
-- `--prompt`: 补充说明文字（可选，默认"请对比这两张图的 UI 还原差异"），如"重点检查顶部导航栏"
-- 耗时较长：通常 30-90 秒，调用前应告知用户耐心等待
-- **bash 超时设置**：调用模式 B 时**必须**在 bash 工具中设置 `timeout: 300000`（5 分钟），避免默认 120 秒超时杀进程
-- 工具内部读取本地图片转 base64 上传，**图片内容不占用 AI 上下文**
-- 依赖 server 运行（`POST /api/img/checker` + `POST /api/img/checker/diff`）
-- 输出：`{ overallLevel, score, stats, diffs: 前10条, totalDiffs, reportPath }`
-  - `overallLevel`: 还原度等级（"高"/"中"/"低"）
-  - `score`: 还原度评分（0-100）
-  - `stats`: 统计信息（errorCount / warningCount / designNodes / arkuiNodes / matchedPairs 等）
-  - `diffs`: 差异清单前 10 条，每条含 property / designValue / arkuiValue / severity / suggestion / textContent 等
-  - `totalDiffs`: 差异总数
-  - `reportPath`: 完整 Markdown 报告路径，后续修改代码时直接读该文件
+- `--diff-file`：agent 输出的差异 JSON 文件（纯 JSON 或含 json 代码块的 Markdown 均可）
+- `--design-image`：设计稿截图（png/jpg/webp/bmp）
+- `--dev-image`：开发侧截图（png/jpg/webp/bmp）
+- 生成自包含 HTML 文件（红框/黄框/蓝框叠在图上 + 差异清单表格），用户用浏览器打开即可查看
+- 输出：`{ htmlPath, totalDiffs, overallLevel, score }`
+  - `htmlPath`：HTML 标注图文件，告诉用户用浏览器打开
+  - `totalDiffs`：差异总数
+  - `overallLevel`：还原度等级（"高"/"中"/"低"）
+  - `score`：还原度评分（0-100）
 
 ---
 
@@ -349,7 +314,7 @@ devlint-skill ai-img-check [--cwd <项目目录>] [--mode server] --design-image
 | `ui-style-check` | server 不可达 / 文件不存在 / 检查超时 | 向用户提供：① 确认检查服务是否正常运行 ② 确认文件路径是否正确 ③ 重试一次 |
 | `list-design-specs` | 规则库拉取失败 / 网络错误 | 向用户报告错误，询问是否重试；不要自行假设规范名直接调 design-spec-check |
 | `design-spec-check` | source 不可达 / 规则文件不存在 / 检查超时 | 向用户提供：① 确认 source 路径/URL 可访问 ② 确认 spec-file-paths 来自 list-design-specs ③ 重试一次 |
-| `ai-img-check` | 模式 B：server 不可达 / 图片不存在 / 检查超时（>120秒）；模式 A-3：server /diff 不可达 / markdown 为空 | 向用户提供：① 确认 server 运行正常 ② 确认图片路径正确 ③ 模式 B 偶发慢可重试一次 ④ 模式 A 改用模式 B 兜底 |
+| `ai-img-check` | prompt 取回失败 / build 时 diff JSON 解析失败 / 图片读取失败 | 向用户提供：① 确认 diff JSON 格式正确 ② 确认图片可正常读取 ③ 重试一次 |
 
 ### 严格禁止的失败处理方式
 
@@ -381,17 +346,12 @@ devlint-skill ai-img-check [--cwd <项目目录>] [--mode server] --design-image
 
 ## ai-img-check 结果呈现规则
 
-拿到结果后，按以下格式展示给用户：
+拿到 build 结果后，按以下格式展示给用户：
 
-1. 先展示**整体还原度**：等级（高/中/低）+ 评分（0-100），如"整体还原度：中（72/100）"
-2. 再展示**差异统计**：error 数 / warning 数 / 缺失数 / 多余数
-3. 然后按**修改指令**格式逐条展示差异（前 10 条）：
-   - 「属性」期望 designValue，当前为 arkuiValue，建议改为 suggestion
-   - 标注 severity（error 为明显差异，warning 为轻微差异）
-   - 如有 textContent（元素文本），用『』括起帮助定位
-4. **不要展示** designNodeId / arkuiNodeId / matchType 等内部技术字段
-5. 如果没有差异，直接说 **"视觉检查未发现明显还原差异"**
-6. 完整报告见 **reportPath** 指向的 md 文件
+1. 展示**整体还原度**：等级（高/中/低）+ 评分（0-100）+ diff 总数
+2. 告诉用户**用浏览器打开 htmlPath** 查看带红框标注的对比图
+3. 简要口述前几条重点差异（从 agent 自己输出的简短总结中提取，不要复述全部）
+4. 如果没有差异（totalDiffs=0），直接说 **"视觉检查未发现明显还原差异，还原度良好"**
 
 ---
 
@@ -415,4 +375,4 @@ devlint-skill ai-img-check [--cwd <项目目录>] [--mode server] --design-image
 - [ ] 采集中断后是否继续了另一侧的采集？
 - [ ] 设计规范检查是否先调了 list-design-specs？（不能直接给 design-spec-check 传规范名）
 - [ ] list-design-specs 返回 matched=false 时，是否展示了候选让用户选定后重新匹配？
-- [ ] 视觉检查时，是否默认走模式 A（取 prompt → Read 两图 → 输出报告 → parse 解析）？Read 图片看不到图像内容时是否回退模式 B（告知用户耗时 30-90 秒）？
+- [ ] 视觉检查时，用户是否已在对话中传入两张截图？是 → 取 prompt → 看图输出差异 JSON → build 生成 HTML 标注图 → 告诉用户打开 htmlPath。
