@@ -22,6 +22,14 @@ export async function collectDesign(code, url) {
   const userInfo = { account: 'x123456' }
   setUserInfo(userInfo)
 
+  // 兼容内网传入 JSON 字符串：本地归一化取 account（不导入 session.getUserInfo，避免与内网同名函数冲突）
+  let account = ''
+  if (typeof userInfo === 'string') {
+    try { account = JSON.parse(userInfo)?.account || '' } catch {}
+  } else if (userInfo && typeof userInfo === 'object') {
+    account = userInfo.account || ''
+  }
+
   const dir = getSessionDir()
   const ts = timestamp()
   const jsonPath = join(dir, `design_${ts}.json`)
@@ -33,7 +41,7 @@ export async function collectDesign(code, url) {
       text: JSON.stringify({
         designJsonPath: jsonPath,
         designImagePath: imgPath,
-        account: userInfo?.account || '',
+        account: account,
       }, null, 2)
     }]
   }
