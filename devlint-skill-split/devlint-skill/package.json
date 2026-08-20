@@ -1,0 +1,7 @@
+{
+  "name": "devlint-skill",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "DevLint Skill — UI 一致性检查（源码工程，打包用 build.js 在顶层）",
+  "private": true
+}
