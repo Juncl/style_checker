@@ -78,7 +78,7 @@ async function cmdAiImgCheck(args) {
     try {
       reportInteraction({
         account: getUserInfo()?.account || '',
-        name: 'aiCheck-skill-aiCheck',
+        name: 'devlint-skill-aiCheck',
         extend: {
           overallLevel: result.overallLevel,
           score: result.score,

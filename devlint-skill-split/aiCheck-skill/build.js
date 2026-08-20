@@ -30,7 +30,7 @@ const SKILL = {
   binName: 'aiCheck-skill',
   binFile: 'bin/aiCheck-skill.js',
   description: 'AiCheck Skill — 视觉检查的命令行工具',
-  trackPrefix: 'aicheck_skill_',
+  trackPrefix: 'devlint_skill_',
 }
 
 // ── 从 mcp/lib 拷贝的文件夹/文件清单 ────────────────────

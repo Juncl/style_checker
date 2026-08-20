@@ -30,7 +30,7 @@ const SKILL = {
   binName: 'specCheck-skill',
   binFile: 'bin/specCheck-skill.js',
   description: 'SpecCheck Skill — 设计规范检查的命令行工具',
-  trackPrefix: 'speccheck_skill_',
+  trackPrefix: 'devlint_skill_',
 }
 
 // ── 从 mcp/lib 拷贝的文件夹/文件清单 ────────────────────
