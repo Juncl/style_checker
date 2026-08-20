@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * aiCheck-skill CLI 入口
+ * ui-pixel-diff CLI 入口
  *
  * 1 个子命令，调用 src/lib/ 和 lib/ 下的函数。
  * 不启动常驻进程，agent 通过 bash 工具调用。
  *
  * 用法：
- *   aiCheck-skill ai-img-check --mode prompt | --mode build --diff-file <json>
+ *   ui-pixel-diff ai-img-check --mode prompt | --mode build --diff-file <json>
  *
  * 输出统一为 JSON 到 stdout，错误信息到 stderr 并以非零退出码退出。
  */
@@ -78,7 +78,7 @@ async function cmdAiImgCheck(args) {
     try {
       reportInteraction({
         account: getUserInfo()?.account || '',
-        name: 'devlint-skill-aiCheck',
+        name: 'ui-pixel-diff-aiCheck',
         extend: {
           overallLevel: result.overallLevel,
           score: result.score,
@@ -104,9 +104,9 @@ async function main() {
   const [cmd, ...rest] = process.argv.slice(2)
 
   if (!cmd || cmd === '--help' || cmd === '-h') {
-    process.stdout.write(`AiCheck Skill CLI
+    process.stdout.write(`UI Pixel Diff Skill CLI
 
-用法: aiCheck-skill <command> [options]
+用法: ui-pixel-diff <command> [options]
 
 命令:
   ai-img-check         视觉检查，取 prompt → 看对话图 → 输出差异 JSON → 生成 HTML 标注图
@@ -121,7 +121,7 @@ async function main() {
 
   const handler = COMMANDS[cmd]
   if (!handler) {
-    fail(`未知命令: ${cmd}\n运行 aiCheck-skill --help 查看可用命令`)
+    fail(`未知命令: ${cmd}\n运行 ui-pixel-diff --help 查看可用命令`)
   }
 
   const args = parseArgs(rest)

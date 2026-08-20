@@ -1,13 +1,13 @@
 ---
-name: devlint-skill
-description: UI 一致性检查能力。支持采集鸿蒙 ArkUI 开发侧数据、采集 Web 页面 DOM 数据、采集 Pixso 设计稿数据、对比设计稿与开发实现输出差异修改清单。当用户提到 UI 一致性检查、设计稿对比、采集开发侧/设计侧数据、找差异等场景时加载本 skill。
+name: ui-param-diff
+description: UI设计页面一致性检查能力。支持采集鸿蒙 ArkUI 开发侧数据、采集 Web 页面 DOM 数据、采集 Pixso 设计稿数据、对比设计稿与开发实现输出差异修改清单。当用户提到 UI 一致性检查、设计稿对比、采集开发侧/设计侧数据、找差异等场景时加载本 skill。
 ---
 
 ## 🔴 硬性规则：禁止修改 skill 源码
 
 **skill 的所有文件（`bin/`、`src/`、`SKILL.md`、`install.js`、`package.json` 等）均为只读，绝对不允许修改。**
 
-- ❌ 禁止：tool 失败时尝试"修复"skill 源码（改 `bin/devlint-skill.js`、改 `src/lib/` 下任何文件）
+- ❌ 禁止：tool 失败时尝试"修复"skill 源码（改 `bin/ui-param-diff.js`、改 `src/lib/` 下任何文件）
 - ❌ 禁止：新增/删除/重命名 skill 目录下的文件
 - ❌ 禁止：编辑 `SKILL.md` 内容
 - ❌ 禁止：修改 `package.json` 依赖或版本号
@@ -23,7 +23,7 @@ description: UI 一致性检查能力。支持采集鸿蒙 ArkUI 开发侧数据
 
 ## 能力总览
 
-本 skill 通过 `devlint-skill` 命令行工具提供 4 个能力，使用 bash 工具调用：
+本 skill 通过 `ui-param-diff` 命令行工具提供 4 个能力，使用 bash 工具调用：
 
 | 命令 | 用途 | 输出 |
 |------|------|------|
@@ -36,18 +36,18 @@ description: UI 一致性检查能力。支持采集鸿蒙 ArkUI 开发侧数据
 
 ## 命令调用方式
 
-本 skill 的可执行入口位于 skill 目录下的 `bin/devlint-skill.js`。
+本 skill 的可执行入口位于 skill 目录下的 `bin/ui-param-diff.js`。
 
 **调用方式**（按优先级尝试）：
 
-1. 如果 `devlint-skill` 已注册到 PATH：
+1. 如果 `ui-param-diff` 已注册到 PATH：
    ```bash
-   devlint-skill <command> [options]
+   ui-param-diff <command> [options]
    ```
 
 2. 如果 `command not found`，使用 node 直接执行 skill 目录下的入口：
    ```bash
-   node <skill目录>/bin/devlint-skill.js <command> [options]
+   node <skill目录>/bin/ui-param-diff.js <command> [options]
    ```
 
 **首次使用前**，如果依赖未安装，需先在 skill 目录执行 `npm install --omit=dev`。
@@ -92,7 +92,7 @@ description: UI 一致性检查能力。支持采集鸿蒙 ArkUI 开发侧数据
 ### collect-arkui
 
 ```bash
-devlint-skill collect-arkui [--cwd <项目目录>] [--timeout 60000]
+ui-param-diff collect-arkui [--cwd <项目目录>] [--timeout 60000]
 ```
 
 - `--timeout`: 采集超时时间（ms），默认 60000
@@ -102,7 +102,7 @@ devlint-skill collect-arkui [--cwd <项目目录>] [--timeout 60000]
 ### collect-web
 
 ```bash
-devlint-skill collect-web [--cwd <项目目录>] --url <url或本地HTML路径> [--width 1920] [--height 1080] [--scale-factor 2] [--headless true]
+ui-param-diff collect-web [--cwd <项目目录>] --url <url或本地HTML路径> [--width 1920] [--height 1080] [--scale-factor 2] [--headless true]
 ```
 
 - `--url`: 目标页面地址（必填），支持两种格式：
@@ -117,7 +117,7 @@ devlint-skill collect-web [--cwd <项目目录>] --url <url或本地HTML路径> 
 ### collect-design
 
 ```bash
-devlint-skill collect-design [--cwd <项目目录>] --code <传送码> | --url <设计稿URL>
+ui-param-diff collect-design [--cwd <项目目录>] --code <传送码> | --url <设计稿URL>
 ```
 
 - `--code`: 传送码（如 `111`）
@@ -129,7 +129,7 @@ devlint-skill collect-design [--cwd <项目目录>] --code <传送码> | --url <
 ### ui-style-check
 
 ```bash
-devlint-skill ui-style-check [--cwd <项目目录>] \
+ui-param-diff ui-style-check [--cwd <项目目录>] \
   --design-json <path> \
   --dev-json <path> \
   [--platform hmPhone|hmWatch|web] \
@@ -196,7 +196,7 @@ devlint-skill ui-style-check [--cwd <项目目录>] \
 
 ### 严格禁止的失败处理方式
 
-- ❌ 失败后修改 skill 源码（改 `bin/devlint-skill.js`、改 `src/lib/` 下文件）
+- ❌ 失败后修改 skill 源码（改 `bin/ui-param-diff.js`、改 `src/lib/` 下文件）
 - ❌ 失败后修改 `SKILL.md` 或 `package.json`
 - ❌ 失败后跳过该 tool，用空数据或假数据继续往下走
 - ❌ 失败后无限重试（同一参数调用超过 3 次）

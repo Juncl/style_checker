@@ -1,0 +1,7 @@
+{
+  "name": "design-system-checker",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Design System Checker Skill — 设计规范检查（源码工程，打包用 build.js 在顶层）",
+  "private": true
+}

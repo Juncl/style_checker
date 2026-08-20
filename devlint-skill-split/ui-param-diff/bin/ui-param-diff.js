@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * devlint-skill CLI 入口
+ * ui-param-diff CLI 入口
  *
  * 4 个子命令，直接调用 src/lib/ 下的底层函数。
  * 不启动常驻进程，agent 通过 bash 工具调用。
  *
  * 用法：
- *   devlint-skill collect-arkui [--timeout 60000]
- *   devlint-skill collect-web --url <url> [--width 1920] [--height 1080] [--headless]
- *   devlint-skill collect-design --code <传送码> | --url <设计稿URL>
- *   devlint-skill ui-style-check --design-json <path> --dev-json <path> [--platform hmPhone] [--design-image <path>] [--dev-image <path>]
+ *   ui-param-diff collect-arkui [--timeout 60000]
+ *   ui-param-diff collect-web --url <url> [--width 1920] [--height 1080] [--headless]
+ *   ui-param-diff collect-design --code <传送码> | --url <设计稿URL>
+ *   ui-param-diff ui-style-check --design-json <path> --dev-json <path> [--platform hmPhone] [--design-image <path>] [--dev-image <path>]
  *
  * 输出统一为 JSON 到 stdout，错误信息到 stderr 并以非零退出码退出。
  */
@@ -192,9 +192,9 @@ async function main() {
   const [cmd, ...rest] = process.argv.slice(2)
 
   if (!cmd || cmd === '--help' || cmd === '-h') {
-    process.stdout.write(`DevLint Skill CLI
+    process.stdout.write(`UI Param Diff Skill CLI
 
-用法: devlint-skill <command> [options]
+用法: ui-param-diff <command> [options]
 
 命令:
   collect-arkui        采集鸿蒙 ArkUI 开发侧数据（仅 Windows）
@@ -212,7 +212,7 @@ async function main() {
 
   const handler = COMMANDS[cmd]
   if (!handler) {
-    fail(`未知命令: ${cmd}\n运行 devlint-skill --help 查看可用命令`)
+    fail(`未知命令: ${cmd}\n运行 ui-param-diff --help 查看可用命令`)
   }
 
   const args = parseArgs(rest)

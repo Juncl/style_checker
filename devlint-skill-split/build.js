@@ -3,7 +3,7 @@
  * build.js —— 顶层调度器
  *
  * 依次调用 3 个子 build，打出 3 个 zip。
- * 也可单独运行子 build：node devlint-skill/build.js
+ * 也可单独运行子 build：node ui-param-diff/build.js
  */
 
 import { execSync } from 'child_process'
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'url'
 const { join } = path
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
 const DIST = join(ROOT, 'dist')
-const SKILLS = ['devlint-skill', 'specCheck-skill', 'aiCheck-skill']
+const SKILLS = ['ui-param-diff', 'design-system-checker', 'ui-pixel-diff']
 
 console.log('════════════════════════════════════════')
 console.log('  DevLint Skill Split 统一打包')

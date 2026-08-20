@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * specCheck-skill CLI 入口
+ * design-system-checker CLI 入口
  *
  * 2 个子命令，直接调用 src/lib/ 下的底层函数。
  * 不启动常驻进程，agent 通过 bash 工具调用。
  *
  * 用法：
- *   specCheck-skill list-design-specs [--standard-name <规范名>] [--scene-name <场景名>]
- *   specCheck-skill design-spec-check --source <html路径或URL> --spec-file-paths <path1,path2,...>
+ *   design-system-checker list-design-specs [--standard-name <规范名>] [--scene-name <场景名>]
+ *   design-system-checker design-spec-check --source <html路径或URL> --spec-file-paths <path1,path2,...>
  *
  * 输出统一为 JSON 到 stdout，错误信息到 stderr 并以非零退出码退出。
  */
@@ -112,9 +112,9 @@ async function main() {
   const [cmd, ...rest] = process.argv.slice(2)
 
   if (!cmd || cmd === '--help' || cmd === '-h') {
-    process.stdout.write(`SpecCheck Skill CLI
+    process.stdout.write(`Design System Checker Skill CLI
 
-用法: specCheck-skill <command> [options]
+用法: design-system-checker <command> [options]
 
 命令:
   list-design-specs    模糊匹配规范名/场景名，返回规则文件路径列表
@@ -130,7 +130,7 @@ async function main() {
 
   const handler = COMMANDS[cmd]
   if (!handler) {
-    fail(`未知命令: ${cmd}\n运行 specCheck-skill --help 查看可用命令`)
+    fail(`未知命令: ${cmd}\n运行 design-system-checker --help 查看可用命令`)
   }
 
   const args = parseArgs(rest)

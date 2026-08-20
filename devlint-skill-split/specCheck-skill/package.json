@@ -1,7 +1,0 @@
-{
-  "name": "specCheck-skill",
-  "version": "1.0.0",
-  "type": "module",
-  "description": "SpecCheck Skill — 设计规范检查（源码工程，打包用 build.js 在顶层）",
-  "private": true
-}

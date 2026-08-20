@@ -1,13 +1,13 @@
 ---
-name: aiCheck-skill
-description: 视觉检查能力。支持对比两张截图（设计稿与开发实现），输出差异清单和带标注的 HTML 对比图。当用户提到图图对比、视觉检查、对比图片等场景时加载本 skill。
+name: ui-pixel-diff
+description: UI图图对比能力。支持对比两张截图（设计稿与开发实现），输出差异清单和带标注的 HTML 对比图。当用户提到图图对比、视觉检查、对比图片等场景时加载本 skill。
 ---
 
 ## 🔴 硬性规则：禁止修改 skill 源码
 
 **skill 的所有文件（`bin/`、`src/`、`lib/`、`SKILL.md`、`install.js`、`package.json` 等）均为只读，绝对不允许修改。**
 
-- ❌ 禁止：tool 失败时尝试"修复"skill 源码（改 `bin/aiCheck-skill.js`、改 `src/lib/` 或 `lib/` 下任何文件）
+- ❌ 禁止：tool 失败时尝试"修复"skill 源码（改 `bin/ui-pixel-diff.js`、改 `src/lib/` 或 `lib/` 下任何文件）
 - ❌ 禁止：新增/删除/重命名 skill 目录下的文件
 - ❌ 禁止：编辑 `SKILL.md` 内容
 - ❌ 禁止：修改 `package.json` 依赖或版本号
@@ -23,7 +23,7 @@ description: 视觉检查能力。支持对比两张截图（设计稿与开发�
 
 ## 能力总览
 
-本 skill 通过 `aiCheck-skill` 命令行工具提供 1 个能力，使用 bash 工具调用：
+本 skill 通过 `ui-pixel-diff` 命令行工具提供 1 个能力，使用 bash 工具调用：
 
 | 命令 | 用途 | 输出 |
 |------|------|------|
@@ -33,18 +33,18 @@ description: 视觉检查能力。支持对比两张截图（设计稿与开发�
 
 ## 命令调用方式
 
-本 skill 的可执行入口位于 skill 目录下的 `bin/aiCheck-skill.js`。
+本 skill 的可执行入口位于 skill 目录下的 `bin/ui-pixel-diff.js`。
 
 **调用方式**（按优先级尝试）：
 
-1. 如果 `aiCheck-skill` 已注册到 PATH：
+1. 如果 `ui-pixel-diff` 已注册到 PATH：
    ```bash
-   aiCheck-skill <command> [options]
+   ui-pixel-diff <command> [options]
    ```
 
 2. 如果 `command not found`，使用 node 直接执行 skill 目录下的入口：
    ```bash
-   node <skill目录>/bin/aiCheck-skill.js <command> [options]
+   node <skill目录>/bin/ui-pixel-diff.js <command> [options]
    ```
 
 **首次使用前**，如果依赖未安装，需先在 skill 目录执行 `npm install --omit=dev`。
@@ -98,7 +98,7 @@ description: 视觉检查能力。支持对比两张截图（设计稿与开发�
 #### 第 1 步：取 prompt（`--mode prompt`）
 
 ```bash
-aiCheck-skill ai-img-check [--cwd <项目目录>] --mode prompt
+ui-pixel-diff ai-img-check [--cwd <项目目录>] --mode prompt
 ```
 
 - 前提：用户已确认图片角色（第 0 步完成）
@@ -110,7 +110,7 @@ aiCheck-skill ai-img-check [--cwd <项目目录>] --mode prompt
 #### 第 2 步：生成 HTML 模板（`--mode build`）
 
 ```bash
-aiCheck-skill ai-img-check [--cwd <项目目录>] --mode build --diff-file <diff.json>
+ui-pixel-diff ai-img-check [--cwd <项目目录>] --mode build --diff-file <diff.json>
 ```
 
 - `--diff-file`：agent 输出的差异 JSON 文件（纯 JSON 或含 json 代码块的 Markdown 均可）
@@ -146,7 +146,7 @@ aiCheck-skill ai-img-check [--cwd <项目目录>] --mode build --diff-file <diff
 
 ### 严格禁止的失败处理方式
 
-- ❌ 失败后修改 skill 源码（改 `bin/aiCheck-skill.js`、改 `src/lib/` 或 `lib/` 下文件）
+- ❌ 失败后修改 skill 源码（改 `bin/ui-pixel-diff.js`、改 `src/lib/` 或 `lib/` 下文件）
 - ❌ 失败后修改 `SKILL.md` 或 `package.json`
 - ❌ 失败后跳过该 tool，用空数据或假数据继续往下走
 - ❌ 失败后无限重试（同一参数调用超过 3 次）

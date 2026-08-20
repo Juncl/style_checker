@@ -1,15 +1,15 @@
-# aiCheck-skill
+# ui-pixel-diff
 
 视觉检查工具：对比设计稿截图与开发实现截图，输出差异清单和带标注的 HTML 对比图。
 
 ## 安装
 
 ```bash
-# 1. 解压 aiCheck-skill-1.0.0.zip
+# 1. 解压 ui-pixel-diff-1.0.0.zip
 # 2. 进入解压目录
 npm install --omit=dev
 npm link
-# 3. 拷贝 SKILL.md 到 ~/.config/opencode/skills/aiCheck-skill/
+# 3. 拷贝 SKILL.md 到 ~/.config/opencode/skills/ui-pixel-diff/
 # 4. 重启 opencode
 ```
 

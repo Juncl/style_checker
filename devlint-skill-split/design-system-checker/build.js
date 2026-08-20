@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * devlint-skill 独立打包脚本
+ * design-system-checker 独立打包脚本
  *
- * 运行：node devlint-skill/build.js
- * 产物：dist/devlint-skill-<ver>.zip（版本跟随 devlint-mcp）
+ * 运行：node design-system-checker/build.js
+ * 产物：dist/design-system-checker-1.0.0.zip
  */
 
 import fs from 'fs'
@@ -15,32 +15,29 @@ import { fileURLToPath } from 'url'
 const { existsSync, readFileSync, writeFileSync, copyFileSync, mkdirSync, rmSync, cpSync, readdirSync, statSync } = fs
 const { join } = path
 
-const SELF = path.dirname(fileURLToPath(import.meta.url))     // devlint-skill-split/devlint-skill/
+const SELF = path.dirname(fileURLToPath(import.meta.url))     // devlint-skill-split/design-system-checker/
 const SPLIT_ROOT = join(SELF, '..')                             // devlint-skill-split/
 const MCP_DIR = join(SPLIT_ROOT, '..', 'devlint-mcp')
 const DIST = join(SPLIT_ROOT, 'dist')
 
 const MCP_PKG = JSON.parse(readFileSync(join(MCP_DIR, 'package.json'), 'utf-8'))
-const MCP_VERSION = MCP_PKG.version
 
 // ── skill 配置 ──────────────────────────────────────────
 
 const SKILL = {
-  name: 'devlint-skill',
-  version: MCP_VERSION,
-  binName: 'devlint-skill',
-  binFile: 'bin/devlint-skill.js',
-  description: 'DevLint Skill — UI 一致性检查的命令行工具',
+  name: 'design-system-checker',
+  version: '1.0.0',
+  binName: 'design-system-checker',
+  binFile: 'bin/design-system-checker.js',
+  description: 'Design System Checker Skill — 设计规范检查的命令行工具',
   trackPrefix: 'devlint_skill_',
 }
 
 // ── 从 mcp/lib 拷贝的文件夹/文件清单 ────────────────────
-// config.js 单文件 + 4 个功能文件夹（内网同文件夹内容可能不同，整体拷贝）
+// config.js 单文件 + 2 个功能文件夹（内网同文件夹内容可能不同，整体拷贝）
 const MCP_DIRS = [
   'utils',
-  'collectData/getArkui',
-  'collectData/getWebDom',
-  'collectData/getPixData',
+  'collectData/uxCheckOut',
 ]
 const MCP_FILES = [
   'config.js',
@@ -94,19 +91,6 @@ function copySrcLib(prodDir) {
   if (patched !== trackSrc) {
     writeFileSync(trackFile, patched)
     console.log(`      ✓ 打点前缀已替换: devlint_mcp_* → ${SKILL.trackPrefix}*`)
-  }
-}
-
-function copySrcScript(prodDir) {
-  const srcScript = join(MCP_DIR, 'script')
-  const dstScript = join(prodDir, 'src', 'script')
-  if (existsSync(srcScript)) {
-    rmSync(dstScript, { recursive: true, force: true })
-    mkdirSync(dstScript, { recursive: true })
-    cpSync(srcScript, dstScript, {
-      recursive: true,
-      filter: (src) => !src.includes('node_modules'),
-    })
   }
 }
 
@@ -180,7 +164,6 @@ mkdirSync(prodDir, { recursive: true })
 // 拷贝引擎
 console.log('  拷贝引擎...')
 copySrcLib(prodDir)
-copySrcScript(prodDir)
 
 // 拷贝 skill 专属文件
 console.log('  拷贝 skill 专属文件...')

@@ -1,15 +1,15 @@
-# devlint-skill
+# ui-param-diff
 
 UI 一致性检查工具：采集鸿蒙 ArkUI / Web / Pixso 设计稿数据，对比设计稿与开发实现，输出差异修改清单。
 
 ## 安装
 
 ```bash
-# 1. 解压 devlint-skill-<ver>.zip
+# 1. 解压 ui-param-diff-<ver>.zip
 # 2. 进入解压目录
 npm install --omit=dev
 npm link
-# 3. 拷贝 SKILL.md 到 ~/.config/opencode/skills/devlint-skill/
+# 3. 拷贝 SKILL.md 到 ~/.config/opencode/skills/ui-param-diff/
 # 4. 重启 opencode
 ```
 

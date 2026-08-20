@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * specCheck-skill 独立打包脚本
+ * ui-pixel-diff 独立打包脚本
  *
- * 运行：node specCheck-skill/build.js
- * 产物：dist/specCheck-skill-1.0.0.zip
+ * 运行：node ui-pixel-diff/build.js
+ * 产物：dist/ui-pixel-diff-1.0.0.zip
  */
 
 import fs from 'fs'
@@ -15,7 +15,7 @@ import { fileURLToPath } from 'url'
 const { existsSync, readFileSync, writeFileSync, copyFileSync, mkdirSync, rmSync, cpSync, readdirSync, statSync } = fs
 const { join } = path
 
-const SELF = path.dirname(fileURLToPath(import.meta.url))     // devlint-skill-split/specCheck-skill/
+const SELF = path.dirname(fileURLToPath(import.meta.url))     // devlint-skill-split/ui-pixel-diff/
 const SPLIT_ROOT = join(SELF, '..')                             // devlint-skill-split/
 const MCP_DIR = join(SPLIT_ROOT, '..', 'devlint-mcp')
 const DIST = join(SPLIT_ROOT, 'dist')
@@ -25,19 +25,18 @@ const MCP_PKG = JSON.parse(readFileSync(join(MCP_DIR, 'package.json'), 'utf-8'))
 // ── skill 配置 ──────────────────────────────────────────
 
 const SKILL = {
-  name: 'specCheck-skill',
+  name: 'ui-pixel-diff',
   version: '1.0.0',
-  binName: 'specCheck-skill',
-  binFile: 'bin/specCheck-skill.js',
-  description: 'SpecCheck Skill — 设计规范检查的命令行工具',
+  binName: 'ui-pixel-diff',
+  binFile: 'bin/ui-pixel-diff.js',
+  description: 'UI Pixel Diff Skill — 视觉检查的命令行工具',
   trackPrefix: 'devlint_skill_',
 }
 
 // ── 从 mcp/lib 拷贝的文件夹/文件清单 ────────────────────
-// config.js 单文件 + 2 个功能文件夹（内网同文件夹内容可能不同，整体拷贝）
+// config.js 单文件 + utils 文件夹（内网同文件夹内容可能不同，整体拷贝）
 const MCP_DIRS = [
   'utils',
-  'collectData/uxCheckOut',
 ]
 const MCP_FILES = [
   'config.js',
@@ -92,6 +91,17 @@ function copySrcLib(prodDir) {
     writeFileSync(trackFile, patched)
     console.log(`      ✓ 打点前缀已替换: devlint_mcp_* → ${SKILL.trackPrefix}*`)
   }
+}
+
+function copySkillLib(prodDir) {
+  const skillLibSrc = join(SELF, 'lib')
+  const skillLibDst = join(prodDir, 'lib')
+  rmSync(skillLibDst, { recursive: true, force: true })
+  mkdirSync(skillLibDst, { recursive: true })
+  cpSync(skillLibSrc, skillLibDst, {
+    recursive: true,
+    filter: (src) => !src.includes('node_modules'),
+  })
 }
 
 // ── 统计文件数 ──────────────────────────────────────────
@@ -156,6 +166,10 @@ if (!existsSync(join(MCP_DIR, 'lib'))) {
   console.error('✗ devlint-mcp/lib 目录不存在')
   process.exit(1)
 }
+if (!existsSync(join(SELF, 'lib'))) {
+  console.error(`✗ ${SKILL.name}/lib 目录不存在`)
+  process.exit(1)
+}
 
 // 清空 & 创建产物目录
 rmSync(prodDir, { recursive: true, force: true })
@@ -164,6 +178,7 @@ mkdirSync(prodDir, { recursive: true })
 // 拷贝引擎
 console.log('  拷贝引擎...')
 copySrcLib(prodDir)
+copySkillLib(prodDir)
 
 // 拷贝 skill 专属文件
 console.log('  拷贝 skill 专属文件...')
@@ -185,7 +200,7 @@ writeProdPkg(prodDir)
 makeZip(prodName)
 const zipPath = join(DIST, `${prodName}.zip`)
 const zipSize = (statSync(zipPath).size / 1024 / 1024).toFixed(2)
-const srcCount = countFiles(join(prodDir, 'src'))
+const srcCount = countFiles(join(prodDir, 'src')) + countFiles(join(prodDir, 'lib'))
 
 console.log(`  ✓ ${prodName}.zip (${zipSize} MB, 引擎 ${srcCount} 文件)`)
 console.log(`\n  产物: ${zipPath}`)

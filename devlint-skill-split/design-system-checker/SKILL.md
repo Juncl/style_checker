@@ -1,13 +1,13 @@
 ---
-name: specCheck-skill
-description: 设计规范检查能力。支持模糊匹配设计规范名/场景名、检查 HTML/URL 是否符合设计规范。当用户提到设计规范检查、规范走查、规范名匹配、检查是否符合 Octo 规范等场景时加载本 skill。
+name: design-system-checker
+description: UI规范一致性检查能力。支持模糊匹配设计规范名/场景名、检查 HTML/URL 是否符合设计规范。当用户提到设计规范检查、规范走查、规范名匹配、检查是否符合 Octo 规范等场景时加载本 skill。
 ---
 
 ## 🔴 硬性规则：禁止修改 skill 源码
 
 **skill 的所有文件（`bin/`、`src/`、`SKILL.md`、`install.js`、`package.json` 等）均为只读，绝对不允许修改。**
 
-- ❌ 禁止：tool 失败时尝试"修复"skill 源码（改 `bin/specCheck-skill.js`、改 `src/lib/` 下任何文件）
+- ❌ 禁止：tool 失败时尝试"修复"skill 源码（改 `bin/design-system-checker.js`、改 `src/lib/` 下任何文件）
 - ❌ 禁止：新增/删除/重命名 skill 目录下的文件
 - ❌ 禁止：编辑 `SKILL.md` 内容
 - ❌ 禁止：修改 `package.json` 依赖或版本号
@@ -23,7 +23,7 @@ description: 设计规范检查能力。支持模糊匹配设计规范名/场景
 
 ## 能力总览
 
-本 skill 通过 `specCheck-skill` 命令行工具提供 2 个能力，使用 bash 工具调用：
+本 skill 通过 `design-system-checker` 命令行工具提供 2 个能力，使用 bash 工具调用：
 
 | 命令 | 用途 | 输出 |
 |------|------|------|
@@ -34,18 +34,18 @@ description: 设计规范检查能力。支持模糊匹配设计规范名/场景
 
 ## 命令调用方式
 
-本 skill 的可执行入口位于 skill 目录下的 `bin/specCheck-skill.js`。
+本 skill 的可执行入口位于 skill 目录下的 `bin/design-system-checker.js`。
 
 **调用方式**（按优先级尝试）：
 
-1. 如果 `specCheck-skill` 已注册到 PATH：
+1. 如果 `design-system-checker` 已注册到 PATH：
    ```bash
-   specCheck-skill <command> [options]
+   design-system-checker <command> [options]
    ```
 
 2. 如果 `command not found`，使用 node 直接执行 skill 目录下的入口：
    ```bash
-   node <skill目录>/bin/specCheck-skill.js <command> [options]
+   node <skill目录>/bin/design-system-checker.js <command> [options]
    ```
 
 **首次使用前**，如果依赖未安装，需先在 skill 目录执行 `npm install --omit=dev`。
@@ -82,7 +82,7 @@ description: 设计规范检查能力。支持模糊匹配设计规范名/场景
 ### list-design-specs
 
 ```bash
-specCheck-skill list-design-specs [--cwd <项目目录>] [--standard-name <规范名>] [--scene-name <场景名>]
+design-system-checker list-design-specs [--cwd <项目目录>] [--standard-name <规范名>] [--scene-name <场景名>]
 ```
 
 - `--standard-name`: 规范名或分类名（可选，模糊匹配），如 `Octo`、`ICT 领域组件库`、`octo`
@@ -96,7 +96,7 @@ specCheck-skill list-design-specs [--cwd <项目目录>] [--standard-name <规�
 ### design-spec-check
 
 ```bash
-specCheck-skill design-spec-check [--cwd <项目目录>] --source <HTML路径或URL> --spec-file-paths <path1,path2,...>
+design-system-checker design-spec-check [--cwd <项目目录>] --source <HTML路径或URL> --spec-file-paths <path1,path2,...>
 ```
 
 - `--source`: 本地 HTML 文件路径 或 Web 页面 URL（必填）
@@ -143,7 +143,7 @@ specCheck-skill design-spec-check [--cwd <项目目录>] --source <HTML路径或
 
 ### 严格禁止的失败处理方式
 
-- ❌ 失败后修改 skill 源码（改 `bin/specCheck-skill.js`、改 `src/lib/` 下文件）
+- ❌ 失败后修改 skill 源码（改 `bin/design-system-checker.js`、改 `src/lib/` 下文件）
 - ❌ 失败后修改 `SKILL.md` 或 `package.json`
 - ❌ 失败后跳过该 tool，用空数据或假数据继续往下走
 - ❌ 失败后无限重试（同一参数调用超过 3 次）
