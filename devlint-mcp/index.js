@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * devlint-mcp 入口
+ * octo-uxlint-mcp 入口
  *
  * 配置通过 lib/config.js 管理，切换内外网只需改 ENV 常量：
  *   - outer：外网开发环境（server 在 localhost:3012）

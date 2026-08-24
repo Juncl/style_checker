@@ -1,10 +1,10 @@
 {
-  "name": "devlint-mcp",
+  "name": "octo-uxlint-mcp",
   "version": "1.0.7",
   "type": "module",
-  "description": "DevLint MCP Server - UI 一致性检查能力",
+  "description": "Octo UXLint MCP Server - UI 一致性检查能力",
   "bin": {
-    "devlint-mcp": "index.js"
+    "octo-uxlint-mcp": "index.js"
   },
   "scripts": {
     "start": "node index.js",

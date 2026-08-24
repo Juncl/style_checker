@@ -5,8 +5,6 @@
  *   启动 exe → 轮询等待 script 目录出现新的 json + 图片文件 → 移动到会话目录（.devlint/<年月日_时分秒>）
  *
  * 限制：arkui 采集只能在 Windows 电脑上执行（依赖 ArkUI Inspector 导出工具）。
- * 真实 .exe 文件部署时替换 devlint-mcp/script/export_arkui.exe 即可，本模块按扩展名扫描，
- * 不写死文件名。
  */
 
 import { spawn, spawnSync } from 'child_process'
@@ -27,7 +25,7 @@ import { getSessionDir } from '../../utils/session.js'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-// script 目录：devlint-mcp/script（相对当前文件向上 3 级到包根）
+
 const EXE_DIR = join(__dirname, '../../../script')
 
 // 默认采集超时时间（ms）
@@ -51,7 +49,7 @@ const EXE_PATH = join(EXE_DIR, EXE_NAME)
 function findExe() {
   if (!existsSync(EXE_PATH)) {
     throw new Error(
-      `未找到采集程序 ${EXE_PATH}，请确认 devlint-mcp/script/ 目录下存在 ${EXE_NAME}`
+      `未找到采集程序 ${EXE_PATH}，请确认 octo-uxlint-mcp/script/ 目录下存在 ${EXE_NAME}`
     )
   }
   return EXE_PATH

@@ -1,5 +1,5 @@
 /**
- * devlint-mcp 配置文件
+ * octo-uxlint-mcp 配置文件
  */
 
 const CHECK_ENV = 'outer';

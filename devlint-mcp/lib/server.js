@@ -18,7 +18,7 @@ import { resolveSpec } from './collectData/uxCheckOut/resolveSpec.js'
  */
 export function createMcpServer() {
   const mcp = new McpServer({
-    name: 'devlint-mcp',
+    name: 'octo-uxlint-mcp',
     version: '1.0.0',
   })
 
