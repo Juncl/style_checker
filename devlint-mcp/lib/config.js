@@ -26,5 +26,5 @@ export const config = {
   CHECK_SERVER_URL: CHECK_URL[CHECK_ENV],
   TRACK_URL: TRACK_URL[CHECK_ENV],
   SPEC_URL: SPEC_URL[CHECK_ENV],
-  DIR_NAME: '.devlint'
+  DIR_NAME: '.octo-uxlint'
 }

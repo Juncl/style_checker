@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { existsSync } from 'fs'
 import { extractSummary, generateReport } from './utils/report.js'
+import { generateHtmlReport } from './utils/htmlReport.js'
 import { fileToBlob } from './utils/tools.js'
 import { resetSession, getUserInfo } from './utils/session.js'
 import { trackCheckComplete, trackSpecCheckComplete } from './utils/track.js'
@@ -70,6 +71,7 @@ export function createMcpServer() {
       '  - actual: 开发侧的值（需改的值）',
       '- totalNodes: 问题节点总数',
       '- reportPath: 完整报告 md 文件路径，后续修改代码时读此文件',
+      '- htmlReportPath: 可视化 HTML 报告路径，浏览器打开可查看交互式差异列表（筛选/折叠/精准-模糊切换），结构与 client 预览态一致',
       '',
       '【输出指引】',
       '拿到结果后，按修改指令格式展示给用户，帮助开发者快速定位并修改代码：',
@@ -151,6 +153,12 @@ export function createMcpServer() {
         // 生成完整 md 报告
         const reportPath = generateReport(result)
 
+        // 生成可视化 HTML 报告
+        const htmlReportPath = generateHtmlReport(result, {
+          designImagePath: params.designImagePath,
+          devImagePath: params.devImagePath,
+        })
+
         // 打点：上报检查完成事件（fire-and-forget 不阻塞）
         try {
           trackCheckComplete({
@@ -172,8 +180,8 @@ export function createMcpServer() {
         }
 
         const tail = summary.nodes.length > MAX_PREVIEW
-          ? `\n\n（共 ${summary.nodes.length} 个问题节点，仅展示前 ${MAX_PREVIEW} 个，完整报告见 ${reportPath}）`
-          : `\n\n完整报告见 ${reportPath}`
+          ? `\n\n（共 ${summary.nodes.length} 个问题节点，仅展示前 ${MAX_PREVIEW} 个）\n完整报告见 ${reportPath}\n可视化报告见 ${htmlReportPath}`
+          : `\n\n完整报告见 ${reportPath}\n可视化报告见 ${htmlReportPath}`
 
         return {
           content: [

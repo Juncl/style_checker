@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UI 一致性检查报告</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+:root {
+  --octo-primary: #0067D1;
+  --octo-text-primary: #191919;
+  --octo-text-secondary: #777777;
+  --octo-text-disabled: #BFBFBF;
+  --octo-border-default: #E5E7EB;
+  --octo-border-separator: #DFDFDF;
+  --octo-surface-page: #FFFFFF;
+  --octo-surface-hover: #F3F4F6;
+  --octo-bg-canvas: #F8F8FA;
+  --octo-primary-subtle: #E6F2FD;
+  --report-dev-color: #E02128;
+  --report-dev-bg: rgba(224, 33, 40, 0.15);
+  --report-design-color: #09AA71;
+  --report-design-bg: rgba(9, 170, 113, 0.15);
+}
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--octo-bg-canvas);
+  color: var(--octo-text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 顶部栏 ── */
+.report-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 48px;
+  padding: 0 16px;
+  background: var(--octo-surface-page);
+  border-bottom: 1px solid var(--octo-border-separator);
+  flex-shrink: 0;
+}
+.report-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+.report-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+}
+.report-stat-error { color: var(--report-dev-color); font-weight: 600; }
+.report-stat-warn { color: #FAAD14; font-weight: 600; }
+
+/* ── 主布局 ── */
+.report-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.report-main.no-images .report-images { display: none; }
+.report-main.no-images .report-list { flex: 1; }
+
+/* ── 左侧图片区 ── */
+.report-images {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  border-right: 1px solid var(--octo-border-separator);
+}
+.img-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.img-col--dev { border-right: 1px solid var(--octo-border-separator); }
+.img-col-label {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--octo-text-primary);
+  background: var(--octo-surface-page);
+  border-bottom: 1px solid var(--octo-border-separator);
+  flex-shrink: 0;
+}
+.report-list .up-tabbar {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  background: var(--octo-surface-page);
+  border-bottom: 1px solid var(--octo-border-separator);
+  flex-shrink: 0;
+}
+.report-tab-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--octo-text-primary);
+}
+.img-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--octo-bg-canvas);
+}
+.img-wrapper {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.img-wrapper img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.img-wrapper canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* ── 右侧列表 ── */
+.report-list {
+  width: 400px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--octo-surface-page);
+  overflow: hidden;
+}
+
+/* 模式 tab */
+.match-mode-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: fit-content;
+  background: rgba(25, 25, 25, 0.05);
+  border-radius: 6px;
+  padding: 2px;
+  margin: 12px 12px 0;
+  position: relative;
+  flex-shrink: 0;
+}
+.match-mode-slider {
+  position: absolute;
+  top: 2px;
+  height: calc(100% - 4px);
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+  transition: left 200ms ease, width 200ms ease;
+  pointer-events: none;
+  z-index: 0;
+}
+.match-mode-tab {
+  position: relative;
+  z-index: 1;
+  height: 28px;
+  padding: 0 16px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--octo-text-secondary);
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+.match-mode-tab.active { color: var(--octo-primary); }
+.match-mode-tab--disabled {
+  color: var(--octo-text-disabled);
+  cursor: not-allowed;
+}
+
+/* 筛选标签 */
+.diff-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 12px 0;
+  flex-shrink: 0;
+}
+.diff-tab {
+  height: 28px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  background: rgba(25, 25, 25, 0.05);
+  color: var(--octo-text-primary);
+  transition: background 150ms ease, color 150ms ease;
+}
+.diff-tab.active {
+  background: var(--octo-primary-subtle);
+  color: var(--octo-primary);
+}
+
+/* 卡片列表 */
+.diff-cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+}
+.diff-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 0;
+  gap: 8px;
+  color: var(--octo-text-disabled);
+  font-size: 14px;
+}
+.diff-empty-icon { font-size: 32px; }
+
+/* 差异卡片 */
+.diff-card {
+  background: var(--octo-surface-page);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+.diff-card:last-child { margin-bottom: 0; }
+.diff-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  height: 36px;
+}
+.diff-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.diff-card-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diff-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 8px 8px;
+}
+.diff-prop-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px;
+  height: 28px;
+}
+.diff-prop-key {
+  font-size: 13px;
+  color: var(--octo-text-secondary);
+  flex-shrink: 0;
+}
+.diff-prop-val {
+  font-size: 13px;
+  color: var(--octo-text-primary);
+}
+.diff-cmp {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.diff-cmp-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  background: var(--octo-bg-canvas);
+  border-radius: 6px;
+}
+.diff-cmp-key {
+  font-size: 13px;
+  color: var(--octo-text-secondary);
+  flex-shrink: 0;
+  min-width: 28px;
+}
+.diff-cmp-none {
+  font-size: 13px;
+  color: var(--octo-text-disabled);
+}
+.diff-cmp-val {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+}
+.diff-cmp-val--dev { color: var(--report-dev-color); }
+.diff-cmp-val--design { color: var(--report-design-color); }
+.diff-cmp-val--dev .diff-val-text {
+  background: var(--report-dev-bg);
+  padding: 0 6px;
+  border-radius: 4px;
+}
+.diff-cmp-val--design .diff-val-text {
+  background: var(--report-design-bg);
+  padding: 0 6px;
+  border-radius: 4px;
+}
+.diff-val-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.color-dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
+}
+</style>
+</head>
+<body>
+<div class="report-header">
+  <h1 class="report-title" id="title">UI 一致性检查报告</h1>
+</div>
+<div class="report-main" id="main">
+  <div class="report-images" id="images"></div>
+  <div class="report-list" id="list"></div>
+</div>
+<script id="report-data" type="application/json">__REPORT_DATA__</script>
+<script>
+(function () {
+  var DATA = JSON.parse(document.getElementById('report-data').textContent);
+  var mode = 'precise';
+  var activeGroup = 'all';
+
+  function isPrecise(d) { return d.severity === 'error'; }
+
+  function modeDiffs() {
+    return mode === 'fuzzy'
+      ? DATA.items.filter(function (d) { return !isPrecise(d); })
+      : DATA.items.filter(function (d) { return isPrecise(d); });
+  }
+
+  function groupCounts() {
+    var list = modeDiffs();
+    var c = { all: list.length };
+    for (var i = 0; i < list.length; i++) {
+      var k = list[i].groupKey;
+      if (k === '__ignored__') continue;
+      c[k] = (c[k] || 0) + 1;
+    }
+    return c;
+  }
+
+  function visibleDiffs() {
+    var list = modeDiffs();
+    if (activeGroup === 'all') return list;
+    return list.filter(function (d) { return d.groupKey === activeGroup; });
+  }
+
+  function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function isEmptyVal(v) {
+    var s = String(v == null ? '' : v).trim();
+    return s === '' || s === '无' || s === 'none' || s === 'null';
+  }
+
+  function colorToCss(val) {
+    if (!val) return '';
+    var s = String(val).trim();
+    if (/^rgba?\(/i.test(s)) return s;
+    if (/^(linear|radial|conic)-gradient\(/i.test(s)) {
+      return s.replace(/#([0-9A-Fa-f]{8})\b/g, function (_, hex) {
+        var a = parseInt(hex.slice(0, 2), 16) / 255;
+        var r = parseInt(hex.slice(2, 4), 16);
+        var g = parseInt(hex.slice(4, 6), 16);
+        var b = parseInt(hex.slice(6, 8), 16);
+        return 'rgba(' + r + ',' + g + ',' + b + ',' + a.toFixed(2) + ')';
+      });
+    }
+    var h = s.replace('#', '');
+    if (/^[0-9A-Fa-f]{8}$/.test(h)) {
+      var a = parseInt(h.slice(0, 2), 16) / 255;
+      var r = parseInt(h.slice(2, 4), 16);
+      var g = parseInt(h.slice(4, 6), 16);
+      var b = parseInt(h.slice(6, 8), 16);
+      return 'rgba(' + r + ',' + g + ',' + b + ',' + a.toFixed(2) + ')';
+    }
+    return s;
+  }
+
+  function extractHex(val) {
+    var m = String(val || '').match(/#[0-9A-Fa-f]{6,8}/);
+    return m ? m[0] : '';
+  }
+
+  var COLOR_PROPS = ['fontColor', 'backgroundColor', 'border.color', 'borderColor', 'shadow.color'];
+  function isColorProp(p) { return COLOR_PROPS.indexOf(p) >= 0; }
+
+  function renderVal(prop, val, side) {
+    if (isEmptyVal(val)) return '<span class="diff-cmp-none">无</span>';
+    var text = String(val);
+    var html = '';
+    if (isColorProp(prop)) {
+      var hex = extractHex(text);
+      if (hex) {
+        html += '<span class="color-dot" style="background:' + colorToCss(hex) + '" title="' + esc(hex) + '"></span>';
+      }
+    }
+    html += '<span class="diff-val-text" title="' + esc(text) + '">' + esc(text) + '</span>';
+    return html;
+  }
+
+  /* ── 渲染图片区 ── */
+  function renderImages() {
+    var el = document.getElementById('images');
+    if (!DATA.devImgUrl && !DATA.designImgUrl) {
+      document.getElementById('main').classList.add('no-images');
+      return;
+    }
+
+    var html = '';
+
+    /* 开发侧 */
+    if (DATA.devImgUrl) {
+      html += '<div class="img-col img-col--dev">';
+      html += '<div class="img-col-label">开发侧</div>';
+      html += '<div class="img-stage"><div class="img-wrapper" data-side="dev">';
+      html += '<img src="' + esc(DATA.devImgUrl) + '" alt="开发侧截图">';
+      html += '<canvas></canvas>';
+      html += '</div></div></div>';
+    }
+
+    /* 设计侧 */
+    if (DATA.designImgUrl) {
+      html += '<div class="img-col">';
+      html += '<div class="img-col-label">设计侧</div>';
+      html += '<div class="img-stage"><div class="img-wrapper" data-side="design">';
+      html += '<img src="' + esc(DATA.designImgUrl) + '" alt="设计侧截图">';
+      html += '<canvas></canvas>';
+      html += '</div></div></div>';
+    }
+
+    el.innerHTML = html;
+
+    /* 绑定 load 事件 + 处理缓存图片 */
+    var imgs = el.querySelectorAll('.img-wrapper img');
+    for (var k = 0; k < imgs.length; k++) {
+      if (imgs[k].complete && imgs[k].naturalWidth) {
+        onImgLoad(imgs[k]);
+      } else {
+        imgs[k].addEventListener('load', function () { onImgLoad(this); });
+      }
+    }
+  }
+
+  /* 图片加载完成：canvas 对齐图片实际渲染尺寸 */
+  function onImgLoad(img) {
+    drawOverlay(img);
+  }
+
+  /* 在 canvas 上绘制 diff 节点框，canvas 对齐图片实际渲染尺寸 */
+  function drawOverlay(img) {
+    var wrapper = img.parentElement;
+    var canvas = wrapper.querySelector('canvas');
+    if (!canvas) return;
+    var side = wrapper.getAttribute('data-side');
+    var canvasData = side === 'dev' ? DATA.arkuiCanvas : DATA.designCanvas;
+    var nodes = side === 'dev' ? DATA.arkuiNodes : DATA.designNodes;
+    if (!canvasData || !canvasData.w || !canvasData.h) return;
+
+    /* 计算 object-fit:contain 后图片实际渲染区域 */
+    var boxW = img.clientWidth;
+    var boxH = img.clientHeight;
+    var natW = img.naturalWidth;
+    var natH = img.naturalHeight;
+    if (!boxW || !boxH || !natW || !natH) return;
+    var scale = Math.min(boxW / natW, boxH / natH);
+    var W = natW * scale;
+    var H = natH * scale;
+    /* contain 居中偏移 */
+    var offsetX = (boxW - W) / 2;
+    var offsetY = (boxH - H) / 2;
+
+    /* canvas 定位对齐图片实际区域 */
+    canvas.style.left = offsetX + 'px';
+    canvas.style.top = offsetY + 'px';
+
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    var ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, W, H);
+
+    var sx = W / canvasData.w;
+    var sy = H / canvasData.h;
+
+    var visibleNodeIds = {};
+    for (var i = 0; i < DATA.items.length; i++) {
+      var item = DATA.items[i];
+      if (item.severity !== 'error' && item.severity !== 'warning') continue;
+      if (String(item.property).startsWith('spacing.')) continue;
+      if (side === 'dev' && item.arkuiNodeId) {
+        visibleNodeIds[item.arkuiNodeId] = item.severity;
+      } else if (side === 'design' && item.designNodeId) {
+        visibleNodeIds[item.designNodeId] = item.severity;
+      }
+    }
+
+    for (var j = 0; j < nodes.length; j++) {
+      var n = nodes[j];
+      if (!n.rect) continue;
+      var sev = visibleNodeIds[n.id];
+      if (!sev) continue;
+      var r = n.rect;
+      if (!r.w || !r.h || (r.w < 3 && r.h < 3)) continue;
+      var x = r.x * sx;
+      var y = r.y * sy;
+      var w = r.w * sx;
+      var h = r.h * sy;
+      if (sev === 'error') {
+        ctx.fillStyle = 'rgba(224, 33, 40, 0.15)';
+        ctx.strokeStyle = '#E02128';
+      } else {
+        ctx.fillStyle = 'rgba(255, 80, 0, 0.12)';
+        ctx.strokeStyle = '#ff5000';
+      }
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([]);
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeRect(x, y, w, h);
+    }
+
+    ctx.restore();
+  }
+
+  /* 窗口 resize：重绘 canvas */
+  window.addEventListener('resize', function () {
+    var imgs = document.querySelectorAll('.img-wrapper img');
+    for (var i = 0; i < imgs.length; i++) {
+      drawOverlay(imgs[i]);
+    }
+  });
+
+  /* ── 渲染列表区 ── */
+  function renderList() {
+    var el = document.getElementById('list');
+    var preciseCount = DATA.items.filter(isPrecise).length;
+    var fuzzyCount = DATA.items.filter(function (d) { return !isPrecise(d); }).length;
+    var counts = groupCounts();
+    var groups = DATA.groups.filter(function (g) { return g.key === 'all' || counts[g.key]; });
+    var list = visibleDiffs();
+
+    var html = '';
+
+    /* tabbar 标题 */
+    html += '<div class="up-tabbar"><span class="report-tab-title">分析结果</span></div>';
+
+    /* 模式 tab */
+    html += '<div class="match-mode-tabs">';
+    html += '<div class="match-mode-slider" id="slider"></div>';
+    var pc = mode === 'precise';
+    if (fuzzyCount > 0) {
+      html += '<button class="match-mode-tab' + (pc ? ' active' : '') + '" data-mode="precise">精准检查(' + preciseCount + ')</button>';
+      html += '<button class="match-mode-tab' + (!pc ? ' active' : '') + '" data-mode="fuzzy">模糊比对(' + fuzzyCount + ')</button>';
+    } else {
+      html += '<button class="match-mode-tab active match-mode-tab--disabled">精准检查(' + preciseCount + ')</button>';
+    }
+    html += '</div>';
+
+    /* 筛选标签 */
+    html += '<div class="diff-tabs">';
+    for (var i = 0; i < groups.length; i++) {
+      var g = groups[i];
+      var cnt = counts[g.key] || 0;
+      html += '<button class="diff-tab' + (activeGroup === g.key ? ' active' : '') + '" data-group="' + g.key + '">' + esc(g.label) + '(' + cnt + ')</button>';
+    }
+    html += '</div>';
+
+    /* 卡片列表 */
+    if (list.length === 0) {
+      html += '<div class="diff-cards"><div class="diff-empty"><div class="diff-empty-icon">&#10003;</div><p>无差异项</p></div></div>';
+    } else {
+      html += '<div class="diff-cards">';
+      for (var j = 0; j < list.length; j++) {
+        var d = list[j];
+        html += '<div class="diff-card">';
+        html += '<div class="diff-card-head"><div class="diff-card-title">';
+        html += '<span class="diff-card-name" title="' + esc(d.cardName) + '">' + esc(d.cardName) + '</span>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div class="diff-card-body">';
+        html += '<div class="diff-prop-row"><span class="diff-prop-key">类型</span><span class="diff-prop-val">' + esc(d.label) + '</span></div>';
+        html += '<div class="diff-cmp">';
+        html += '<div class="diff-cmp-row"><span class="diff-cmp-key">开发</span><span class="diff-cmp-val diff-cmp-val--dev">' + renderVal(d.property, d.arkuiValue) + '</span></div>';
+        html += '<div class="diff-cmp-row"><span class="diff-cmp-key">设计</span><span class="diff-cmp-val diff-cmp-val--design">' + renderVal(d.property, d.designValue) + '</span></div>';
+        html += '</div>';
+        html += '</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    el.innerHTML = html;
+
+    /* 更新 slider */
+    var slider = document.getElementById('slider');
+    if (slider) {
+      var activeTab = el.querySelector('.match-mode-tab.active');
+      if (activeTab) {
+        slider.style.left = activeTab.offsetLeft + 'px';
+        slider.style.width = activeTab.offsetWidth + 'px';
+      }
+    }
+  }
+
+  function render() {
+    renderImages();
+    renderList();
+  }
+
+  /* 切换 tab / 筛选：只刷新列表，不重绘图片 */
+  function renderListOnly() {
+    renderList();
+  }
+
+  /* 事件委托 */
+  document.getElementById('list').addEventListener('click', function (e) {
+    var modeBtn = e.target.closest('.match-mode-tab');
+    if (modeBtn && !modeBtn.classList.contains('match-mode-tab--disabled')) {
+      mode = modeBtn.getAttribute('data-mode');
+      activeGroup = 'all';
+      renderListOnly();
+      return;
+    }
+    var groupBtn = e.target.closest('.diff-tab');
+    if (groupBtn) {
+      activeGroup = groupBtn.getAttribute('data-group');
+      renderListOnly();
+      return;
+    }
+  });
+
+  /* 初始化 */
+  document.getElementById('title').textContent = 'UI 一致性检查报告 · ' + (DATA.platform || 'unknown');
+  render();
+})();
+</script>
+</body>
+</html>
