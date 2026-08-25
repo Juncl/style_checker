@@ -30,7 +30,7 @@ description: UI设计页面一致性检查能力。支持采集鸿蒙 ArkUI 开�
 | `collect-arkui` | 采集鸿蒙 ArkUI 开发侧数据（仅 Windows） | devJsonPath, devImagePath |
 | `collect-web` | 采集 Web 页面 DOM 树 + 截图 | devJsonPath, devImagePath |
 | `collect-design` | 采集 Pixso 设计稿数据 + 截图 | designJsonPath, designImagePath, account |
-| `ui-style-check` | 对比设计稿与开发实现，输出差异清单（基于节点树 JSON 算法比对） | 问题节点 JSON + md 报告路径 |
+| `ui-style-check` | 对比设计稿与开发实现，输出差异清单（基于节点树 JSON 算法比对） | 问题节点 JSON + md 报告路径 + 可视化 HTML 报告路径 |
 
 ---
 
@@ -144,7 +144,7 @@ ui-param-diff ui-style-check [--cwd <项目目录>] \
 - `--design-image`: 设计稿截图路径（可选）
 - `--dev-image`: 开发侧截图路径（可选）
 - `--account`: 用户账号字符串（可选），来自 collect-design 返回的 account，透传用于打点；未传时自动用本机 IP 兜底
-- 输出：`{"platform":"...","nodes":[...],"totalNodes":N,"reportPath":"..."}`
+- 输出：`{"platform":"...","nodes":[...],"totalNodes":N,"reportPath":"...","htmlReportPath":"..."}`
 - 工具内部读取文件，**文件内容不占用 AI 上下文**
 
 ---
@@ -219,6 +219,7 @@ ui-param-diff ui-style-check [--cwd <项目目录>] \
 7. **不要展示**节点 ID、原始 path 数组等内部技术信息
 8. 如果没有差异，直接说 **"开发侧与设计稿一致，无需修改"**
 9. 完整问题清单见 **reportPath** 指向的 md 文件，后续修改代码时直接读该文件
+10. 可视化报告见 **htmlReportPath** 指向的 HTML 文件，浏览器打开可查看交互式差异列表（筛选/折叠/精准-模糊切换）
 
 ---
 
