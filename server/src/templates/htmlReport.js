@@ -1,10 +1,9 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
-import { join, dirname, relative } from 'path'
+import { readFileSync } from 'fs'
+import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { getSessionDir, getSessionTimestamp } from './session.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const TEMPLATE_PATH = join(__dirname, 'templates', 'report-template.html')
+const TEMPLATE_PATH = join(__dirname, 'report-template.html')
 
 // ── 属性分组（与 client DiffReport.vue issueKey / ISSUE_GROUPS 对齐）──
 
@@ -61,7 +60,7 @@ function issueLabel(property) {
   return ISSUE_LABELS[property] || property
 }
 
-// ── 共享辅助（与 report.js 同逻辑，独立维护避免耦合）──
+// ── 共享辅助 ──
 
 function buildPathMaps(result) {
   const arkuiByPath = new Map()
@@ -106,9 +105,19 @@ function truncate(text, max) {
   return text.length > max ? text.slice(0, max) + '...' : text
 }
 
+// ── 图片 buffer → base64 data URI ──
+
+function bufferToDataUri(buffer, fallbackName) {
+  if (!buffer) return ''
+  const ext = (fallbackName || '').toLowerCase().endsWith('.jpeg') || (fallbackName || '').toLowerCase().endsWith('.jpg')
+    ? 'image/jpeg'
+    : 'image/png'
+  return `data:${ext};base64,${Buffer.from(buffer).toString('base64')}`
+}
+
 // ── 数据组装 ──
 
-function buildReportData(result) {
+function buildReportData(result, imageBuffers = {}) {
   const diffs = result.diffs || []
   const { arkuiByPath, arkuiById, designById } = buildPathMaps(result)
 
@@ -135,7 +144,6 @@ function buildReportData(result) {
     }
   })
 
-  // 按 y→x 排序
   items.sort((a, b) => {
     const ay = (arkuiById.get(a.arkuiNodeId)?.rect?.y) ?? 0
     const by = (arkuiById.get(b.arkuiNodeId)?.rect?.y) ?? 0
@@ -147,7 +155,6 @@ function buildReportData(result) {
   const errorCount = diffs.filter(d => d.severity === 'error').length
   const warningCount = diffs.filter(d => d.severity === 'warning').length
 
-  // 节点列表（仅 rect + id，供 SVG 圈框用）
   const arkuiNodes = (result.allArkuiNodes || [])
     .filter(n => n.rect)
     .map(n => ({ id: n.id, rect: n.rect }))
@@ -155,7 +162,6 @@ function buildReportData(result) {
     .filter(n => n.rect)
     .map(n => ({ id: n.id, rect: n.rect }))
 
-  // 计算可见分组
   const groupCounts = { all: items.length }
   for (const it of items) {
     if (it.groupKey === '__ignored__') continue
@@ -173,44 +179,22 @@ function buildReportData(result) {
     designCanvas: result.canvas?.design || null,
     arkuiNodes,
     designNodes,
-    devImgUrl: '',
-    designImgUrl: '',
+    devImgUrl: bufferToDataUri(imageBuffers.devImageBuffer, imageBuffers.devImageName),
+    designImgUrl: bufferToDataUri(imageBuffers.designImageBuffer, imageBuffers.designImageName),
   }
 }
 
-// ── 图片路径处理 ──
-
-function resolveImgUrl(imgPath, outDir) {
-  if (!imgPath || !existsSync(imgPath)) return ''
-  try {
-    return relative(outDir, imgPath)
-  } catch {
-    return imgPath
-  }
-}
-
-// ── 主函数 ──
+// ── 主函数：返回完整 HTML 字符串 ──
 
 /**
- * 生成可视化 HTML 报告
+ * 生成可视化 HTML 报告（返回字符串，不写文件）
  *
  * @param {Object} result - server /check/upload 返回的完整结果
- * @param {{ designImagePath?: string, devImagePath?: string }} [imagePaths]
- * @param {string} [dir] - 输出目录，默认当前会话目录
- * @returns {string} html 文件路径
+ * @param {{ designImageBuffer?: Buffer, devImageBuffer?: Buffer, designImageName?: string, devImageName?: string }} [imageBuffers]
+ * @returns {string} 完整 HTML 字符串
  */
-export function generateHtmlReport(result, imagePaths = {}, dir) {
-  const outDir = dir || getSessionDir()
-  mkdirSync(outDir, { recursive: true })
-
-  const data = buildReportData(result)
-  data.devImgUrl = resolveImgUrl(imagePaths.devImagePath, outDir)
-  data.designImgUrl = resolveImgUrl(imagePaths.designImagePath, outDir)
-
+export function generateHtmlReport(result, imageBuffers = {}) {
+  const data = buildReportData(result, imageBuffers)
   const template = readFileSync(TEMPLATE_PATH, 'utf-8')
-  const html = template.replace('__REPORT_DATA__', JSON.stringify(data))
-
-  const htmlPath = join(outDir, `devlint_result_${getSessionTimestamp()}.html`)
-  writeFileSync(htmlPath, html, 'utf-8')
-  return htmlPath
+  return template.replace('__REPORT_DATA__', JSON.stringify(data))
 }

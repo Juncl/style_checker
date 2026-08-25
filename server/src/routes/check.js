@@ -5,6 +5,7 @@
  * - POST /api/check/case/:caseId?platform=   分析指定 case（从磁盘加载）
  * - POST /api/check/upload                   分析上传的文件（platform 从 form 字段读）
  * - POST /api/check/dump-to-json             dump 文本 → 初版 JSON（带 _sourceFormat: 'dump'）
+ * - POST /api/report/html                    由 result JSON + 图片 buffer 生成可视化 HTML 报告
  */
 
 import { Router } from 'express'
@@ -21,6 +22,7 @@ import { compareSpatialRelations } from '../comparators/spatialComparator.js'
 import { getPlatform, resolvePlatform } from '../config/platforms.js'
 import { buildDumpTree } from '../parsers/arkui/1-buildDumpTree.js'
 import { handleImgCheck, markdownToDiffReport } from '../AIChecker/imgCheck.js'
+import { generateHtmlReport } from '../templates/htmlReport.js'
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage() })
@@ -660,5 +662,41 @@ router.post('/img/checker/diff', (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
+
+// ── 生成可视化 HTML 报告 ─────────────────────────────────────────────────────────
+// POST /api/report/html
+// multipart: result(JSON string), designImage(file, 可选), devImage(file, 可选)
+// 返回 Content-Type: text/html，body 为完整 HTML 字符串
+router.post(
+  '/report/html',
+  upload.fields([
+    { name: 'result',      maxCount: 1 },
+    { name: 'designImage', maxCount: 1 },
+    { name: 'devImage',    maxCount: 1 },
+  ]),
+  (req, res) => {
+    try {
+      const files = req.files
+      if (!files?.result) {
+        return res.status(400).json({ error: '缺少 result JSON 字段' })
+      }
+      const result = JSON.parse(files.result[0].buffer.toString('utf-8'))
+
+      const html = generateHtmlReport(result, {
+        designImageBuffer: files.designImage?.[0]?.buffer,
+        designImageName:   files.designImage?.[0]?.originalname,
+        devImageBuffer:    files.devImage?.[0]?.buffer,
+        devImageName:      files.devImage?.[0]?.originalname,
+      })
+
+      res.setHeader('Content-Type', 'text/html; charset=utf-8')
+      res.send(html)
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: err.message })
+    }
+  }
+)
+
 
 export default router

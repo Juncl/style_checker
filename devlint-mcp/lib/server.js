@@ -1,10 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { existsSync } from 'fs'
+import { existsSync, writeFileSync } from 'fs'
+import { join } from 'path'
 import { extractSummary, generateReport } from './utils/report.js'
-import { generateHtmlReport } from './utils/htmlReport.js'
 import { fileToBlob } from './utils/tools.js'
-import { resetSession, getUserInfo } from './utils/session.js'
+import { resetSession, getUserInfo, getSessionDir, getSessionTimestamp } from './utils/session.js'
 import { trackCheckComplete, trackSpecCheckComplete } from './utils/track.js'
 import { config } from './config.js'
 import { collectWebDom } from './collectData/getWebDom/getWebDom.js'
@@ -153,11 +153,28 @@ export function createMcpServer() {
         // 生成完整 md 报告
         const reportPath = generateReport(result)
 
-        // 生成可视化 HTML 报告
-        const htmlReportPath = generateHtmlReport(result, {
-          designImagePath: params.designImagePath,
-          devImagePath: params.devImagePath,
-        })
+        // 生成可视化 HTML 报告（调 server 接口，返回 HTML 字符串后写入本地）
+        let htmlReportPath = ''
+        try {
+          const htmlForm = new FormData()
+          htmlForm.append('result', new Blob([JSON.stringify(result)], { type: 'application/json' }), 'result.json')
+          if (params.designImagePath) {
+            htmlForm.append('designImage', fileToBlob(params.designImagePath, 'image/png'), 'design.png')
+          }
+          if (params.devImagePath) {
+            htmlForm.append('devImage', fileToBlob(params.devImagePath, 'image/png'), 'arkui.png')
+          }
+          const htmlRes = await fetch(`${config.CHECK_SERVER_URL}/report/html`, {
+            method: 'POST',
+            body: htmlForm,
+          })
+          if (htmlRes.ok) {
+            const html = await htmlRes.text()
+            const outDir = getSessionDir()
+            htmlReportPath = join(outDir, `devlint_result_${getSessionTimestamp()}.html`)
+            writeFileSync(htmlReportPath, html, 'utf-8')
+          }
+        } catch {}
 
         // 打点：上报检查完成事件（fire-and-forget 不阻塞）
         try {
