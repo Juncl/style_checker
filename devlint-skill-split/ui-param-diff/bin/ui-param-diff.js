@@ -14,9 +14,9 @@
  * 输出统一为 JSON 到 stdout，错误信息到 stderr 并以非零退出码退出。
  */
 
-import { existsSync } from 'fs'
+import { existsSync, writeFileSync } from 'fs'
 import { fileURLToPath } from 'url'
-import { dirname } from 'path'
+import { dirname, join } from 'path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -27,7 +27,7 @@ import { collectWebDom } from '../src/lib/collectData/getWebDom/getWebDom.js'
 import { collectDesign } from '../src/lib/collectData/getPixData/getPixData.js'
 import { extractSummary, generateReport } from '../src/lib/utils/report.js'
 import { fileToBlob } from '../src/lib/utils/tools.js'
-import { resetSession, getUserInfo } from '../src/lib/utils/session.js'
+import { resetSession, getUserInfo, getSessionDir, getSessionTimestamp } from '../src/lib/utils/session.js'
 import { trackCheckComplete } from '../src/lib/utils/track.js'
 import { config } from '../src/lib/config.js'
 
@@ -156,6 +156,29 @@ async function cmdUiStyleCheck(args) {
   const summary = extractSummary(result)
   const reportPath = generateReport(result)
 
+  // 生成可视化 HTML 报告（调 server 接口，返回 HTML 字符串后写入本地）
+  let htmlReportPath = ''
+  try {
+    const htmlForm = new FormData()
+    htmlForm.append('result', new Blob([JSON.stringify(result)], { type: 'application/json' }), 'result.json')
+    if (designImagePath) {
+      htmlForm.append('designImage', fileToBlob(designImagePath, 'image/png'), 'design.png')
+    }
+    if (devImagePath) {
+      htmlForm.append('devImage', fileToBlob(devImagePath, 'image/png'), 'arkui.png')
+    }
+    const htmlRes = await fetch(`${config.CHECK_SERVER_URL}/report/html`, {
+      method: 'POST',
+      body: htmlForm,
+    })
+    if (htmlRes.ok) {
+      const html = await htmlRes.text()
+      const outDir = getSessionDir()
+      htmlReportPath = join(outDir, `devlint_result_${getSessionTimestamp()}.html`)
+      writeFileSync(htmlReportPath, html, 'utf-8')
+    }
+  } catch {}
+
   try {
     trackCheckComplete({
       account: account || getUserInfo()?.account || '',
@@ -174,6 +197,7 @@ async function cmdUiStyleCheck(args) {
     nodes: summary.nodes.slice(0, MAX_PREVIEW),
     totalNodes: summary.nodes.length,
     reportPath,
+    htmlReportPath,
   }
 
   output(preview)
