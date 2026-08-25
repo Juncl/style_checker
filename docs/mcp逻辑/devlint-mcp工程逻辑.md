@@ -182,7 +182,7 @@ export const config = {
 6. 提取摘要 + 生成完整报告
    extractSummary(result) → 精简摘要（仅 error 级差异，以设计侧节点维度组织）
    generateReport(result) → 完整 Markdown 报告（error + warning，以开发侧节点维度组织）
-                          落盘到 process.cwd()/.devlint/devlint_result.md
+                           落盘到 process.cwd()/.devlint/octo_uxlint_result.md
 
 7. 返回（控制上下文体积）
    截取 summary.nodes 前 10 个作为 preview
@@ -584,7 +584,7 @@ server 返回的完整结果包含大量内部信息（评分、统计、所有�
 
 #### 职责
 
-生成完整 Markdown 报告，写入 `process.cwd()/.devlint/devlint_result.md`，供 AI 后续读取完整问题清单（`ui_style_check` 返回的 reportPath 指向此文件）。
+生成完整 Markdown 报告，写入 `process.cwd()/.devlint/octo_uxlint_result.md`，供 AI 后续读取完整问题清单（`ui_style_check` 返回的 reportPath 指向此文件）。
 
 #### 与 extractSummary 的差异
 
@@ -608,7 +608,7 @@ server 返回的完整结果包含大量内部信息（评分、统计、所有�
 5. **排序**：按开发侧节点 rect 的 y→x 排序
 6. **统计**：error 数、warning 数
 7. **生成 Markdown**：报告头（平台/问题节点数/差异项总数/生成时间）→ 逐节点表格（属性/描述/设计值/开发值/修改建议）
-8. **落盘**：`writeFileSync` 写入 `.devlint/devlint_result.md`，返回路径
+8. **落盘**：`writeFileSync` 写入 `.devlint/octo_uxlint_result.md`，返回路径
 
 ---
 

@@ -197,7 +197,7 @@ const COMMANDS = {
      form.append('arkuiImage',  fileToBlob(devImagePath),   'arkui.png')    ← 可选
 4. POST `${config.CHECK_SERVER_URL}/check/upload`
 5. extractSummary(result)    → 精简摘要（以设计侧节点维度，仅 error 级）
-6. generateReport(result)    → 完整 Markdown 报告，落盘到 .devlint/devlint_result.md
+6. generateReport(result)    → 完整 Markdown 报告，落盘到 .devlint/octo_uxlint_result.md
 7. trackCheckComplete(...)   → 打点（fire-and-forget）
 8. resetSession()            → 结束本轮会话，下次采集开新目录
 9. 输出 preview：{ platform, nodes: 前10个, totalNodes, reportPath }
