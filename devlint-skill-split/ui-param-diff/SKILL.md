@@ -1,5 +1,5 @@
 ---
-name: ui-param-diff
+name: UI设计一致性检查
 description: UI设计页面一致性检查能力。支持采集鸿蒙 ArkUI 开发侧数据、采集 Web 页面 DOM 数据、采集 Pixso 设计稿数据、对比设计稿与开发实现输出差异修改清单。当用户提到 UI 一致性检查、设计稿对比、采集开发侧/设计侧数据、找差异等场景时加载本 skill。
 ---
 
