@@ -174,7 +174,7 @@ async function cmdUiStyleCheck(args) {
     if (htmlRes.ok) {
       const html = await htmlRes.text()
       const outDir = getSessionDir()
-      htmlReportPath = join(outDir, `devlint_result_${getSessionTimestamp()}.html`)
+      htmlReportPath = join(outDir, `octo_uxlint_result_${getSessionTimestamp()}.html`)
       writeFileSync(htmlReportPath, html, 'utf-8')
     }
   } catch {}

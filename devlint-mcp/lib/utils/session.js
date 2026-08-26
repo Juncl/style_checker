@@ -7,7 +7,7 @@ import { config } from '../config.js'
  *
  * 目的：让同一次 UI 一致性检查任务中的多个独立采集工具
  *   （collect_arkui / collect_web / collect_design）以及 ui_style_check
- *   生成的 devlint_result.md 都落到同一个动态子文件夹中，
+ *   生成的 octo_uxlint_result.md 都落到同一个动态子文件夹中，
  *   文件夹名格式为 .devlint/20260806_164959（年月日_时分秒）。
  *
  * 机制：MCP 进程模块作用域内维护 currentSessionDir
@@ -67,7 +67,7 @@ export function getSessionDir() {
  * 获取当前会话的时间戳字符串
  *
  * 与会话目录名保持一致（同一轮采集/检查共用），
- * 供报告文件名拼接使用（如 devlint_result_20260806_164959.md）。
+ * 供报告文件名拼接使用（如 octo_uxlint_result_20260806_164959.md）。
  * 若当前无活跃会话（如被显式传入 dir 的报告调用），即时生成新时间戳。
  * @returns {string} 形如 20260806_164959
  */

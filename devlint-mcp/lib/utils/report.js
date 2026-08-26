@@ -253,7 +253,7 @@ export function generateReport(result, dir) {
     })
   }
 
-  const mdPath = join(outDir, `devlint_result_${getSessionTimestamp()}.md`)
+  const mdPath = join(outDir, `octo_uxlint_result_${getSessionTimestamp()}.md`)
   writeFileSync(mdPath, lines.join('\n'), 'utf-8')
   return mdPath
 }
