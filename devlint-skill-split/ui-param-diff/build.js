@@ -147,7 +147,7 @@ function writeProdPkg(prodDir) {
 
 function makeZip(prodName) {
   if (os.platform() === 'win32') {
-    execSync(`powershell -NoProfile -Command "Compress-Archive -Path '${prodName}' -DestinationPath '${prodName}.zip' -Force"`, {
+    execSync(`powershell -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; $src = Join-Path $PWD '${prodName}'; $dst = Join-Path $PWD '${prodName}.zip'; if (Test-Path $dst) { Remove-Item $dst -Force }; [System.IO.Compression.ZipFile]::CreateFromDirectory($src, $dst, [System.IO.Compression.CompressionLevel]::Optimal, $true)"`, {
       cwd: DIST, stdio: 'inherit',
     })
   } else {
