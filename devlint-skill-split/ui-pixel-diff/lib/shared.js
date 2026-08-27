@@ -2,7 +2,7 @@
  * ai-img-check 公共工具
  *
  * - timestamp / getOutputDir：时间戳与落盘目录
- * - fileToBase64DataUrl：读图片转 base64（htmlBuilder / serverCheck 共用）
+ * - fileToBase64DataUrl：读图片转 base64（serverCheck 兜底方案专用，备选暂未启用）
  * - parseDiffReport / finalizeReport：server 兜底方案（serverCheck.js）专用，备选暂未启用
  *
  * 配置（server 地址 / .devlint 目录名）复用 src/lib/config.js。

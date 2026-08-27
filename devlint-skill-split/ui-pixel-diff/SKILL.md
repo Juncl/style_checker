@@ -1,6 +1,6 @@
 ---
 name: ui-pixel-diff
-description: UI图图对比能力。支持对比两张截图（设计稿与开发实现），输出差异清单和带标注的 HTML 对比图。当用户提到图图对比、视觉检查、对比图片等场景时加载本 skill。
+description: UI图图对比能力。支持对比两张截图（设计稿与开发实现），输出差异清单 Markdown 报告。当用户提到图图对比、视觉检查、对比图片等场景时加载本 skill。
 ---
 
 ## 🔴 硬性规则：禁止修改 skill 源码
@@ -27,7 +27,7 @@ description: UI图图对比能力。支持对比两张截图（设计稿与开�
 
 | 命令 | 用途 | 输出 |
 |------|------|------|
-| `ai-img-check` | 视觉检查，取 prompt → 看对话图 → 输出差异 JSON → 生成 HTML 标注图 | htmlPath + totalDiffs + overallLevel + score |
+| `ai-img-check` | 视觉检查，取 prompt → 看对话图 → 输出差异 JSON → 整理成 Markdown 报告 | reportPath + totalDiffs + overallLevel + score |
 
 ---
 
@@ -60,8 +60,8 @@ description: UI图图对比能力。支持对比两张截图（设计稿与开�
 0. **确认图片角色（必须最先做）**：检查用户在对话中是否已明确指出哪张是设计稿、哪张是开发实现。
    - 用户已明确指出（如"第一张是设计稿，第二张是开发"）→ 直接进入步骤 1
    - 用户**没有明确指出** → **必须问清楚**："请确认哪张是设计稿、哪张是开发实现？"，拿到明确答复后才能继续。**禁止猜测图片角色**
-1. `ai-img-check --mode prompt` → 取回 system prompt
-2. 看对话中的两张截图 + prompt → 输出简短总结 + 差异 JSON（含归一化坐标）→ 把 JSON 写入文件 → 调 `ai-img-check --mode build --diff-file <json>` 生成 HTML 模板 → **把图片填入模板的占位符位置** → 生成最终带图标注视图 HTML → 告诉用户用浏览器打开
+1. `ai-img-check --mode prompt` → 取回 system prompt（stdout 直接输出 prompt 全文，agent 当 system prompt 用）
+2. 看对话中的两张截图 + prompt → 输出简短总结 + 差异 JSON→ 把 JSON 写入文件 → 调 `ai-img-check --mode build --diff-file <json>` 整理成 Markdown 差异报告 → 告诉用户打开 md 报告查看
 
 ```
 用户意图：图图对比 / 视觉检查 / 对比图片
@@ -73,11 +73,11 @@ description: UI图图对比能力。支持对比两张截图（设计稿与开�
       ├── 步骤 1: ai-img-check --mode prompt                              取 prompt
       ├── 步骤 2: 看对话中的两张图 + prompt → 输出简短总结 + 差异 JSON → 写入文件（如 diff.json）
       ├── ai-img-check --mode build --diff-file diff.json
-      │   → 返回 { templatePath, designPlaceholder, devPlaceholder, ... }
-      └── 读模板 → 把图片填入 designPlaceholder / devPlaceholder 位置 → 保存最终 HTML → 告诉用户浏览器打开
+      │   → stdout: ✓ 报告已生成: <path>
+      └── 告诉用户打开 md 报告查看完整差异清单
 ```
 
-全程不调 server `/img/checker`，不占 server VLM 额度。
+全程不调 server `/img/checker`，不占 server VLM 额度。报告是纯文本 Markdown，不嵌入图片、不转 base64、没有占位符。
 
 ---
 
@@ -87,7 +87,7 @@ description: UI图图对比能力。支持对比两张截图（设计稿与开�
 
 ### ai-img-check
 
-三步操作：确认图片角色 → 取 prompt → 看图输出差异 JSON → 生成 HTML 模板。
+三步操作：确认图片角色 → 取 prompt → 看图输出差异 JSON → 整理成 Markdown 报告。
 
 #### 第 0 步：确认图片角色
 
@@ -104,25 +104,21 @@ ui-pixel-diff ai-img-check [--cwd <项目目录>] --mode prompt
 - 前提：用户已确认图片角色（第 0 步完成）
 - 返回 system prompt（针对对话场景优化，不依赖 server 运行）
 - 图片已在对话上下文中，agent 直接看图，无需额外传参
-- 输出：`{ mode:"prompt", prompt, hint }`
-- **下一步**：看对话中的两张截图 + prompt，输出简短总结 + 差异 JSON（含归一化坐标），把 JSON 写入文件后调第 2 步
+- stdout 直接输出 prompt 全文（纯文本，非 JSON），agent 当作 system prompt 使用
+- **下一步**：看对话中的两张截图 + prompt，输出简短总结 + 差异 JSON，把 JSON 写入文件后调第 2 步
 
-#### 第 2 步：生成 HTML 模板（`--mode build`）
+#### 第 2 步：生成 Markdown 报告（`--mode build`）
 
 ```bash
 ui-pixel-diff ai-img-check [--cwd <项目目录>] --mode build --diff-file <diff.json>
 ```
 
 - `--diff-file`：agent 输出的差异 JSON 文件（纯 JSON 或含 json 代码块的 Markdown 均可）
-- 生成 HTML 模板文件，图片位置为占位符（`__DESIGN_IMAGE_BASE64__` / `__DEV_IMAGE_BASE64__`），红框/黄框/蓝框已叠在图片位置上 + 差异清单表格已填充
-- **agent 需要把图片填入占位符位置**，生成最终带图标注视图 HTML
-- 输出：`{ templatePath, totalDiffs, overallLevel, score, designPlaceholder, devPlaceholder }`
-  - `templatePath`：HTML 模板文件路径
-  - `designPlaceholder`：设计稿图片占位符（`__DESIGN_IMAGE_BASE64__`）
-  - `devPlaceholder`：开发实现图片占位符（`__DEV_IMAGE_BASE64__`）
-  - `totalDiffs`：差异总数
-  - `overallLevel`：还原度等级（"高"/"中"/"低"）
-  - `score`：还原度评分（0-100）
+- 整理 diff JSON 为一份 Markdown 差异报告（还原度评分 + 总结 + 差异清单表格，按明显/轻微/缺失/多余排序），落盘到 `.devlint/`
+- 报告是纯文本 Markdown，**不嵌入图片、不转 base64、没有图片占位符/填图步骤**，打开即看
+- stdout 输出纯文本（报告路径 + 还原度摘要），不再输出 JSON
+- agent 从 stdout 第一行 `✓ 报告已生成: <path>` 提取报告路径
+- stdout 第二行为还原度摘要：`还原度: <等级>（<分数> / 100），共 <N> 处差异`
 
 ---
 
@@ -142,7 +138,7 @@ ui-pixel-diff ai-img-check [--cwd <项目目录>] --mode build --diff-file <diff
 
 | tool | 失败场景 | 处理方式 |
 |---|---|---|
-| `ai-img-check` | prompt 取回失败 / build 时 diff JSON 解析失败 / 图片读取失败 | 向用户提供：① 确认 diff JSON 格式正确 ② 确认图片可正常读取 ③ 重试一次 |
+| `ai-img-check` | prompt 取回失败 / build 时 diff JSON 解析失败 | 向用户提供：① 确认 diff JSON 格式正确 ② 重试一次 |
 
 ### 严格禁止的失败处理方式
 
@@ -159,11 +155,10 @@ ui-pixel-diff ai-img-check [--cwd <项目目录>] --mode build --diff-file <diff
 
 拿到 build 结果后，按以下格式展示给用户：
 
-1. 展示**整体还原度**：等级（高/中/低）+ 评分（0-100）+ diff 总数
-2. 读 templatePath 模板文件，把图片填入 designPlaceholder / devPlaceholder 占位符位置，保存为最终带图标注视图 HTML
-3. 告诉用户**用浏览器打开最终 HTML** 查看带红框标注的对比图
-4. 简要口述前几条重点差异（从 agent 自己输出的简短总结中提取，不要复述全部）
-5. 如果没有差异（totalDiffs=0），直接说 **"视觉检查未发现明显还原差异，还原度良好"**
+1. 展示**整体还原度**：等级（高/中/低）+ 评分（0-100）+ 差异总数（从 stdout 第二行摘要获取）
+2. 告诉用户**打开生成的 Markdown 报告**（stdout 第一行的 reportPath）查看完整差异清单
+3. 简要口述前几条重点差异（从 agent 自己输出的简短总结中提取，不要复述全部）
+4. 如果没有差异（totalDiffs=0），直接说 **"视觉检查未发现明显还原差异，还原度良好"**
 
 ---
 
@@ -171,4 +166,4 @@ ui-pixel-diff ai-img-check [--cwd <项目目录>] --mode build --diff-file <diff
 
 执行命令前逐项确认：
 
-- [ ] 用户是否已明确指出哪张是设计稿、哪张是开发实现？没明确指出 → 必须问清楚，禁止猜测。确认后再取 prompt → 看图输出差异 JSON → build 生成 HTML 模板 → 填入图片 → 告诉用户打开。
+- [ ] 用户是否已明确指出哪张是设计稿、哪张是开发实现？没明确指出 → 必须问清楚，禁止猜测。确认后再取 prompt → 看图输出差异 JSON → build 整理成 Markdown 报告 → 告诉用户打开。

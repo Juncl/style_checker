@@ -1,6 +1,6 @@
 # ui-pixel-diff
 
-视觉检查工具：对比设计稿截图与开发实现截图，输出差异清单和带标注的 HTML 对比图。
+视觉检查工具：对比设计稿截图与开发实现截图，输出差异清单 Markdown 报告。
 
 ## 安装
 
@@ -17,7 +17,7 @@ npm link
 
 | 命令 | 用途 |
 |------|------|
-| `ai-img-check` | 视觉检查，取 prompt → 看对话图 → 输出差异 JSON → 生成 HTML 标注图 |
+| `ai-img-check` | 视觉检查，取 prompt → 看对话图 → 输出差异 JSON → 整理成 Markdown 报告 |
 
 ## 使用
 

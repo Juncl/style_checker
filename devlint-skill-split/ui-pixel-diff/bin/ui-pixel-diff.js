@@ -8,7 +8,8 @@
  * 用法：
  *   ui-pixel-diff ai-img-check --mode prompt | --mode build --diff-file <json>
  *
- * 输出统一为 JSON 到 stdout，错误信息到 stderr 并以非零退出码退出。
+ * 结果以纯文本输出到 stdout，错误信息到 stderr 并以非零退出码退出。
+ * --mode build 的产物是一份 Markdown 差异报告（.md），不生成 HTML、不接触图片。
  */
 
 // ── 引擎函数（src/lib，mcp 共享）─────────────────────────
@@ -19,13 +20,9 @@ import { reportInteraction } from '../src/lib/utils/track.js'
 // ── skill 独有模块（lib/）───────────────────────────────
 
 import { getImgCheckPrompt } from '../lib/vlmCheck.js'
-import { buildHtmlReport } from '../lib/htmlBuilder.js'
+import { buildMdReport } from '../lib/mdBuilder.js'
 
 // ── 辅助 ────────────────────────────────────────────────
-
-function output(data) {
-  process.stdout.write(JSON.stringify(data, null, 2) + '\n')
-}
 
 function fail(msg) {
   process.stderr.write(`✗ ${msg}\n`)
@@ -57,21 +54,21 @@ function parseArgs(argv) {
  *
  * 两步操作：
  *   --mode prompt   取 system prompt，agent 看对话中的图输出差异 JSON（lib/vlmCheck.js）
- *   --mode build    用 agent 输出的 diff JSON 生成 HTML 模板（图片位置为占位符，agent 填入图片后得到最终 HTML）（lib/htmlBuilder.js）
+ *   --mode build    用 agent 输出的 diff JSON 整理成 Markdown 差异报告（lib/mdBuilder.js）
  */
 async function cmdAiImgCheck(args) {
   const mode = args.mode
 
-  // 第 1 步：返回 prompt
+  // 第 1 步：返回 prompt（纯文本输出到 stdout，agent 直接当 system prompt 用）
   if (mode === 'prompt') {
     const result = getImgCheckPrompt()
-    output(result)
+    process.stdout.write(result.prompt + '\n')
     return
   }
 
-  // 第 2 步：生成 HTML 模板（agent 填入图片后得到最终 HTML）
+  // 第 2 步：读 diff JSON → 整理成 Markdown 报告 → 落盘
   if (mode === 'build') {
-    const result = await buildHtmlReport({
+    const result = await buildMdReport({
       diffFile: args['diff-file'],
     })
 
@@ -87,7 +84,8 @@ async function cmdAiImgCheck(args) {
       })
     } catch {}
 
-    output(result)
+    process.stdout.write(`✓ 报告已生成: ${result.reportPath}\n`)
+    process.stdout.write(`还原度: ${result.overallLevel ?? '—'}（${result.score ?? '—'} / 100），共 ${result.totalDiffs} 处差异\n`)
     return
   }
 
@@ -109,7 +107,7 @@ async function main() {
 用法: ui-pixel-diff <command> [options]
 
 命令:
-  ai-img-check         视觉检查，取 prompt → 看对话图 → 输出差异 JSON → 生成 HTML 标注图
+  ai-img-check         视觉检查，取 prompt → 看对话图 → 输出差异 JSON → 整理成 Markdown 报告
 
 选项:
   --help, -h           显示帮助

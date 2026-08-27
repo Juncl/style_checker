@@ -5,9 +5,9 @@
  *
  *   getImgCheckPrompt()  取回 system prompt（引导 agent 输出简短总结 + 差异 JSON）
  *   agent 看对话中的两张图 + prompt → 输出简短总结 + diff JSON
- *   agent 把 JSON 写文件后调 ai-img-check --mode build 生成 HTML 标注图
+ *   agent 把 JSON 写文件后调 ai-img-check --mode build 整理成 Markdown 差异报告
  *
- * 完整流程见 SKILL.md 主线三。
+ * 完整流程见 SKILL.md 主线。
  */
 
 import { IMG_CHECKER_SYSTEM_PROMPT } from './imgCheckPrompt.js'
@@ -21,6 +21,6 @@ export function getImgCheckPrompt() {
   return {
     mode: 'prompt',
     prompt: IMG_CHECKER_SYSTEM_PROMPT,
-    hint: '用户已确认哪张是设计稿、哪张是开发实现后，看这两张截图，按 prompt 输出简短总结 + 差异 JSON（含归一化坐标），把 JSON 写文件后调 ai-img-check --mode build 生成带占位符的 HTML 模板，把图片填入占位符位置得到最终带图标注视图 HTML',
+    hint: '用户已确认哪张是设计稿、哪张是开发实现后，看这两张截图，按 prompt 输出简短总结 + 差异 JSON，把 JSON 写文件后调 ai-img-check --mode build 整理成 Markdown 差异报告，打开 md 文件即可查看',
   }
 }
