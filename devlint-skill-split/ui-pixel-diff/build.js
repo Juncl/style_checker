@@ -3,7 +3,7 @@
  * ui-pixel-diff 独立打包脚本
  *
  * 运行：node ui-pixel-diff/build.js
- * 产物：dist/ui-pixel-diff-1.0.0.zip
+ * 产物：dist/ui-pixel-diff-<ver>.zip（版本跟随本目录 package.json）
  */
 
 import fs from 'fs'
@@ -21,12 +21,13 @@ const MCP_DIR = join(SPLIT_ROOT, '..', 'devlint-mcp')
 const DIST = join(SPLIT_ROOT, 'dist')
 
 const MCP_PKG = JSON.parse(readFileSync(join(MCP_DIR, 'package.json'), 'utf-8'))
+const SELF_PKG = JSON.parse(readFileSync(join(SELF, 'package.json'), 'utf-8'))
 
 // ── skill 配置 ──────────────────────────────────────────
 
 const SKILL = {
   name: 'ui-pixel-diff',
-  version: '1.0.0',
+  version: SELF_PKG.version,
   binName: 'ui-pixel-diff',
   binFile: 'bin/ui-pixel-diff.js',
   description: 'UI Pixel Diff Skill — 视觉检查的命令行工具',

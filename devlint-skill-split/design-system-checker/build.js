@@ -3,7 +3,7 @@
  * design-system-checker 独立打包脚本
  *
  * 运行：node design-system-checker/build.js
- * 产物：dist/design-system-checker-1.0.0.zip
+ * 产物：dist/design-system-checker-<ver>.zip（版本跟随本目录 package.json）
  */
 
 import fs from 'fs'
@@ -21,12 +21,13 @@ const MCP_DIR = join(SPLIT_ROOT, '..', 'devlint-mcp')
 const DIST = join(SPLIT_ROOT, 'dist')
 
 const MCP_PKG = JSON.parse(readFileSync(join(MCP_DIR, 'package.json'), 'utf-8'))
+const SELF_PKG = JSON.parse(readFileSync(join(SELF, 'package.json'), 'utf-8'))
 
 // ── skill 配置 ──────────────────────────────────────────
 
 const SKILL = {
   name: 'design-system-checker',
-  version: '1.0.0',
+  version: SELF_PKG.version,
   binName: 'design-system-checker',
   binFile: 'bin/design-system-checker.js',
   description: 'Design System Checker Skill — 设计规范检查的命令行工具',
