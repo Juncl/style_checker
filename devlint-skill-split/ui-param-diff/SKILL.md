@@ -1,6 +1,6 @@
 ---
 name: UI设计一致性检查
-description: UI设计页面一致性检查能力。支持采集鸿蒙 ArkUI 开发侧数据、采集 Web 页面 DOM 数据、采集 Pixso 设计稿数据、对比设计稿与开发实现输出差异修改清单。当用户提到 UI 一致性检查、设计稿对比、采集开发侧/设计侧数据、找差异等场景时加载本 skill。
+description: UI设计页面一致性检查能力。支持采集鸿蒙 ArkUI 开发侧数据、采集 Web 页面 DOM 数据、采集设计稿数据、对比设计稿与开发实现输出差异修改清单。当用户提到 UI 一致性检查、设计稿对比、采集开发侧/设计侧数据、找差异等场景时加载本 skill。
 ---
 
 ## 🔴 硬性规则：禁止修改 skill 源码
@@ -29,7 +29,7 @@ description: UI设计页面一致性检查能力。支持采集鸿蒙 ArkUI 开�
 |------|------|------|
 | `collect-arkui` | 采集鸿蒙 ArkUI 开发侧数据（仅 Windows） | devJsonPath, devImagePath |
 | `collect-web` | 采集 Web 页面 DOM 树 + 截图 | devJsonPath, devImagePath |
-| `collect-design` | 采集 Pixso 设计稿数据 + 截图 | designJsonPath, designImagePath, account |
+| `collect-design` | 采集设计稿数据 + 截图 | designJsonPath, designImagePath, account |
 | `ui-style-check` | 对比设计稿与开发实现，输出差异清单（基于节点树 JSON 算法比对） | 问题节点 JSON + md 报告路径 + 可视化 HTML 报告路径 |
 
 ---
@@ -56,7 +56,34 @@ description: UI设计页面一致性检查能力。支持采集鸿蒙 ArkUI 开�
 
 ## 主线：UI 一致性检查
 
+🔴 **硬性规则：采集只能用本 skill 自带的命令**
+
+触发本 skill 后，开发侧和设计侧的数据采集**只能用本 skill 自带的 `collect-arkui` / `collect-web` / `collect-design` 命令**，**禁止调用其他 MCP 工具或 skill 来采集数据**。如果用户已有本地 JSON/图片文件可直接传入 `ui-style-check`，无需采集。
+
 需要**设计侧**和**开发侧**两份数据，两侧就绪后执行 `ui-style-check`。
+
+### 🔵 用户未提供任何数据时的引导
+
+当用户只说"帮我做 UI 检查/一致性检查/找差异"但**没有提供任何数据**时，**不要直接执行任何命令**，先向用户列出需要提供的信息，引导用户逐项补充：
+
+本检查需要两份数据，缺一不可：
+
+**① 开发侧数据**（提供其一即可）：
+- 本地文件路径（`arkui.json` 或 `web.json`，附截图 `png/jpg`）→ 直接作为 `--dev-json` / `--dev-image`
+- 网页 URL 或本地 HTML 文件路径 → 执行 `collect-web` 自动采集（Web 平台）
+- 鸿蒙设备 → 执行 `collect-arkui` 自动采集（仅 Windows，需连接设备）
+
+**② 设计侧数据**（提供其一即可）：
+- 本地文件路径（`design.json`，附截图 `png/jpg`）→ 直接作为 `--design-json` / `--design-image`
+- 传送码（如 `111`）或设计稿 URL → 执行 `collect-design` 自动采集
+
+**③ 平台类型**（可选，默认 `hmPhone`）：`hmPhone`（鸿蒙手机）/ `hmWatch`（鸿蒙手表）/ `web`（Web 网页）
+
+请把上述清单整理成易读的文字发给用户，等用户逐项提供、两侧数据都就绪后再执行采集或检查命令。**如果用户只提供了一侧数据，继续追问缺失的那一侧，不要只拿一侧数据就执行检查。**
+
+> 此时向用户提供使用指南链接：`{{SKILL_GUIDE_URL}}`（其他场景是否给指南见下方「何时附上使用指南」）
+
+---
 
 ```
 用户意图：UI 一致性检查 / 设计稿对比 / 找差异
@@ -185,13 +212,26 @@ ui-param-diff ui-style-check [--cwd <项目目录>] \
 4. **禁止静默吞错**：不要忽略 stderr 错误信息继续执行，必须将错误原因如实告知用户
 5. **向用户求助**：重试耗尽或无法自动恢复时，**停下来让用户决定下一步**，不要自行猜测原因反复尝试
 
+### 何时附上使用指南
+
+在以下场景中，向用户提供使用指南链接 `{{SKILL_GUIDE_URL}}`：
+
+| 场景 | 是否给指南 |
+|---|---|
+| 用户什么都没提供、正在引导补充数据 | ✅ 给指南 |
+| `collect-design` 传送码无效 / 设计稿 URL 无法访问 / 采集超时 | ✅ 给指南 |
+| `collect-web` URL 无法访问 / 采集超时 | ❌ 不给指南 |
+| `collect-arkui` 非 Windows / 采集超时 | ❌ 不给指南 |
+| `ui-style-check` server 不可达 / 文件不存在 / 检查超时 | ❌ 不给指南 |
+| 检查正常完成、有差异结果 | ❌ 不给指南 |
+
 ### 各 tool 失败处理
 
 | tool | 失败场景 | 处理方式 |
 |---|---|---|
 | `collect-arkui` | 非 Windows / 启动失败 / 超时 | 继续设计侧采集；向用户提供：① Windows 环境重试 ② 手动提供 arkui.json/arkui.png 路径跳过采集 |
 | `collect-web` | 登录超时 / 导航超时 / 证书拦截 | 继续设计侧采集；向用户提供：① `--headless false` 有头模式重试 ② 手动提供 web.json/web.png 路径跳过采集 |
-| `collect-design` | 传送码无效 / 采集超时 / 网络错误 | 向用户提供：① 检查传送码后重新采集 ② 手动提供 design.json/design.png 路径 |
+| `collect-design` | 传送码无效 / 采集超时 / 网络错误 | 向用户提供：① 检查传送码后重新采集 ② 手动提供 design.json/design.png 路径 ③ 附上使用指南链接 `{{SKILL_GUIDE_URL}}` |
 | `ui-style-check` | server 不可达 / 文件不存在 / 检查超时 | 向用户提供：① 确认检查服务是否正常运行 ② 确认文件路径是否正确 ③ 重试一次 |
 
 ### 严格禁止的失败处理方式

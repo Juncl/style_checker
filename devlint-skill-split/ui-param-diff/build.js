@@ -195,6 +195,21 @@ for (const f of [SKILL.binFile, 'SKILL.md', 'README.md']) {
   copyFileSync(src, dst)
 }
 
+// patch SKILL.md 占位变量（从 mcp/lib/config.js 提取 SKILL_GUIDE_URL）
+{
+  const guideUrl = (readFileSync(join(MCP_DIR, 'lib', 'config.js'), 'utf-8')
+    .match(/SKILL_GUIDE_URL:\s*'([^']*)'/) || [])[1] || ''
+  if (guideUrl) {
+    const skillMdPath = join(prodDir, 'SKILL.md')
+    const skillMdSrc = readFileSync(skillMdPath, 'utf-8')
+    const patched = skillMdSrc.replace(/\{\{SKILL_GUIDE_URL\}\}/g, guideUrl)
+    if (patched !== skillMdSrc) {
+      writeFileSync(skillMdPath, patched)
+      console.log(`      ✓ SKILL.md 指南链接已替换: {{SKILL_GUIDE_URL}} → ${guideUrl}`)
+    }
+  }
+}
+
 // 生成 package.json
 writeProdPkg(prodDir)
 

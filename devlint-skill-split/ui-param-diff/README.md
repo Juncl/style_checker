@@ -1,6 +1,6 @@
 # ui-param-diff
 
-UI 一致性检查工具：采集鸿蒙 ArkUI / Web / Pixso 设计稿数据，对比设计稿与开发实现，输出差异修改清单。
+UI 一致性检查工具：采集鸿蒙 ArkUI / Web / 设计稿数据，对比设计稿与开发实现，输出差异修改清单。
 
 ## 安装
 
@@ -19,7 +19,7 @@ npm link
 |------|------|
 | `collect-arkui` | 采集鸿蒙 ArkUI 开发侧数据（仅 Windows） |
 | `collect-web` | 采集 Web 页面 DOM 树 + 截图 |
-| `collect-design` | 采集 Pixso 设计稿数据 + 截图 |
+| `collect-design` | 采集设计稿数据 + 截图 |
 | `ui-style-check` | 对比设计稿与开发实现，输出差异清单 |
 
 ## 使用

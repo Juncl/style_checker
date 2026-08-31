@@ -54,6 +54,22 @@ description: UI规范一致性检查能力。支持模糊匹配设计规范名/�
 
 ## 主线：设计规范检查
 
+### 🔵 用户未提供任何信息时的引导
+
+当用户只说"帮我检查设计规范/规范走查"但**没有提供任何信息**时，**不要直接执行任何命令**，先向用户说明需要提供：
+
+**① 检查目标**（必填），二选一：
+- 本地 HTML 文件路径（如 `/path/to/page.html`）
+- Web 页面 URL（如 `https://example.com/page`）
+
+**② 规范名/场景名**（可选，但建议提供，不提供会返回全量列表让用户选）：
+- 规范名或分类名，如 `Octo`、`ICT 领域组件库` 等
+- 场景名，如 `Web端_深色`、`移动端` 等
+
+请把上述清单发给用户，等用户给出检查目标后，再先调 `list-design-specs` 匹配规范，最后执行 `design-spec-check`。
+
+---
+
 ```
 用户意图：设计规范检查 / 规范走查 / 检查是否符合 Octo 规范
   │
@@ -104,7 +120,7 @@ design-system-checker design-spec-check [--cwd <项目目录>] --source <HTML路
   - 逗号分隔字符串：`--spec-file-paths "/a.json,/b.json,/c.json"`
   - 或 JSON 数组字符串：`--spec-file-paths '["/a.json","/b.json"]'`
 - **必须先调 `list-design-specs`** 拿到 `filePaths`，再传入本命令，不要直接传规范名
-- 输出：问题清单 JSON（结构由检查方法决定，外网环境为空结果占位，内网替换为真实检查实现）
+- 输出：问题清单 JSON（结构由检查方法决定）
 
 ---
 
