@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { existsSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { extractSummary, generateReport } from './utils/report.js'
-import { fileToBlob } from './utils/tools.js'
+import { fileToBlob, loadDesignJsonAsBlob } from './utils/tools.js'
 import { resetSession, getUserInfo, getSessionDir, getSessionTimestamp } from './utils/session.js'
 import { trackCheckComplete, trackSpecCheckComplete } from './utils/track.js'
 import { config } from './config.js'
@@ -146,7 +146,7 @@ export function createMcpServer() {
         // MCP 内部读文件，不经过 AI 上下文
         const form = new FormData()
         form.append('platform', params.platform)
-        form.append('designJson', fileToBlob(params.designJsonPath), 'design.json')
+        form.append('designJson', loadDesignJsonAsBlob(params.designJsonPath), 'design.json')
         form.append('arkuiJson', fileToBlob(params.devJsonPath), 'arkui.json')
         if (params.designImagePath) {
           form.append('designImage', fileToBlob(params.designImagePath), 'design.png')
