@@ -15,6 +15,9 @@
  * @returns {Promise<Object>} 报告 JSON（结构由接口实现定义）
  */
 import { config } from '../../config.js'
+import { appendFileSync, mkdirSync } from 'fs'
+import { join } from 'path'
+import { homedir } from 'os'
 
 export async function specCheck(domData, specFilePaths) {
   const res = await checkDesignTool({ domData, filePathList: specFilePaths });
@@ -33,7 +36,17 @@ async function checkDesignTool({ domData, filePathList = [], options = {} }) {
       const text = await res.text();
       throw new Error(`合规检查接口调用失败: HTTP ${res.status} - ${text}`);
     }
-    return await res.json();
+    const json = await res.json();
+
+    // ── 临时调试：接口响应 JSON 落盘，调试完删除本块 ──
+    try {
+      const dir = join(homedir(), '.octo-uxlint');
+      mkdirSync(dir, { recursive: true });
+      appendFileSync(join(dir, 'spec-check-resp.json'), JSON.stringify(json, null, 2) + '\n', 'utf-8');
+    } catch {}
+    // ── 临时调试结束 ──
+
+    return json;
   } catch (error) {
     console.error('合规检查失败:', error);
     throw error;
