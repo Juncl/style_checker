@@ -87,6 +87,44 @@ export function getChromeUserDataDir() {
 }
 
 /**
+ * 获取工具专用持久化 Chrome profile 目录（登录态仓库）
+ *
+ * 固定放用户主目录下（跨项目共享、不随工作目录迁移）：
+ *   ~/.octo-uxlint/chrome-profile
+ *
+ * 无头 / 有头模式共用同一目录，形成登录态自愈闭环：
+ *   - 有头登录一次 → Chrome 原生写入登录态（cookie / localStorage）
+ *   - 无头读取同一目录复用登录态
+ *   - cookie 过期 → 无头检测到登录页 → 降级有头重登 → 新登录态写回本目录
+ *
+ * 换账号 / 清空登录态：删除该目录即可。
+ *
+ * @returns {string} 持久 profile 目录绝对路径（自动创建）
+ */
+export function getPersistProfileDir() {
+  const dir = join(homedir(), '.octo-uxlint', 'chrome-profile')
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+/**
+ * 判断持久 profile 是否已初始化（存在 Default 子目录且非空）
+ *
+ * 仅当 Chrome 在目录里生成过 profile 结构（Default 非空）才算已初始化，
+ * 避免把刚创建的空目录误判为可用登录态。
+ *
+ * @returns {boolean}
+ */
+export function isPersistProfileReady() {
+  try {
+    const defaultDir = join(getPersistProfileDir(), 'Default')
+    return existsSync(defaultDir) && readdirSync(defaultDir).length > 0
+  } catch {
+    return false
+  }
+}
+
+/**
  * 需要复制的登录态文件（位于 Default 子目录下）
  * - 单文件：cookie / 登录数据 / 偏好
  * - 目录（递归复制）：localStorage、Session Storage
@@ -173,7 +211,7 @@ export function loadDesignJsonAsBlob(designJsonPath) {
 
   const version = detectDslVersion(obj)
   if (version === '非dsl') {
-    throw new Error('设计稿 JSON 不是有效的 DSL 格式（缺少 manifest+data 或 meta+content），无法进行检查')
+    throw new Error('设计稿 JSON 不是有效的格式，无法进行检查')
   }
 
   const finalObj = version === '2.0' ? convertDsl2To1(obj).data : obj

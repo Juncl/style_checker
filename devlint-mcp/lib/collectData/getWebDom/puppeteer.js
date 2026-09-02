@@ -1,5 +1,8 @@
 import puppeteer from 'puppeteer-core'
-import { getChromePath, getChromeUserDataDir, cloneChromeProfile, cleanupTempProfile } from '../../utils/tools.js'
+import {
+  getChromePath, getChromeUserDataDir, cloneChromeProfile, cleanupTempProfile,
+  getPersistProfileDir, isPersistProfileReady,
+} from '../../utils/tools.js'
 
 const CHROME_PATH = getChromePath()
 
@@ -18,16 +21,52 @@ const DEFAULT_RENDER_WAIT = 8000
 const HEADED_LOGIN_TIMEOUT = 120000
 
 /**
+ * 带重试的浏览器启动
+ *
+ * 无头与有头共用同一持久 profile（~/.octo-uxlint/chrome-profile），
+ * 前一个实例关闭后 SingletonLock 释放可能有延迟，立即启动会偶发锁冲突，
+ * 因此失败后间隔 1 秒重试。
+ *
+ * @param {Object} launchOptions - puppeteer.launch 选项
+ * @param {number} retries - 最大尝试次数，默认 3
+ * @returns {Promise<import('puppeteer').Browser>}
+ */
+async function launchWithRetry(launchOptions, retries = 3) {
+  let lastErr = null
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await puppeteer.launch(launchOptions)
+    } catch (err) {
+      lastErr = err
+      if (i < retries - 1) {
+        console.error(`[浏览器启动失败] ${err.message}，1秒后重试（${i + 1}/${retries - 1}）...`)
+        await new Promise(r => setTimeout(r, 1000))
+      }
+    }
+  }
+  throw new Error(
+    `浏览器启动失败（已重试 ${retries} 次）：${lastErr.message}。` +
+    '若之前弹出的浏览器窗口仍在，请先关闭后重试。'
+  )
+}
+
+/**
  * 启动无头浏览器实例（默认模式）
  *
- * 默认克隆用户日常 Chrome profile（cookie + localStorage + sessionStorage），
- * 无头模式下即可复用登录态，适合需登录的页面。
- * 找不到用户 profile 时退化为空白 profile（仅适合无登录限制的页面）。
+ * profile 选择三级回退：
+ *   1. options.userDataDir 显式指定 → 用它（优先级最高）
+ *   2. 持久 profile（~/.octo-uxlint/chrome-profile）已初始化 → 直接复用。
+ *      无头/有头共用同一目录，用户登录过一次后登录态永远最新，
+ *      且每次采集服务端续期的新 cookie 也会写回，无需任何同步动作
+ *   3. 都没有 → 克隆用户日常 Chrome profile（cookie + localStorage + sessionStorage），
+ *      适合首次冷启动（用户尚未在工具的有头窗口登录过）；
+ *      找不到用户 profile 时退化为空白 profile（仅适合无登录限制的页面）
  *
  * @param {Object} options - puppeteer launch 选项，覆盖默认值
  *   - headless: true 默认无头，调试时传 false
- *   - userDataDir: 指定 user-data-dir，优先级高于自动克隆
+ *   - userDataDir: 指定 user-data-dir，优先级最高
  * @returns {Promise<{ browser: import('puppeteer').Browser, tempProfileDir: string|null }>}
+ *   tempProfileDir 为 null 表示使用持久/外部 profile，关闭时不做清理
  */
 export async function launch(options = {}) {
   if (!CHROME_PATH) {
@@ -43,6 +82,9 @@ export async function launch(options = {}) {
   if (options.userDataDir) {
     args.push(`--user-data-dir=${options.userDataDir}`)
     delete options.userDataDir
+  } else if (isPersistProfileReady()) {
+    // 持久 profile 已初始化 → 直接复用（登录态自愈闭环的读取端）
+    args.push(`--user-data-dir=${getPersistProfileDir()}`)
   } else {
     const srcUserDataDir = getChromeUserDataDir()
     if (srcUserDataDir) {
@@ -230,8 +272,10 @@ export async function detectLoginPage(page, originalUrl) {
 /**
  * 有头模式采集（降级方案）
  *
- * 直接启动有头 Chrome（空白 profile，不克隆、不影响日常 Chrome），
+ * 使用专用持久 profile（~/.octo-uxlint/chrome-profile，不影响用户日常 Chrome）启动有头 Chrome，
  * 用户在弹出的窗口中手动操作（登录、跳过证书拦截等），工具检测到到达目标页面后自动采集。
+ * 登录完成后 Chrome 原生将登录态写入该 profile 持久保存，
+ * 后续无头采集自动复用，无需重复登录；换账号删除该目录即可重置。
  *
  * 适用于：
  * - 无头模式采集失败（导航超时、自签名证书拦截、网络错误等）
@@ -258,10 +302,11 @@ async function runHeadedWithProfile(url, options = {}) {
     )
   }
 
-  const browser = await puppeteer.launch({
+  const browser = await launchWithRetry({
     executablePath: CHROME_PATH,
     headless: false,
     ignoreHTTPSErrors: true,
+    userDataDir: getPersistProfileDir(),
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--start-maximized', '--ignore-certificate-errors'],
     defaultViewport: null,
   })
@@ -344,10 +389,11 @@ async function runHeadedWithProfile(url, options = {}) {
  * 完整采集流程（通道层封装）
  *
  * 流程：
- * 1. headless=true（默认）：无头模式（克隆用户 profile 复用登录态）
+ * 1. headless=true（默认）：无头模式，profile 三级回退：
+ *    ① 显式 userDataDir → ② 持久 profile 已初始化则复用登录态 → ③ 克隆日常 Chrome（冷启动）
  *    无头阶段任何失败（导航超时、自签名证书拦截、网络错误、检测到登录页等）
- *    → 自动降级有头模式（弹窗等用户手动操作后采集）
- * 2. headless=false：直接有头模式，弹出浏览器窗口让用户操作后采集
+ *    → 自动降级有头模式（同一持久 profile，用户手动登录后登录态落盘，下次免登）
+ * 2. headless=false：直接有头模式（持久 profile），弹出浏览器窗口让用户操作后采集
  *
  * @param {string} url - 目标页面地址
  * @param {Object} options
