@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, readdirSync, cpSync, rmSync, statSync } from 'fs'
 import { extname, join } from 'path'
 import { platform, homedir, tmpdir } from 'os'
-import { detectDslVersion, convertDsl2To1 } from '../collectData/getPixData/dsl2to1.js'
 
 /**
  * 获取 Chrome 可执行路径
@@ -294,26 +293,4 @@ export function cleanupProfileCaches() {
       }
     }
   } catch {}
-}
-
-/**
- * 读取设计稿 JSON 并转成 Blob
- * 自动识别 DSL 版本：1.0 直接用，2.0 先转 1.0，非 dsl 抛异常中断
- */
-export function loadDesignJsonAsBlob(designJsonPath) {
-  const raw = readFileSync(designJsonPath, 'utf-8')
-  let obj
-  try {
-    obj = JSON.parse(raw)
-  } catch {
-    throw new Error('设计稿 JSON 解析失败，请检查文件内容是否为合法 JSON')
-  }
-
-  const version = detectDslVersion(obj)
-  if (version === '非dsl') {
-    throw new Error('设计稿 JSON 不是有效的格式，无法进行检查')
-  }
-
-  const finalObj = version === '2.0' ? convertDsl2To1(obj).data : obj
-  return new Blob([JSON.stringify(finalObj)], { type: 'application/json' })
 }
