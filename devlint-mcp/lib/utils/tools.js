@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, mkdirSync, copyFileSync, readdirSync, cpSync, rmSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, readdirSync, cpSync, rmSync, statSync } from 'fs'
 import { extname, join } from 'path'
 import { platform, homedir, tmpdir } from 'os'
 import { detectDslVersion, convertDsl2To1 } from '../collectData/getPixData/dsl2to1.js'
@@ -125,6 +125,25 @@ export function isPersistProfileReady() {
 }
 
 /**
+ * 获取设计侧（设计稿采集）专用持久化 Chrome profile 目录
+ *
+ *   ~/.octo-uxlint/design-profile
+ *
+ * 与开发侧 chrome-profile 分开的原因：采集是并发的（开发侧 + 设计侧同时跑），
+ * 同一 userDataDir 无法被两个 Chrome 进程同时使用（SingletonLock 冲突、
+ * localStorage LevelDB 锁互斥）。两侧各自独立 profile，天然并发安全。
+ *
+ * 设计侧登录是固定 URL + 持久 cookie：登录一次长期有效，分开的代价可忽略。
+ *
+ * @returns {string} profile 目录绝对路径（自动创建）
+ */
+export function getDesignProfileDir() {
+  const dir = join(homedir(), '.octo-uxlint', 'design-profile')
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+/**
  * 需要复制的登录态文件（位于 Default 子目录下）
  * - 单文件：cookie / 登录数据 / 偏好
  * - 目录（递归复制）：localStorage、Session Storage
@@ -194,6 +213,87 @@ export function cloneChromeProfile(srcUserDataDir) {
  */
 export function cleanupTempProfile(dir) {
   try { rmSync(dir, { recursive: true, force: true }) } catch {}
+}
+
+// ── 登录态快照（auth snapshot）──────────────────────
+// 目的：解决"会话 cookie / sessionStorage 站点每次采集都要重新登录"的问题。
+// 原理：browser.close() 前把 cookie + localStorage 导出到 JSON 文件，
+//       下次启动浏览器后注入回去，登录态变成文件级持久，不受浏览器会话生命周期影响。
+// 存储：~/.octo-uxlint/auth-snapshots/<hostname>.json
+//  - cookies: CDP Storage.getCookies 导出的全量 cookie（含 SSO 跳转链各域），
+//    会话 cookie（无 expires）补远期有效期后写入，"转正"为持久 cookie
+//  - localStorage: 按页面对应域导出的键值对
+//  - savedAt: 保存时间，注入时可做过期控制（默认 7 天）
+
+/** 快照目录 */
+export function getAuthSnapshotDir() {
+  const dir = join(homedir(), '.octo-uxlint', 'auth-snapshots')
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+/** 快照文件路径（按 hostname 一站一文件） */
+export function getAuthSnapshotPath(url) {
+  const host = new URL(url).hostname
+  return join(getAuthSnapshotDir(), `${host}.json`)
+}
+
+/** 快照有效期（ms），默认 7 天 */
+const AUTH_SNAPSHOT_TTL = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * 读取快照（存在且未过期）
+ * @returns {Object|null} { cookies: [], localStorage: {}, savedAt: number }
+ */
+export function loadAuthSnapshot(url) {
+  try {
+    const file = getAuthSnapshotPath(url)
+    if (!existsSync(file)) return null
+    const snap = JSON.parse(readFileSync(file, 'utf-8'))
+    if (!snap || typeof snap !== 'object') return null
+    if (Date.now() - (snap.savedAt || 0) > AUTH_SNAPSHOT_TTL) return null
+    return snap
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 写入快照
+ * @param {string} url - 目标页 URL（取 hostname 作文件名）
+ * @param {Array} cookies - CDP Storage.getCookies 返回的 cookie 数组
+ * @param {Object} localStorage - 页面 localStorage 键值对象
+ */
+export function saveAuthSnapshot(url, cookies, localStorageData) {
+  try {
+    const snap = {
+      version: 1,
+      savedAt: Date.now(),
+      cookies: cookies || [],
+      localStorage: localStorageData || {},
+    }
+    writeFileSync(getAuthSnapshotPath(url), JSON.stringify(snap), 'utf-8')
+  } catch (err) {
+    console.error(`[快照保存失败] ${err.message}`)
+  }
+}
+
+/**
+ * 清理持久 profile 中可再生的大体积缓存目录（登录态不受影响）
+ * 每次 close 后调用，防止 chrome-profile 无限膨胀
+ */
+const PROFILE_CACHE_DIRS = ['Cache', 'Code Cache', 'GPUCache', 'Service Worker', 'Media Cache']
+export function cleanupProfileCaches() {
+  try {
+    const profileDefault = join(getPersistProfileDir(), 'Default')
+    if (!existsSync(profileDefault)) return
+    for (const d of PROFILE_CACHE_DIRS) {
+      const target = join(profileDefault, d)
+      if (existsSync(target) && statSync(target).isDirectory()) {
+        rmSync(target, { recursive: true, force: true })
+      }
+    }
+  } catch {}
 }
 
 /**

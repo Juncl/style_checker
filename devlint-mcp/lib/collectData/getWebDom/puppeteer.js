@@ -2,6 +2,7 @@ import puppeteer from 'puppeteer-core'
 import {
   getChromePath, getChromeUserDataDir, cloneChromeProfile, cleanupTempProfile,
   getPersistProfileDir, isPersistProfileReady,
+  loadAuthSnapshot, saveAuthSnapshot, cleanupProfileCaches,
 } from '../../utils/tools.js'
 
 const CHROME_PATH = getChromePath()
@@ -18,7 +19,7 @@ const DEFAULT_VIEWPORT = { width: 1920, height: 1080, deviceScaleFactor: 2 }
 const DEFAULT_RENDER_WAIT = 8000
 
 /** 有头模式等待用户操作的最大时长（ms） */
-const HEADED_LOGIN_TIMEOUT = 120000
+const HEADED_LOGIN_TIMEOUT = 180000
 
 /**
  * 带重试的浏览器启动
@@ -197,6 +198,102 @@ export async function close(browser, tempProfileDir = null) {
   if (tempProfileDir) cleanupTempProfile(tempProfileDir)
 }
 
+// ── 登录态快照：导出 / 注入 ──────────────────────────
+// 解决会话 cookie / sessionStorage 站点 browser.close() 后登录态丢失的问题：
+//   close 前导出 cookie（会话 cookie 补远期 Expires）+ localStorage 到 JSON，
+//   下次启动后注入，登录态文件级持久（详见 utils/tools.js 快照存取函数）
+
+/** 会话 cookie 补的远期有效期（自导出时刻起 +7 天，ms） */
+const SNAPSHOT_COOKIE_EXTEND_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * 导出当前浏览器全量登录态快照（cookie + 页面 localStorage）
+ * 在 browser.close() 之前调用。
+ *
+ * @param {import('puppeteer').Browser} browser
+ * @param {import('puppeteer').Page} page - 目标页（localStorage 按此页域名读取）
+ * @param {string} url - 目标页 URL（快照按 hostname 存档）
+ */
+async function exportAuthSnapshot(browser, page, url) {
+  try {
+    // 1. 全量 cookie（含 SSO 跳转链各域），会话 cookie 补远期 expires "转正"
+    //    CDP cookie.expires 为 Unix epoch 秒；会话 cookie 特征为 expires <= 0
+    const cdp = await page.createCDPSession()
+    const { cookies } = await cdp.send('Storage.getCookies')
+    await cdp.detach()
+    const patched = (cookies || []).map(c => ({
+      ...c,
+      expires: (c.expires && c.expires > 0)
+        ? c.expires
+        : Math.floor((Date.now() + SNAPSHOT_COOKIE_EXTEND_MS) / 1000),
+    }))
+
+    // 2. 目标域 localStorage（page 所在域）
+    let localStorageData = {}
+    try {
+      localStorageData = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage)))
+    } catch {}
+
+    saveAuthSnapshot(url, patched, localStorageData)
+    console.error(`[登录态快照] 已保存 ${patched.length} 条 cookie（含 SSO 域）+ ${Object.keys(localStorageData).length} 条 localStorage`)
+  } catch (err) {
+    console.error(`[登录态快照] 导出失败（不影响本次采集）：${err.message}`)
+  }
+}
+
+/**
+ * 启动浏览器后、导航前注入登录态快照
+ * 无快照时静默跳过，不影响原流程。
+ *
+ * @param {import('puppeteer').Browser} browser
+ * @param {string} url - 目标页 URL
+ */
+async function injectAuthSnapshot(browser, url) {
+  const snap = loadAuthSnapshot(url)
+  if (!snap || !snap.cookies?.length) return
+  try {
+    // 只挑 setCookies 接受的输入字段（getCookies 返回的 size/session 等输出字段部分版本会报协议错误）
+    const cookies = snap.cookies.map(c => ({
+      name: c.name,
+      value: c.value,
+      domain: c.domain,
+      path: c.path,
+      expires: c.expires,
+      httpOnly: c.httpOnly,
+      secure: c.secure,
+      sameSite: c.sameSite,
+    }))
+    // 任取一个 page 建 CDP 会话即可写全浏览器 cookie
+    const pages = await browser.pages()
+    const cdp = await pages[0].target().createCDPSession()
+    await cdp.send('Storage.setCookies', { cookies })
+    await cdp.detach()
+    console.error(`[登录态快照] 已注入 ${cookies.length} 条 cookie（保存于 ${new Date(snap.savedAt).toLocaleString()}）`)
+  } catch (err) {
+    console.error(`[登录态快照] 注入失败（继续走原流程）：${err.message}`)
+  }
+}
+
+/**
+ * 关闭浏览器并做登录态收尾：
+ *   ① close 前导出快照（会话 cookie 转正 + localStorage 存档）
+ *   ② close 后清理 profile 缓存目录（防膨胀）
+ *
+ * @param {import('puppeteer').Browser} browser
+ * @param {import('puppeteer').Page|null} page - 用于读取 localStorage 的目标页，可为 null
+ * @param {string|null} url - 目标页 URL，null 时跳过快照导出
+ * @param {string|null} tempProfileDir - 克隆的临时 profile（旧路径兼容）
+ */
+async function closeWithSnapshot(browser, page, url, tempProfileDir = null) {
+  if (!browser) return
+  if (page && url) {
+    await exportAuthSnapshot(browser, page, url)
+  }
+  await browser.close()
+  if (tempProfileDir) cleanupTempProfile(tempProfileDir)
+  cleanupProfileCaches()
+}
+
 // ── 登录页检测 ──────────────────────────────────────
 // 部分页面需登录才能访问，未登录时会被自动重定向到登录页。
 // 此时采集到的 DOM/截图并非目标页面数据，需要识别并降级到有头模式让用户手动登录。
@@ -310,9 +407,12 @@ async function runHeadedWithProfile(url, options = {}) {
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--start-maximized', '--ignore-certificate-errors'],
     defaultViewport: null,
   })
+  let closed = false
 
   try {
     const page = await browser.newPage()
+    // 有头模式同样注入快照（若上次留有有效登录态，弹窗里直接是已登录状态）
+    await injectAuthSnapshot(browser, url)
 
     // 有头模式：导航失败不抛错（如证书拦截、超时等），让用户在窗口中手动操作
     try {
@@ -379,9 +479,15 @@ async function runHeadedWithProfile(url, options = {}) {
     const domData = collectFn ? await evalInPage(page, collectFn) : null
     const screenshotBuffer = needScreenshot ? await screenshot(client) : null
 
+    // 有头登录成功采集完成 → 导出快照（会话 cookie 转正），下次无头免登
+    await closeWithSnapshot(browser, page, url)
+    closed = true
     return { domData, screenshotBuffer }
   } finally {
-    await browser.close()
+    if (!closed) {
+      try { await browser.close() } catch {}
+      cleanupProfileCaches()
+    }
   }
 }
 
@@ -430,6 +536,8 @@ export async function run(url, options = {}) {
   let closed = false
   try {
     const page = await browser.newPage()
+    // 导航前注入登录态快照（会话 cookie 站点免重登的关键）
+    await injectAuthSnapshot(browser, url)
     const client = await emulateDevice(page, viewport)
     await page.goto(url, {
       waitUntil: waitUntil || 'domcontentloaded',
@@ -455,12 +563,15 @@ export async function run(url, options = {}) {
     if (loginCheck.isLogin) {
       // 无头检测到登录页 → 关闭无头，降级有头让用户手动登录
       console.error('[无头采集失败] 原因：检测到登录页，自动降级有头模式')
-      await close(browser, tempProfileDir)
+      await closeWithSnapshot(browser, page, url, tempProfileDir)
       closed = true
       return await runHeadedWithProfile(url, options)
     }
     const domData = collectFn ? await evalInPage(page, collectFn) : null
     const screenshotBuffer = needScreenshot ? await screenshot(client) : null
+    // 采集成功，close 前导出登录态快照（服务端续期后的最新 cookie 一并存档）
+    await closeWithSnapshot(browser, page, url, tempProfileDir)
+    closed = true
     return { domData, screenshotBuffer }
   } catch (headlessErr) {
     // 无头采集失败（导航超时、自签名证书拦截、网络错误等）→ 自动降级有头模式

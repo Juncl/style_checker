@@ -17,4 +17,6 @@ dist-devlint.zip
 devlint-mcp-*
 .devlint
 
+.octo-uxlint
+
 dist
