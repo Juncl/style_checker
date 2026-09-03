@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "private": true,
-  "description": "三个独立 skill 的统一打包工程：ui-param-diff / design-system-checker / ui-pixel-diff",
+  "description": "四个独立 skill 的统一打包工程：ui-param-diff / design-system-checker / ui-pixel-diff / design-checker",
   "scripts": {
     "build": "node build.js"
   }
