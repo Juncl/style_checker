@@ -7,12 +7,12 @@
  *   node build-report.mjs --fix <fix-result.json>  修复报告（fix-result JSON → Markdown）
  *
  * 输入 JSON 兼容：纯 JSON / Markdown 内嵌 ```json 代码块。
- * 产物落盘到 <cwd>/.octo-uxlint/design-check/，stdout 输出报告路径 + 摘要。
+ * 报告生成到输入 JSON 所在目录（流程约定：.octo-uxlint/design-check/<领域key>-<时间戳>/），stdout 输出报告路径 + 摘要。
  * 零外部依赖，仅 Node.js 标准库；.mjs 后缀保证 ESM 解析，不依赖 package.json。
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { join, dirname } from 'path'
+import { join, dirname, resolve, basename } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -33,11 +33,18 @@ function readableTimestamp() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
-/** 落盘目录：<cwd>/.octo-uxlint/design-check/ */
-function getOutputDir() {
-  const dir = join(process.cwd(), '.octo-uxlint', 'design-check')
+/** 报告目录：输入 JSON 所在目录（一次检查/修复的全部产物聚在同一子文件夹） */
+function getOutputDir(jsonFile) {
+  const dir = resolve(dirname(jsonFile))
   mkdirSync(dir, { recursive: true })
   return dir
+}
+
+/** 报告文件名：前缀沿用输入 JSON 主干名去掉末尾时间戳段（issues-xxx.json → issues-<新时间戳>.md），同次产物前缀配对、时间戳各取各的 */
+function getReportPath(jsonFile, outDir) {
+  const stem = basename(jsonFile).replace(/\.[^.]+$/, '')
+  const prefix = stem.replace(/-\d+$/, '') || 'report'
+  return join(outDir, `${prefix}-${timestamp()}.md`)
 }
 
 /** Markdown 表格单元格转义：| 和换行 */
@@ -150,7 +157,7 @@ async function buildCheckReport(jsonFile) {
   const issueData = parseJson(readFileSync(jsonFile, 'utf-8'))
 
   const md = generateCheckReport(issueData)
-  const reportPath = join(getOutputDir(), `design_check_${timestamp()}.md`)
+  const reportPath = getReportPath(jsonFile, getOutputDir(jsonFile))
   writeFileSync(reportPath, md, 'utf-8')
 
   const issues = issueData.issues || []
@@ -246,7 +253,7 @@ async function buildFixReport(jsonFile) {
   const fixData = parseJson(readFileSync(jsonFile, 'utf-8'))
 
   const md = generateFixReport(fixData)
-  const reportPath = join(getOutputDir(), `design_fix_${timestamp()}.md`)
+  const reportPath = getReportPath(jsonFile, getOutputDir(jsonFile))
   writeFileSync(reportPath, md, 'utf-8')
 
   const fixes = fixData.fixes || []
@@ -270,7 +277,7 @@ function usage() {
 
 说明:
   输入 JSON 兼容纯 JSON 或 Markdown 内嵌 json 代码块
-  报告落盘到 <当前目录>/.octo-uxlint/design-check/
+  报告生成到输入 JSON 所在目录（流程约定：.octo-uxlint/design-check/<领域key>-<时间戳>/）
   详细流程见 ${join(__dirname, 'SKILL.md')}`)
 }
 

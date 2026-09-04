@@ -12,7 +12,7 @@
 1. **修复前必须先创建副本**：每个被修改的文件都生成副本，命名 `<主名>.fixed.<扩展名>`（page.html → page.fixed.html，styles.css → styles.fixed.css），副本与原文件**同文件夹**
 2. **所有修改只落在副本上**，原文件（含引用的 css/js/图片等）绝不修改、绝不重命名、绝不删除
 3. **副本与原文件同文件夹**是刻意设计：CSS 中的相对资源引用（`../img/`、`font/` 等）在副本中依然有效，图片/字体等资源**不需要也不允许**复制
-4. 副本不落盘到 `.octo-uxlint/design-check/`（该目录只存 issues/fix-result JSON 和报告）
+4. 副本不落盘到 `.octo-uxlint/design-check/`（该目录及其子文件夹只存 issues/fix-result JSON 和报告）
 5. 副本已存在时，告知用户后将重新生成（覆盖前可提示）
 6. 向用户汇报时，明确列出**全部副本文件**路径
 
@@ -67,7 +67,7 @@
 - 多处相同问题批量修复时，抽查代表性位置即可（如 5 处同款按钮修 5 处，抽查 2 处）
 - 复查结果记入每条 fix 的 `recheck` 字段
 
-**第 4 步：写 fix-result JSON → 落盘 `.octo-uxlint/design-check/fix-result-<时间戳>.json`**
+**第 4 步：写 fix-result JSON → 落盘到本次检查的工作子文件夹 `.octo-uxlint/design-check/<领域key>-<时间戳>/fix-<时间戳>.json`**
 
 ```json
 {
@@ -104,7 +104,7 @@
 **第 5 步：生成修复报告 → 汇报**
 
 ```bash
-node <skill目录>/build-report.mjs --fix .octo-uxlint/design-check/fix-result-<时间戳>.json
+node <skill目录>/build-report.mjs --fix .octo-uxlint/design-check/<领域key>-<时间戳>/fix-<时间戳>.json
 ```
 
 向用户汇报：
