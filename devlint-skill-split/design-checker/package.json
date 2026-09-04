@@ -2,6 +2,6 @@
   "name": "design-checker",
   "version": "1.0.0",
   "type": "module",
-  "description": "基于规范 Markdown 文档的 HTML 设计规范检查与修复 skill",
+  "description": "基于规范 Markdown 文档的 HTML 设计规范检查与修复 skill ",
   "private": true
 }
