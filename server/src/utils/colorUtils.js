@@ -43,12 +43,22 @@ function parseARGB(hex) {
   return null
 }
 
+// alpha 量化容差：rgba alpha（0~1 浮点）× 255 常产生半整数（如 0.9×255=229.5），
+// 不同导出器取舍不同（Pixso 四舍五入→E6，ArkUI Inspector 截断→E5），造成 ±1 漂移。
+// 仅当 RGB 三分量完全一致且 alpha 差 ≤ 此值时，colorDelta 视为完全匹配。
+export const ALPHA_QUANTIZATION_TOLERANCE = 1
+
 /** 欧氏距离，值越小越接近 */
 export function colorDelta(c1, c2) {
   try {
     const p1 = parseARGB(c1)
     const p2 = parseARGB(c2)
     if (!p1 || !p2) return 999
+    // alpha 量化噪声豁免：RGB 完全相同、alpha 差 ≤ 1 视为同色
+    if (p1.r === p2.r && p1.g === p2.g && p1.b === p2.b
+      && Math.abs(p1.a - p2.a) <= ALPHA_QUANTIZATION_TOLERANCE) {
+      return 0
+    }
     return Math.sqrt(
       (p1.r - p2.r) ** 2 +
       (p1.g - p2.g) ** 2 +
