@@ -86,6 +86,7 @@ const SEVERITY = {
   warning: { label: '🟡 疑似', sort: 1 },
   missing: { label: '⚪ 缺失', sort: 2 },
   extra:   { label: '⚪ 额外', sort: 3 },
+  info:    { label: '🔵 提示', sort: 4 },
 }
 
 /** 规范来源单元格：specFile + specQuote（优先），兼容旧 spec 字段 */
@@ -99,7 +100,7 @@ function specCell(d) {
 
 /** 按严重级别统计 issue 数（未知 severity 兜底按 error） */
 function countSeverity(issues) {
-  const c = { error: 0, warning: 0, missing: 0, extra: 0 }
+  const c = { error: 0, warning: 0, missing: 0, extra: 0, info: 0 }
   for (const d of issues) {
     c[SEVERITY[d.severity] ? d.severity : 'error']++
   }
@@ -109,19 +110,26 @@ function countSeverity(issues) {
 /** 问题统计行：服务于修复范围决策（全部/只修 error/自定义），不做评分评级 */
 function statsLine(issues) {
   const c = countSeverity(issues)
-  return `**问题统计：共 ${issues.length} 处 —— 违规 ${c.error} / 疑似 ${c.warning} / 缺失 ${c.missing} / 额外 ${c.extra}**`
+  return `**问题统计：共 ${issues.length} 处 —— 违规 ${c.error} / 疑似 ${c.warning} / 缺失 ${c.missing} / 额外 ${c.extra} / 提示 ${c.info}**`
 }
 
 function generateCheckReport(issueData) {
   const issues = issueData.issues || []
   const summary = issueData.summary || ''
 
+  // 顶层可选字段：检查对象 + 规范领域（报告头部展示，便于存档追溯；缺失时兼容旧 JSON）
+  const metaLines = [
+    issueData.sourceFile ? `**检查对象**：${issueData.sourceFile}` : '',
+    issueData.specDomain ? `**规范领域**：${issueData.specDomain}` : '',
+  ].filter(Boolean)
+  const metaBlock = metaLines.length ? `${metaLines.join('\n')}\n\n` : ''
+
   if (!issues.length) {
     return `# 设计规范检查报告
 
 ${statsLine(issues)}
 
-${summary || 'HTML 实现符合设计规范，未发现问题。'}
+${metaBlock}${summary || '前端实现符合设计规范，未发现问题。'}
 
 _生成时间：${readableTimestamp()}_
 `
@@ -141,7 +149,7 @@ _生成时间：${readableTimestamp()}_
 
 ${statsLine(issues)}
 
-${summary}
+${metaBlock}${summary}
 
 ## 问题清单（共 ${issues.length} 处）
 
@@ -304,7 +312,7 @@ async function main() {
       const r = await buildCheckReport(jsonFile)
       const c = r.sevCounts
       console.log(`✓ 报告已生成: ${r.reportPath}`)
-      console.log(`共 ${r.totalIssues} 处问题（error ${c.error} / warning ${c.warning} / missing ${c.missing} / extra ${c.extra}）`)
+      console.log(`共 ${r.totalIssues} 处问题（error ${c.error} / warning ${c.warning} / missing ${c.missing} / extra ${c.extra} / info ${c.info}）`)
     }
   } catch (err) {
     console.error(`✗ ${err.message}`)
