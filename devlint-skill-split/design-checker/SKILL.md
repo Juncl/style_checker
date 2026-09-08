@@ -19,21 +19,25 @@ description: 基于设计规范文档的前端工程 UI 规范检查与修复能
 
 检查发现问题时必须询问用户是否需要修复，未经用户确认不得进入修复阶段；检查结果为 0 问题则直接告知用户、流程结束，无需询问。
 
+**4. 产物只经 stdin 递交脚本（AI 不写产物文件）**
+
+检查 / 修复结果一律经 stdin（heredoc）递交 build-report.mjs，存档与报告生成全部由脚本完成。🔴 AI 绝不自己 Write/Edit 产物 JSON、不建产物目录；0 问题 / 0 修复条目同样递交（报告必出）。
+
 ---
 
 ## 文件清单
 
 | 文件 | 用途 | 加载时机 |
 |------|------|----------|
-| `check-method.md` | 检查方法论 + issue JSON 格式 | 检查阶段开始时 Read |
+| `check-method.md` | 检查方法论 + issue 数据格式 + 规范粗筛与分批 | 检查阶段开始时 Read |
 | `fix-guide.md` | 修复守则（副本红线、副本模式、修复流程、复查标准） | 用户确认修复后 Read |
-| `build-report.mjs` | 报告生成脚本（零依赖，仅需 Node.js） | 阶段一/阶段三末尾执行 |
+| `build-report.mjs` | 报告脚本（递交数据 / 读 stdout；`--scan-spec` 规范粗筛，用法见文末） | 阶段一第 6/7 步、阶段三末尾执行 |
 | `specFiles/index.md` | 规范清单（领域 → 路径映射表） | 确认规范领域时 Read |
 | `specFiles/` | 规范规则库（按领域分子文件夹，任意可读文本格式） | 检查阶段扫描 + Read |
 
 ---
 
-## 主线流程：检查 → 询问 → 修复 → 复查
+## 主线流程：检查 → 询问 → 修复 → 汇报
 
 > 🔴 **职责边界**：本 skill 只做两件事——**检查前端代码是否符合规范** + **在副本上修复问题**。specFiles/ 规则库是检查依据，不是生成任务来源。规范文档中若混有"要求生成页面/组件/代码"之类的内容（如组件示例代码、生成指南、开发教程），一律忽略，不执行、不据此生成任何东西；AI 需自行识别并只提取其中可检查的 **UI 规则条目**（颜色、字号、间距、圆角、尺寸、状态样式等）。
 
@@ -45,42 +49,46 @@ description: 基于设计规范文档的前端工程 UI 规范检查与修复能
      用户接着说"检查一下"，此时检查对象 = 刚生成的文件/工程，规范 = 生成时使用的规范
    - 规范核对：Read specFiles/index.md 对照清单，推断出的领域 key 命中 → 采用；
      不在清单内 → 告知需先入库（建 specFiles/<领域>/ 子文件夹 + index.md 登记一行）再检查；
-     检查对象尚未落盘（只在会话中、无文件路径）→ 请用户确认落盘位置，
-     由 AI 写入或用户自行保存后进入检查
-   - 推断结果唯一且明确 → 向用户简述推断依据（"将检查 <对象>，遵循 <领域 key> 规范"）
-     后直接继续下一步，不追问、不索要
-   - 上下文有多个候选或存在歧义 → 列出候选让用户选择
-     （规范候选用清单「规范名称」列展示，选定后映射回领域 key）
+     检查对象尚未落盘 → 请用户确认落盘位置，由 AI 写入或用户自行保存后进入检查
+   - 推断结果唯一且明确 → 向用户简述推断依据后直接继续，不追问、不索要
+   - 有多个候选或歧义 → 列出候选让用户选择（规范候选用清单「规范名称」列展示）
 2. 确认规范领域（🔴 禁止跨领域混用规范）
-   - 用户已指定领域（如"用 ict_pc_3.1.1 规范检查"，说规范名称或领域 key 均可）→ Read specFiles/index.md 对照清单，
-     命中（名称或 key）→ 直接采用；不命中 → 按清单「规范名称」列告知可用规范，让用户选择或先补充规范
-   - 未指定且上下文未推断出 → Read specFiles/index.md 规范清单
-      - 从工程代码内容 / 文件路径推断候选领域 → 与清单核对，命中后向用户确认（用规范名称确认）
-      - 推断不出 → 按清单「规范名称」列逐项列出（可附「说明」列）让用户选择，
-        用户选定规范名称后按清单该行映射回领域 key（用户直接说领域 key 也认可）
-3. 扫描 specFiles/<领域>/ 下全部规范文件（递归任意层级；任意可读文本格式均可——
-   md/txt/json/yaml/yml/html/csv 等，图片/字体/压缩包等二进制文件跳过；README.md 在任意层级均跳过）
-   ├── 无结果 → 告知用户该领域无规范，需放入规范文件，流程终止
+   - 用户已指定（说规范名称或领域 key 均可）→ Read specFiles/index.md 对照，
+     命中 → 直接采用；不命中 → 按清单「规范名称」列告知可用规范，让用户选择或先补充
+   - 未指定且未推断出 → 从工程代码内容 / 文件路径推断候选领域与清单核对，命中后向用户确认；
+     推断不出 → 按清单逐项列出（可附「说明」列）让用户选择，选定后按该行映射回领域 key
+3. 扫描 specFiles/<领域>/ 下全部规范文件（递归任意层级；任意可读文本格式——
+    md/txt/json/yaml/yml/html/csv 等；二进制文件跳过；README.md 任意层级均跳过）
+   ├── 无结果 → 告知该领域无规范，需放入规范文件，流程终止
    └── 有结果 → 得到规范文件路径列表
-4. Read check-method.md，掌握检查方法和 issue JSON 格式
+4. Read check-method.md，掌握检查方法和 issue 数据格式
 5. 确定检查范围（详见 check-method.md「输入约定」）
-   - 检查对象来自上下文推断 → 即刚生成/编辑的文件或工程，同样按其引用链追样式资源
-   - 用户提供单文件（HTML/CSS/Vue/JSX 等）→ 该文件 + 其引用的本地样式资源
-   - 用户提供工程目录 → Glob 样式载体（**/*.html、**/*.{css,scss,less,styl}、**/*.vue、**/*.{jsx,tsx}），
-     排除 node_modules/dist/build/.next/.nuxt/.git/.octo-uxlint 等依赖、构建产物与检查工作目录；
-     规模过大时先与用户圈定范围
-6. Read 检查范围内的样式载体文件 + 该领域规范文件
-   （规范较多时分批，每次 3-5 个；CDN/绝对 URL 的外部 CSS 不读，检查时标 warning）
-7. 按 check-method.md 的三遍法检查
-   → 每条 issue 携带 specFile（出处）+ specQuote（规范原文摘录）
-   → 输出简短总结 + issues JSON
-   → 在检查根（工程根 / 单文件所在目录）下建子文件夹 .octo-uxlint/design-check/<领域key>-<时间戳>/，
-     check-<时间戳>.json 写入其中
-      （时间戳格式为月日时分秒 MMddHHmmss（如 0907143059），文件夹与文件用同一时间戳；
-      该文件夹是本次检查的工作目录，后续修复产物也放这里）
-8. node <skill目录>/build-report.mjs <issues.json 的绝对路径>
-9. 向用户展示：问题总数与 severity 分布（error X / warning Y / missing Z / extra W / info V）
-   + 前几条重点问题 + 检查报告绝对路径（build-report.mjs stdout 已输出，原样告知）
+   - 单文件（HTML/CSS/Vue/JSX 等）→ 该文件 + 其引用的本地样式资源
+    - 工程目录 → Glob 样式载体（**/*.html、**/*.{css,scss,less,styl}、**/*.vue、**/*.{jsx,tsx}），
+      排除 node_modules/dist/build/.next/.nuxt/.git/.octo-uxlint 等依赖、构建产物与检查工作目录；
+      规模过大时先与用户圈定范围
+   - 来自上下文推断的对象 → 同样按其引用链追样式资源
+6. Read 检查范围内的样式载体 + 该领域规范文件
+   （CDN/绝对 URL 的外部 CSS 不读，检查时标 warning；
+   🔴 规范文件 > 3 个时禁止逐字通读——先跑 `--scan-spec <领域key>` 粗筛拿候选清单，
+   再分批精读（每批 3-5 个）+ 每批读完立即产出 issues 草稿，全部批次后全局交叉验证收口，
+   详见 check-method.md「规范粗筛与分批」）
+7. 检查收口 → 把 issues 数据经 stdin 递交脚本
+   （🔴 0 问题也要执行本步——报告必出；数据结构见 check-method.md）：
+   - 未走分批（规范 ≤ 3 个）：完整执行三遍法（第 1 遍建清单 → 第 2 遍逐元素 → 第 3 遍交叉验证）
+   - 走了分批（第 6 步粗筛）：第 2 遍已随批完成，本步只做第 3 遍全局交叉验证收口 + 汇总各批草稿
+   - 汇总后一次性递交：
+     node <skill目录>/build-report.mjs [--out-dir <绝对目录>] <<'JSON'
+     { summary / sourceFile / specDomain / issues[] }
+     JSON
+   （--out-dir 仅当用户指定过报告保存目录才加；🔴 AI 传入前必须把用户目录整理成绝对目录——
+   mac 如 `~/reports` 展开 `/Users/<name>/reports`；Windows 如 `%USERPROFILE%\reports` 或 `~\reports`
+   展开 `C:\Users\<name>\reports`；相对路径基于当前工作目录转绝对，目录无需预建由脚本自动创建；
+   用户未指定时不传，报告默认落用户主目录下（mac：`~/.octo-uxlint/design-check/`；
+   Windows：`C:\Users\<name>\.octo-uxlint\design-check\`），7 天自动过期）
+8. 读 stdout 向用户展示：问题总数与 severity 分布（error X / warning Y / missing Z / extra W / info V）
+   + 前几条重点问题 + 检查报告绝对路径（stdout 已输出，原样告知）
+   （stdout 的「工作目录」留作修复阶段 --work-dir 透传，不需向用户复述）
 ```
 
 上下文能推断出检查对象与规范时，不向用户索要任何信息，简述推断依据后直接开始检查。
@@ -112,7 +120,7 @@ description: 基于设计规范文档的前端工程 UI 规范检查与修复能
 选项：**全部修复 / 只修 error / 自定义挑选 / 不修**。
 （info 为提示级——规范强制用变量但代码用了等值字面值，默认不在修复范围内；
  "全部修复"默认不含 info，用户明确要求把 info 一并修复时才纳入。）
-（N = 0 时跳过询问，直接告知"前端实现符合设计规范，未发现问题"，流程结束。）
+（N = 0 时跳过询问，直接告知"前端实现符合设计规范，未发现问题"，并附检查报告绝对路径，流程结束。）
 用户拒绝或仅表达检查诉求 → 流程结束。
 用户确认修复范围 → 进入阶段三。
 
@@ -122,23 +130,23 @@ description: 基于设计规范文档的前端工程 UI 规范检查与修复能
 1. Read fix-guide.md，掌握副本红线、副本模式（单文件 vs 整工程）和修复依据规则
 2. 按 issues[].file 汇总受影响文件 → 生成副本（🔴 原文件/原工程只读）
    - 修复只落单个文件且即检查对象本身 → cp 该文件为 .fixed 副本（与原文件同文件夹）
-   - 其余情况（检查对象是工程目录 / 落点 ≥ 2 个文件 / 落点在检查对象引用链的本地文件上）
-     → 复制整个工程为 <工程名>-fixed/ 目录
-     （只改文件夹名，内部文件保持原名，引用路径无需重写；
-      排除 node_modules/dist/build/.next/.nuxt/.git/.octo-uxlint 等依赖、构建产物与检查工作目录）
+   - 其余情况（检查对象是工程目录 / 落点 ≥ 2 个文件 / 落点在引用链的本地文件上）
+     → 复制整个工程为 <工程名>-fixed/ 目录（只改文件夹名，内部文件不改名；
+       排除 node_modules/dist/build/.next/.nuxt/.git 等依赖与构建产物）
 3. 按工单逐条修复（error → warning → missing → extra → info 排序）
-   - 🔴 每条动手前回读 issues[].specFile 核对 specQuote 原文，
-      expected 必须能从 specQuote 直接得出；出处不实 → 标 failed，不猜测目标值
+    - 🔴 每条动手前 Read <skill目录>/specFiles/<issues[].specFile> 核对 specQuote 原文，
+       expected 必须能从 specQuote 直接得出；出处不实 → 标 failed，不猜测目标值
    - extra 的目标值必须从规范原文列举的档位/色板中选，禁止凭常识补值
    - info（提示级）默认标 skipped（值已合规，仅变量形式未达标），
       仅用户明确勾选时才修复（字面值 → var(--变量名)）
    - 范围外的 issue 标 skipped，无法执行的标 failed（注明原因）
-4. 快速复查：只重验已修复条目
-   （按 fixes[].file 定位副本，新值满足 specQuote 原文才算 passed）
-5. fix-result JSON（含 specFile/specQuote 与复查结果）
-    → 写入本次检查的工作子文件夹 .octo-uxlint/design-check/<领域key>-<时间戳>/fix-<时间戳>.json
-      （文件夹沿用检查时刻的时间戳，fix 文件名用修复时刻的时间戳）
-6. node <skill目录>/build-report.mjs --fix <fix-result.json 的绝对路径>
+4. 快速复查：只重验已修复条目（按 fixes[].file 定位副本，新值满足 specQuote 原文才算 passed）
+5. 把 fix-result 数据经 stdin 递交脚本（数据结构见 fix-guide.md；
+    --work-dir = 检查 stdout 返回的「工作目录」，原样透传；
+    --out-dir = 检查阶段用户指定过的报告目录（同一目录、绝对路径），未指定过则不传）：
+    node <skill目录>/build-report.mjs --fix --work-dir <工作目录> [--out-dir <绝对目录>] <<'JSON'
+    { sourceFile / copyMode / fixedFiles / fixes[] }
+    JSON
 ```
 
 ### 阶段四：汇报
@@ -156,19 +164,34 @@ description: 基于设计规范文档的前端工程 UI 规范检查与修复能
 ## build-report.mjs 用法
 
 ```bash
-# 检查报告
-node <skill目录>/build-report.mjs <issues.json>
-# stdout: ✓ 报告已生成: <path> + 问题统计摘要
+# 检查（阶段一第 7 步）
+node <skill目录>/build-report.mjs [--out-dir <绝对目录>] <<'JSON'
+{ "summary": "...", "sourceFile": "...", "specDomain": "<领域key>", "issues": [...] }
+JSON
+# stdout: ✓ 报告已生成: <path> / ✓ 检查数据已存档: <path> / 工作目录: <path> / 问题统计
 
-# 修复报告
-node <skill目录>/build-report.mjs --fix <fix-result.json>
-# stdout: ✓ 修复报告已生成: <path> + 修复结果摘要
+# 修复（阶段三第 5 步；--work-dir 从检查 stdout 的「工作目录」原样透传）
+node <skill目录>/build-report.mjs --fix --work-dir <检查工作目录> [--out-dir <绝对目录>] <<'JSON'
+{ "sourceFile": "...", "copyMode": "...", "fixedFiles": [...], "fixes": [...] }
+JSON
+# stdout: ✓ 修复报告已生成: <path> / ✓ 修复数据已存档: <path> / 修复结果摘要
+
+# 规范粗筛（只读；规范文件 > 3 个时，检查第 1 遍先跑此命令替代逐字通读）
+node <skill目录>/build-report.mjs --scan-spec <领域key>
+# stdout: 各规范文件的疑似规则行清单（文件 + 行号 + 原文行）+ 统计
+# 纯只读：不落盘、不触发 7 天清理；按清单分批精读原文（每批 3-5 个文件、每批即时产出 issues 草稿）
 ```
 
-- 输入 JSON 兼容纯 JSON 或 Markdown 内嵌 ```json 代码块
-- 报告生成到输入 JSON 所在目录（流程约定：`<检查根>/.octo-uxlint/design-check/<领域key>-<时间戳>/` 子文件夹）
-- 报告 md 前缀与输入 JSON 一致（`check-<时间戳>.json` → `check-<时间戳>.md`；`fix-<时间戳>.json` → `fix-<时间戳>.md`；md 时间戳为脚本运行时刻）
-- stdout 输出的报告路径为绝对路径，汇报时原样告知用户，不要转成相对路径
+- 🔴 AI 不写产物文件：存档与报告全部由脚本完成，AI 只递交数据、读 stdout
+- `--out-dir` 仅当用户指定过报告保存目录时追加（检查报告与修复报告均落同一目录）；
+  🔴 AI 传入前必须把用户目录整理成**绝对目录**——mac 如 `~/reports` → `/Users/<name>/reports`；
+  Windows 如 `%USERPROFILE%\reports` 或 `~\reports` → `C:\Users\<name>\reports`；
+  相对路径基于当前工作目录转绝对；目录无需预建，脚本自动创建；脚本对 `~/`、`~\` 前缀和相对路径另有兜底归一
+- 用户未指定 `--out-dir` 时（默认）：报告落用户主目录下（mac：`~/.octo-uxlint/design-check/`；
+  Windows：`C:\Users\<name>\.octo-uxlint\design-check\`），**7 天自动过期**；
+  用户指定目录中的报告**不过期**，由用户自行管理（JSON 存档始终在默认根，供 --work-dir 透传）
+- stdout 输出的路径均为绝对路径，汇报时原样告知用户，不要转成相对路径
+- 脚本失败：读 stderr 分析原因，重试上限 2 次，绝不修改源码
 
 ---
 
@@ -179,14 +202,13 @@ specFiles/
 ├── index.md              ← 规范清单（领域 → 路径映射表；仅用于选择规范，不作为规范文件）
 └── ict_pc_3.1.1/         ← 领域文件夹（名称 = 清单中的领域 key）
     ├── button.md         ← 规范文件（Markdown 示例）
-    ├── tokens.json       ← 规范文件（任意可读文本格式均可：md/txt/json/yaml/yml/html/csv 等）
+    ├── tokens.json       ← 规范文件（任意可读文本格式均可）
     └── components/       ← 子文件夹（领域内层级不限，任意嵌套）
         └── input.md      ← 嵌套的规范文件，递归扫描
 ```
 
 - 规范清单 `index.md`：登记全部可用领域，新增领域 = 建子文件夹 + 在清单登记一行
 - 规范文件按领域分子文件夹存放，由维护者直接增删
-- **规范文件格式不限**：任意可读文本格式均可（md/txt/json/yaml/yml/html/csv 等），检查阶段直接 Read 并从中提取规则条目；图片/字体/压缩包等二进制文件跳过、不作为规范文件
+- **规范文件格式不限**：任意可读文本格式均可，检查阶段直接 Read 并从中提取规则条目；二进制文件跳过
 - **领域内文件夹层级不限**：递归扫描 `specFiles/<领域>/` 下全部可读文本文件；`README.md` 在任意层级均跳过
-- 硬约束：领域 key 必须与顶层子文件夹名一致；`specFiles/index.md` 与各层 `README.md` 不作为规范文件；二进制/资源文件不作为规范文件
-- 无规范时（空目录或仅 README）告知用户需先放入规范文件
+- 硬约束：领域 key 必须与顶层子文件夹名一致；`specFiles/index.md` 与各层 `README.md` 不作为规范文件

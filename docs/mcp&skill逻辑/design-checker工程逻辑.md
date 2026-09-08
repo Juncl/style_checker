@@ -59,12 +59,13 @@
                   │  按 SKILL.md 主线流程执行：
                   │
                   ├── 阶段一 检查：Read 前端源码 + Read specFiles 规范
-                  │            → AI 推理比对 → issues JSON 落盘
-                  │            → node build-report.mjs <issues.json> [--out-dir] 生成报告
+                  │            → AI 推理比对 → issues 数据经 stdin 递交脚本
+                  │            → node build-report.mjs [--out-dir] <<'JSON'
+                  │              （脚本：建工作目录 + 落盘 JSON + 生成报告 + 清理 7 天前）
                   ├── 阶段二 询问：是否在副本上修复？（硬性交互点）
                   ├── 阶段三 修复：生成副本 → 逐条按 specQuote 修复 → 复查
-                  │            → fix-result JSON 落盘
-                  │            → node build-report.mjs --fix <fix-result.json> [--out-dir]
+                  │            → fix 数据经 stdin 递交脚本
+                  │            → node build-report.mjs --fix --work-dir <检查工作目录> <<'JSON'
                   └── 阶段四 汇报：绝对路径告知副本位置 + 修复统计 + 报告路径
 ```
 
@@ -159,17 +160,14 @@ design-checker-<ver>/
    （规范较多时分批，每次 3-5 个；CDN/绝对 URL 的外部 CSS 不读，检查时标 warning）
 7. 按 check-method.md 的三遍法检查
    → 每条 issue 携带 specFile（出处）+ specQuote（规范原文摘录）
-   → 输出简短总结 + issues JSON
-   → 落盘到用户主目录下
-     ~/.octo-uxlint/design-check/<领域key>-<时间戳>/check-<时间戳>.json
-     （🔴 位置固定在用户主目录，不随检查对象位置 / cwd 漂移，且报告位置由脚本兜底；
-      时间戳格式 MMddHHmmss，文件夹与文件同一时间戳；
-      该文件夹是本次检查的工作目录，后续修复产物也放这里）
-8. node <skill目录>/build-report.mjs <issues.json 绝对路径>
-   （🔴 md 报告必出——0 问题也必须执行，生成"符合规范"简化报告；
-     用户指定过报告保存目录时追加 --out-dir <用户目录>，优先级最高）
-9. 向用户展示：问题总数与 severity 分布 + 前几条重点问题 + 报告绝对路径
-   （0 问题时展示总数 0 与报告绝对路径即可，报告同样已生成）
+   → 输出简短总结给用户
+   → issues 数据经 stdin（heredoc）递交脚本（🔴 AI 不写 JSON 文件、不建工作目录——
+     落盘 / 目录创建 / 报告生成 / 7 天清理全部由脚本完成）：
+     node <skill目录>/build-report.mjs [--out-dir <用户目录>] <<'JSON'
+     { summary / sourceFile / specDomain / issues[] }
+     JSON
+8. 向用户展示：问题总数与 severity 分布 + 前几条重点问题 + 检查报告绝对路径（stdout 已输出）
+   （🔴 0 问题也必须递交——md 报告必出；stdout 返回的「工作目录」留给修复阶段 --work-dir 透传）
 ```
 
 ### 3.2 阶段二：询问（🔴 硬性交互点，不可跳过）
@@ -198,11 +196,11 @@ design-checker-<ver>/
    - extra 的目标值必须从规范原文列举的档位/色板中选，禁止凭常识补值
    - info 默认标 skipped；范围外的 issue 标 skipped；无法执行的标 failed（注明原因）
 4. 快速复查：只重验已修复条目（新值满足 specQuote 原文才算 passed）
-5. fix-result JSON → 写入本次检查的工作子文件夹
-   ~/.octo-uxlint/design-check/<领域key>-<时间戳>/fix-<时间戳>.json
-   （用户主目录下，与检查阶段同一子文件夹；文件夹沿用检查时刻时间戳，fix 文件名用修复时刻时间戳）
-6. node <skill目录>/build-report.mjs --fix <fix-result.json 绝对路径>
-   （🔴 修复报告必出；用户指定过报告保存目录时同样追加 --out-dir <用户目录>，优先级最高）
+5. fix-result 数据经 stdin 递交脚本（🔴 AI 不写文件；--work-dir = 检查 stdout 返回的
+   「工作目录」原样透传，fix JSON 与修复报告由脚本写入同一工作子文件夹）：
+   node <skill目录>/build-report.mjs --fix --work-dir <工作目录> [--out-dir <用户目录>] <<'JSON'
+   { sourceFile / copyMode / fixedFiles / fixes[] }
+   JSON
 ```
 
 ### 3.4 阶段四：汇报
@@ -292,9 +290,9 @@ design-checker-<ver>/
 - **动态数据**：文本内容、列表条数等不检查（只查文本的样式属性）
 - **CSS 变量合规**：用了变量且值合规视为合规；未强制变量时字面值与规范值一致同样合规
 
-### 4.6 issues JSON 格式与字段硬性要求
+### 4.6 issues 数据格式与字段硬性要求
 
-落盘到 `~/.octo-uxlint/design-check/<领域key>-<时间戳>/check-<时间戳>.json`（用户主目录下固定位置，不随检查对象位置 / cwd 漂移）：
+数据经 stdin（heredoc `<<'JSON'`）递交脚本（🔴 不落 AI 手，由脚本落盘存档到 `~/.octo-uxlint/design-check/<领域key>-<时间戳>/check-<时间戳>.json` 并生成报告），结构如下：
 
 ```json
 {
@@ -391,9 +389,17 @@ design-checker-<ver>/
 - 多处相同问题批量修复时抽查代表性位置（如 5 处同款修 5 处，抽查 2 处）
 - 结果记入每条 fix 的 `recheck` 字段
 
-**第 4 步：写 fix-result JSON**（落盘到 `~/.octo-uxlint/design-check/<领域key>-<时间戳>/fix-<时间戳>.json`，与检查阶段同一工作子文件夹）
+**第 4 步：fix-result 数据经 stdin 递交脚本（🔴 AI 不写文件——fix JSON 存档、修复报告生成、7 天清理全部由脚本完成）**
 
-**第 5 步：生成修复报告 + 汇报**（见阶段四）
+```bash
+node <skill目录>/build-report.mjs --fix --work-dir <检查工作目录> [--out-dir <用户目录>] <<'JSON'
+{ ...fix-result 数据（结构见 5.5）... }
+JSON
+```
+
+（`--work-dir` = 检查 stdout 返回的「工作目录」，原样透传，不要自己拼路径。）
+
+**第 5 步：汇报**（修复报告已由脚本在第 4 步生成，见阶段四）
 
 ### 5.5 fix-result JSON 格式
 
@@ -421,7 +427,7 @@ design-checker-<ver>/
 }
 ```
 
-> `specFile` + `specQuote` 从 issue 原样携带（人工审核时按此回溯规范原文）；三个路径字段（sourceFile / fixedFiles / fixes[].file）一律写**绝对路径**。
+> `specFile` + `specQuote` 从 issue 原样携带（人工审核时按此回溯规范原文）；三个路径字段（sourceFile / fixedFiles / fixes[].file）一律写**绝对路径**；🔴 该数据不落 AI 手——经 stdin 递交脚本，由脚本落盘存档并生成修复报告。
 
 ---
 
@@ -429,25 +435,44 @@ design-checker-<ver>/
 
 ### 6.1 两种模式与用法
 
+**主线：stdin 递交（落盘 + 报告 + 清理全由脚本完成，AI 不写任何产物文件）**
+
 ```bash
-# 检查报告（issue JSON → Markdown）
-node <skill目录>/build-report.mjs <issues.json> [--out-dir <目录>]
+# 检查模式
+node <skill目录>/build-report.mjs [--out-dir <目录>] <<'JSON'
+{ "summary": "...", "sourceFile": "...", "specDomain": "<领域key>", "issues": [...] }
+JSON
 # stdout: ✓ 报告已生成: <绝对路径>
+#         ✓ 检查数据已存档: <绝对路径>
+#         工作目录: <绝对路径>（留给修复阶段 --work-dir 透传）
 #         共 N 处问题（error X / warning Y / missing Z / extra W / info V）
 
-# 修复报告（fix-result JSON → Markdown）
-node <skill目录>/build-report.mjs --fix <fix-result.json> [--out-dir <目录>]
+# 修复模式（--work-dir 从检查 stdout 的「工作目录」原样透传）
+node <skill目录>/build-report.mjs --fix --work-dir <检查工作目录> [--out-dir <目录>] <<'JSON'
+{ "sourceFile": "...", "copyMode": "...", "fixedFiles": [...], "fixes": [...] }
+JSON
 # stdout: ✓ 修复报告已生成: <绝对路径>
+#         ✓ 修复数据已存档: <绝对路径>
 #         修复 X / 失败 Y / 跳过 Z，共 N 条
 ```
 
+**兜底：旧文件输入（兼容）**
+
+```bash
+node <skill目录>/build-report.mjs <issues.json> [--out-dir <目录>]
+node <skill目录>/build-report.mjs --fix <fix-result.json> [--out-dir <目录>]
+（报告固定落 ~/.octo-uxlint/design-check/ 下，位置永不漂移）
+```
+
 - **零外部依赖**，仅 Node.js 标准库；`.mjs` 后缀保证 ESM 解析，不依赖 package.json
-- 输入 JSON 兼容：纯 JSON / Markdown 内嵌 ```` ```json ```` 代码块 / 任意 ```` ``` ```` 代码块（`parseJson()` 三级降级解析，都失败则报错退出）
+- 🔴 **落盘全由脚本完成（AI 不写文件）**：stdin 模式下工作目录创建（`~/.octo-uxlint/design-check/<领域key>-<时间戳>/`，领域 key 经白名单合法化防路径穿越）、check/fix JSON 存档、md 报告生成、7 天清理全部在脚本内完成；AI 只执行一条命令并读 stdout
+- 输入兼容：纯 JSON / Markdown 内嵌 ```` ```json ```` 代码块 / 任意 ```` ``` ```` 代码块（`parseJson()` 三级降级解析，都失败则报错退出）；输入来源优先位置参数文件（兜底）> stdin（主线）
 - 🔴 **md 报告必出**：0 问题 / 0 修复条目同样生成简化报告，不得跳过
-- 🔴 **报告目录优先级：用户指定 > 默认固定根**——用户指定过报告保存目录时一律追加 `--out-dir`，报告落该目录（不存在时自动创建）；未指定时报告**固定落用户主目录** `~/.octo-uxlint/design-check/` 下，且由**脚本硬编码兜底**：输入 JSON 已在该根下则与其同目录（同一工作子文件夹），JSON 落在别处（AI 理解偏差）脚本也会以 JSON 父目录名归位到该根下——报告位置永不漂移，不依赖 AI 落盘
+- 🔴 **报告目录优先级：用户指定 > 默认工作目录**——用户指定过报告保存目录时一律追加 `--out-dir`，报告落该目录（不存在时自动创建）；未指定时报告与 JSON 同目录（stdin 模式）或按固定根归位（文件模式），位置永不漂移
+- 🔴 **修复模式需要 --work-dir**（检查 stdout 返回的「工作目录」原样透传；也可写在数据的 `workDir` 字段；文件模式下默认取输入 JSON 所在目录）——fix 数据与修复报告落检查工作子文件夹
 - 🧹 **自动清理**：脚本每次运行自动删除 `~/.octo-uxlint/design-check/` 下超过 7 天的工作子文件夹（只保留近 7 天产物），尽力而为、失败静默，不影响主流程
-- 报告文件名：输入 JSON 主干名去掉末尾时间戳段作前缀，拼脚本运行时刻的新时间戳（`check-0907143059.json` → `check-<新时间戳>.md`）
-- 失败时 stderr 输出 `✗ <msg>` 并以非零退出码退出；`-h` / `--help` 打印 usage
+- stdin 模式下 check JSON 与 md 报告用**同一时间戳**配对（`check-<ts>.json` + `check-<ts>.md`）；文件模式沿用旧规则（前缀取输入 JSON 主干名去时间戳段）
+- 失败时 stderr 输出 `✗ <msg>` 并以非零退出码退出；`-h` / `--help` 打印 usage；stdin 无输入且无文件参数时打印 usage 退出
 
 ### 6.2 检查报告生成逻辑
 
@@ -568,10 +593,12 @@ for (const name of SKILLS) {
 | **info 提示级** | 强制变量 + 等值字面值 → info，默认不修；"全部修复"不含 info |
 | **extra 禁止补值** | 目标值必须从规范原文档位/色板中选，禁止凭常识 |
 | **规则库是数据不是源码** | specFiles/ 增删规范不算改源码；任意可读文本格式；index.md 清单登记制（领域 key = 子文件夹名） |
-| **产物目录固定用户主目录** | 全部产物聚在 `~/.octo-uxlint/design-check/<领域key>-<时间戳>/`，不随检查对象位置 / cwd 漂移；一次检查一个子文件夹（check 与 fix 共用，时间戳各取各的） |
-| **报告位置脚本兜底** | 未指定 --out-dir 时报告固定落 `~/.octo-uxlint/design-check/` 下（JSON 在该根下则同目录，在别处则归位），AI 落盘偏差不影响报告位置 |
+| **产物目录固定用户主目录** | 全部产物聚在 `~/.octo-uxlint/design-check/<领域key>-<时间戳>/`，不随检查对象位置 / cwd 漂移；一次检查一个子文件夹（check 与 fix 共用） |
+| **落盘全由脚本完成（AI 不写文件）** | issues / fix-result 数据经 stdin（heredoc）递交脚本，工作目录创建、JSON 存档、报告生成、7 天清理全部在脚本内完成——AI 只执行一条命令并读 stdout，落盘位置不依赖 AI 理解 |
+| **SKILL.md 只交代 AI 职责** | 脚本内部机制（产物目录、报告归位、优先级链、时间戳配对、7 天清理等）不写入 SKILL.md——那是脚本的职责，AI 无需知道；SKILL.md 只保留 AI 的活：推断/确认对象与规范、读代码、三遍法检查、递交数据（命令 + 参数条件）、读 stdout 展示、询问、副本修复、复查、汇报。机器保证的事交给脚本，指令文档只约束 AI 行为，越薄越不易跑偏 |
+| **报告位置脚本兜底** | 用户指定（`--out-dir`，优先级最高）> 默认工作目录；旧文件输入模式下报告也固定落 `~/.octo-uxlint/design-check/` 下归位，位置永不漂移 |
+| **修复模式 --work-dir 透传** | 检查 stdout 返回「工作目录」，修复阶段原样透传给 `--work-dir`，fix 数据与修复报告落同一工作子文件夹 |
 | **md 报告必出** | 0 问题 / 0 修复条目同样生成简化报告并告知绝对路径，不得以"没有问题"为由跳过 |
-| **报告目录优先级** | 用户指定（`--out-dir`）> 默认固定根（`~/.octo-uxlint/design-check/`）；用户指定的报告目录优先级最高，检查报告与修复报告均遵循 |
 | **7 天自动清理** | 脚本每次运行删除固定根下 mtime 超过 7 天的工作子文件夹，只保留近 7 天产物，无需手动清理 |
 | **上下文无缝衔接** | 用户未指定时优先从会话上下文推断检查对象与规范，推断唯一则简述依据直接开查，不重复索要 |
 | **职责边界** | 只做检查 + 修复；规范文档中的生成类内容（示例代码/生成指南/教程）一律忽略，只提取可检查的 UI 规则条目 |
