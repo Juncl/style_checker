@@ -1,6 +1,6 @@
 {
   "name": "design-checker",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "基于设计规范文档的前端工程 UI 规范检查与修复 skill（检查对象不限前端工程/单文件，规范规则库不限文本格式）",
   "private": true

@@ -3,23 +3,6 @@ name: design-system-checker
 description: UI规范一致性检查能力。支持模糊匹配设计规范名/场景名、检查 HTML/URL 是否符合设计规范。当用户提到设计规范检查、规范走查、规范名匹配、检查是否符合 Octo 规范等场景时加载本 skill。
 ---
 
-## 🔴 硬性规则：禁止修改 skill 源码
-
-**skill 的所有文件（`bin/`、`src/`、`SKILL.md`、`install.js`、`package.json` 等）均为只读，绝对不允许修改。**
-
-- ❌ 禁止：tool 失败时尝试"修复"skill 源码（改 `bin/design-system-checker.js`、改 `src/lib/` 下任何文件）
-- ❌ 禁止：新增/删除/重命名 skill 目录下的文件
-- ❌ 禁止：编辑 `SKILL.md` 内容
-- ❌ 禁止：修改 `package.json` 依赖或版本号
-
-**tool 失败时的正确处理**：
-1. 读取 stderr 错误信息，分析失败原因
-2. 向用户说明原因并提供恢复选项（重新采集 / 手动提供文件路径）
-3. 如确认是 skill 本身的 bug，告知用户联系维护者，**不要自己动手改源码**
-
-> ⚠️ 之前出现过 tool 失败后 agent 陷入死循环、擅自修改 skill 源码导致环境损坏的事故。任何失败都只能通过重新调用、调整参数或向用户求助来解决，绝不修改源码。
-
----
 
 ## 能力总览
 
@@ -138,35 +121,6 @@ design-system-checker design-spec-check [--cwd <项目目录>] --source <HTML路
 
 ---
 
-## 🔴 硬性规则：tool 失败处理策略
-
-**任何 tool 调用失败时，必须遵守以下原则，禁止自行修复或绕过：**
-
-### 总原则
-
-1. **失败即止步**：tool 返回错误（非零退出码 / stderr 有 `✗` / `isError: true`）时，**立即停止当前串联流程**，不要假装成功继续往下走
-2. **重试上限 2 次**：同一 tool 同一参数最多重试 2 次（含首次共 3 次调用）。超过后**停止重试**，向用户报告失败
-3. **禁止改源码**：失败原因不在 skill 源码，**绝不修改 `bin/`、`src/` 下任何文件**（参见顶部硬性规则）
-4. **禁止静默吞错**：不要忽略 stderr 错误信息继续执行，必须将错误原因如实告知用户
-5. **向用户求助**：重试耗尽或无法自动恢复时，**停下来让用户决定下一步**，不要自行猜测原因反复尝试
-
-### 各 tool 失败处理
-
-| tool | 失败场景 | 处理方式 |
-|---|---|---|
-| `list-design-specs` | 规则库拉取失败 / 网络错误 | 向用户报告错误，询问是否重试；不要自行假设规范名直接调 design-spec-check |
-| `design-spec-check` | source 不可达 / 规则文件不存在 / 检查超时 | 向用户提供：① 确认 source 路径/URL 可访问 ② 确认 spec-file-paths 来自 list-design-specs ③ 重试一次 |
-
-### 严格禁止的失败处理方式
-
-- ❌ 失败后修改 skill 源码（改 `bin/design-system-checker.js`、改 `src/lib/` 下文件）
-- ❌ 失败后修改 `SKILL.md` 或 `package.json`
-- ❌ 失败后跳过该 tool，用空数据或假数据继续往下走
-- ❌ 失败后无限重试（同一参数调用超过 3 次）
-- ❌ 失败后不告知用户，自行更换参数反复尝试
-- ❌ 忽略 stderr 错误信息，假装成功
-
----
 
 ## design-spec-check 结果呈现规则
 
@@ -179,12 +133,6 @@ design-system-checker design-spec-check [--cwd <项目目录>] --source <HTML路
 
 ---
 
-## 环境要求
-
-- `design-spec-check` 需要 **Chrome 浏览器**（自动查找，或通过 `CHROME_PATH` 环境变量指定）
-- 工具内部读取文件，**文件内容不占用 AI 上下文**
-
----
 
 ## 决策检查清单
 
