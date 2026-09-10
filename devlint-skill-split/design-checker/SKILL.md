@@ -10,8 +10,8 @@ description: 基于设计规范文档的前端工程 UI 规范检查与修复能
 | `--list-specs` | 列出可用规范领域 | 领域清单表（服务端优先，本地兜底） |
 | `--sync-spec <领域key>` | 检查&更新本地规范（读规范前必跑） | 「来源: server/local」 |
 | `--scan-spec <领域key>` | 规范粗筛（检查必跑，替代规范通读） | 疑似规则行清单（文件 + 行号 + 原文行） |
-| 检查递交（stdin） | 存档 + 生成检查报告 | 报告路径 + 工作目录 + 问题统计 |
-| 修复递交（`--fix`，stdin） | 存档 + 生成修复报告 | 报告路径 + 修复结果摘要 |
+| 检查递交（数据文件） | 存档 + 生成检查报告 | 报告路径 + 工作目录 + 问题统计 |
+| 修复递交（`--fix`，数据文件） | 存档 + 生成修复报告 | 报告路径 + 修复结果摘要 |
 
 规范库 = skill 内 `specFiles/`（本地自带，唯一规范读取来源）。配套文档：`check-method.md`（检查方法论，检查前 Read）、`fix-guide.md`（修复守则，用户确认修复后 Read）。
 
@@ -35,16 +35,21 @@ description: 基于设计规范文档的前端工程 UI 规范检查与修复能
   │        Read 样式载体（引用链追本地 CSS；排除 node_modules/dist/build 等；
   │        外部 CSS 不读，检查时标 warning）
   │        规范一律先 --scan-spec 粗筛拿候选行 → 按需片段精读（🔴 禁止整读规范文件）
-  │        （🔴 规范库混有示例代码、生成指南、开发教程等非规则内容时一律忽略，
-  │          只提取可对照检查的 UI 规则条目——数值、色值、尺寸、状态样式等）
-  │        → issues 经 stdin 递交（🔴 0 问题也递交——报告必出）
+  │        （🔴 规范库混有示例代码、生成指南、开发教程等非规则内容时一律忽略；
+  │          规则条目含数值类与定性类——设计风格、规整美感等抽象描述也要按
+  │          check-method「定性规则检查」分解为可观察信号检查并给出具体修复意见）
+  │        → issues 写入数据文件递交（🔴 0 问题也递交——尽力留痕；递交失败不阻塞，
+  │          照常汇报检查结果）
   ├── 4. 询问（🔴 硬性交互点）
   │        N=0 → 告知"前端实现符合设计规范，未发现问题" + 报告路径，结束
   │        N>0 → 询问是否在副本上修复：全部 / 只修 error / 自定义 / 不修
-  │              （info 为提示级，"全部修复"默认不含 info）
+  │              （info 为提示级——多为"禁硬编码但值等价"的形式问题，不影响视觉，
+  │                汇报时单独一句话带过，不与真实违规混排，默认不修复）
+  │              （定性类 warning 正常参与修复——检查阶段 suggestion 已是
+  │                "元素+属性+目标值"的可执行工单，修复照单执行即可）
   ├── 5. 修复（Read fix-guide.md）
   │        生成副本（🔴 原件只读）→ 逐条修复（每条回读 specFiles/<specFile>
-  │        核对 specQuote）→ 复查 → fix-result 经 stdin 递交
+  │        核对 specQuote）→ 复查 → fix-result 写数据文件递交
   └── 6. 汇报（🔴 一律绝对路径）
            原件未动 + 副本位置 + 修复统计 + 未通过/failed 条目说明（询问是否继续）+ 报告路径
 ```
@@ -57,15 +62,17 @@ description: 基于设计规范文档的前端工程 UI 规范检查与修复能
 node <skill目录>/bin/design-checker.mjs --list-specs [--spec-server <url>]        # 领域清单（服务端优先，本地兜底）
 node <skill目录>/bin/design-checker.mjs --sync-spec <领域key> [--spec-server <url>]  # 检查&更新；stdout 固定输出「来源: server|local」
 node <skill目录>/bin/design-checker.mjs --scan-spec <领域key>                     # 粗筛，纯只读
-node <skill目录>/bin/design-checker.mjs [--out-dir <绝对目录>] <<'JSON'           # 检查递交（stdin）
-{ "summary": "...", "sourceFile": "...", "specDomain": "<领域key>", "issues": [...] }
-JSON
-node <skill目录>/bin/design-checker.mjs --fix --work-dir <检查工作目录> [--out-dir <绝对目录>] <<'JSON'  # 修复递交（stdin）
-{ "sourceFile": "...", "copyMode": "...", "fixedFiles": [...], "fixes": [...] }
-JSON
+
+# 检查递交（两步）：① Write 数据文件 ② 传路径执行
+#   路径 = <skill目录>/report-data/report-data-<当前时间 YYYYMMDDHHmmss>.json（会话唯一，仅此目录合法）
+node <skill目录>/bin/design-checker.mjs <数据文件路径> [--out-dir <绝对目录>]
+# 修复递交：数据文件同上；--work-dir 从检查 stdout 原样透传
+node <skill目录>/bin/design-checker.mjs --fix --work-dir <检查工作目录> <数据文件路径> [--out-dir <绝对目录>]
 ```
 
-- 🔴 AI 不写产物文件：只递交数据、读 stdout，存档与报告全部由脚本完成
+- 🔴 AI 只允许写** report-data/ 下的递交数据 JSON**，报告/存档一律由脚本生成；递交成功后脚本自动删除数据文件（失败保留原地，修正后重传）
+- 🔴 禁止写 submit-check.js 之类的辅助脚本；禁止自己 Write 报告 md/存档 JSON
+- **报告只是留痕日志，不影响检查/修复结果**：递交反复失败（重试 2 次）→ 跳过留痕，用会话内已有的结果照常向用户完整汇报（问题清单/修复统计 AI 手里本来就有），附一句失败原因
 - `--work-dir` = 检查 stdout 返回的「工作目录」，**原样透传**
 - `--out-dir` 仅当用户指定过报告保存目录时追加，整理成绝对目录（`~/` 与相对路径脚本会兜底展开）；未指定时报告落 `~/.octo-uxlint/design-check/`（7 天自动过期），用户指定目录不过期
 - stdout 输出的路径均为绝对路径，汇报时原样告知
@@ -79,7 +86,7 @@ JSON
 - **失败即止步**：命令报错（非零退出码 / stderr 有 `✗`）→ 停止流程，不假装成功
 - **重试上限 2 次**（含首次共 3 次），耗尽后向用户报告，让用户决定下一步
 - 服务不可达时 `--list-specs` / `--sync-spec` 已由脚本自动退回本地（stdout 标注来源），继续流程即可；本地无领域 → 报告用户，**不要自建规范目录**
-- 递交失败 → 读 stderr 按数据结构修正后重试
+- 递交失败 → 读 stderr（JSON 语法错定位行号原文 / 字段缺失一次列全），修正数据文件后重传；重试 2 次仍失败 → **跳过留痕**（检查/修复结果不受影响），照常向用户完整汇报 + 附失败原因
 - ❌ 禁止：改 `bin/`、`lib/`、文档等任何源码；用空/假数据继续；自己写产物文件代替脚本；静默吞错
 
 ---
@@ -89,7 +96,7 @@ JSON
 - [ ] 先跑了 `--list-specs` 确认领域 key？（不能凭记忆指定）
 - [ ] 读取规范前跑了 `--sync-spec`？
 - [ ] 先 `--scan-spec` 粗筛、按候选行片段精读？（禁止整读规范文件）
-- [ ] 0 问题时仍递交了检查数据？（报告必出）
+- [ ] 0 问题时仍递交了检查数据？（递交失败时已降级：跳过留痕、照常汇报）
 - [ ] 修复前询问了用户？生成了副本、原件未动？
 - [ ] 每条修复回读了 specFiles/<specFile> 核对 specQuote？
 - [ ] `--work-dir` 从检查 stdout 原样透传？

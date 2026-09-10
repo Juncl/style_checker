@@ -27,9 +27,9 @@
 
 | issue 类型 | 修复动作 |
 |---|---|
-| error / warning | 在副本中 Edit，改为 `expected` 值 |
+| error / warning | 在副本中 Edit，改为 `expected` 值（定性类照 `suggestion` 原样执行，不做二次推导） |
 | missing | 按工单在指定位置追加 CSS 规则，内容以 `specQuote` 原文为准 |
-| extra | 目标值**必须从规范原文列举的档位/色板中选**，禁止凭常识补值 |
+| extra | 目标值**必须从规范原文列举的档位/色板中选**，禁止凭常识补值（定性类如间距档位按 suggestion 已推导的目标值执行） |
 | info | 字面值 → CSS 变量写法（变量名以 `specQuote` 为准） |
 
 - 🔴 **每条动手前 Read `<skill目录>/specFiles/<specFile>` 核对 specQuote**，出处不实（quote 与原文不符 / expected 无法得出）→ 标 `failed`（"规范出处不实"），不猜测目标值
@@ -40,10 +40,15 @@
 
 按 `fixes[].file` 定位副本，Read 修复点确认新值**满足 specQuote 原文**（不是"改过就算通过"）；定性要求的 warning 只确认已按工单修改；多处同款问题抽查代表位置。结果记入 `recheck` 字段。
 
-**4. fix-result 经 stdin 递交（🔴 AI 不写文件，存档与报告由脚本完成）**
+**4. fix-result 写数据文件递交（两步：① Write `<skill目录>/report-data/report-data-<当前时间 YYYYMMDDHHmmss>.json`（内容 = 下方结构）→ ② 执行递交命令；🔴 只许写 report-data/ 下的数据 JSON，报告/存档必由脚本生成，禁止写 submit-check.js 之类的辅助脚本）**
 
 ```bash
-node <skill目录>/bin/design-checker.mjs --fix --work-dir <检查工作目录> [--out-dir <绝对目录>] <<'JSON'
+node <skill目录>/bin/design-checker.mjs --fix --work-dir <检查工作目录> <数据文件路径> [--out-dir <绝对目录>]
+```
+
+数据文件内容（fix-result 结构）：
+
+```json
 {
   "sourceFile": "/Users/name/project",
   "copyMode": "project",
@@ -59,7 +64,6 @@ node <skill目录>/bin/design-checker.mjs --fix --work-dir <检查工作目录> 
     }
   ]
 }
-JSON
 ```
 
 字段说明：

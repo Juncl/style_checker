@@ -3,7 +3,8 @@
  *
  * 【职责】
  * 检查/修复报告的渲染、存档与固定根清理。bin/design-checker.mjs 解析完参数后
- * 调用本模块的 runCheck / runFix 完成落盘（🔴 AI 只经 stdin 递交数据，不写产物文件）。
+ * 调用本模块的 runCheck / runFix 完成落盘（🔴 AI 只递交数据，不写任何产物文件；
+ * 报告命名固定 check-/fix-<时间戳>，与递交文件名无关）。
  *
  * 【报告目录规则】（目录控制权在本模块，AI 只负责把用户指定目录整理成合格格式传入）
  *   固定根（config.REPORT_ROOT）——mac：~/.octo-uxlint/design-check/；Windows：%USERPROFILE%\.octo-uxlint\design-check\
@@ -44,19 +45,6 @@ export function normalizeOutDir(p) {
   return resolve(p)
 }
 
-/** 报告目录（文件模式兜底用）：--out-dir 指定目录（用户指定优先，不过期）；未指定时固定落 REPORT_ROOT 下——输入 JSON 已在该根下则与其同目录（同一工作子文件夹），JSON 在别处则以父目录名归位到该根下 */
-function getOutputDir(jsonFile, outDir) {
-  if (outDir) {
-    const dir = normalizeOutDir(outDir)
-    mkdirSync(dir, { recursive: true })
-    return dir
-  }
-  const jsonDir = resolve(dirname(jsonFile))
-  const dir = jsonDir.startsWith(config.REPORT_ROOT + sep) ? jsonDir : join(config.REPORT_ROOT, basename(jsonDir))
-  mkdirSync(dir, { recursive: true })
-  return dir
-}
-
 /** 清理固定根下超过指定天数的工作子文件夹；尽力而为，失败静默不影响主流程 */
 export function pruneOldRuns(maxAgeDays = config.REPORT_MAX_AGE_DAYS) {
   try {
@@ -72,11 +60,70 @@ export function pruneOldRuns(maxAgeDays = config.REPORT_MAX_AGE_DAYS) {
   } catch {}
 }
 
-/** 报告文件名：前缀沿用输入 JSON 主干名去掉末尾时间戳段（issues-xxx.json → issues-<新时间戳>.md），同次产物前缀配对、时间戳各取各的 */
-function getReportPath(jsonFile, dir) {
-  const stem = basename(jsonFile).replace(/\.[^.]+$/, '')
-  const prefix = stem.replace(/-\d+$/, '') || 'report'
-  return join(dir, `${prefix}-${timestamp()}.md`)
+/** 报告文件名：与输入文件名解耦，固定 check-/fix- 前缀 + 时间戳（递交什么文件进来都不影响产物命名） */
+
+/** JSON 语法错误信息增强：定位错误行号 + 该行原文 */
+function describeSyntaxError(text, message) {
+  const m = String(message).match(/position (\d+)/i)
+  if (!m) return message
+  const pos = Number(m[1])
+  const before = text.slice(0, pos)
+  const line = before.split(/\r?\n/).length
+  const lineText = text.split(/\r?\n/)[line - 1] || ''
+  return `${message}（第 ${line} 行：${lineText.trim().slice(0, 80) || '<空行>'}）`
+}
+
+const CHECK_REQUIRED = ['severity', 'rule', 'file', 'element', 'current', 'expected', 'specFile', 'specQuote', 'suggestion']
+const FIX_REQUIRED = ['severity', 'rule', 'file', 'element', 'action', 'status']
+const SEVERITIES = new Set(['error', 'warning', 'missing', 'extra', 'info'])
+const FIX_STATUSES = new Set(['fixed', 'skipped', 'failed'])
+
+/**
+ * 校验检查数据（issueData），返回错误数组（空数组 = 通过）。
+ * 一次性列出全部问题，便于 AI 一轮修正，避免反复碰壁。
+ */
+export function validateCheckData(data) {
+  const errs = []
+  if (!data || typeof data !== 'object') return ['顶层必须是 JSON 对象']
+  for (const f of ['summary', 'sourceFile', 'specDomain']) {
+    if (!String(data[f] || '').trim()) errs.push(`顶层缺必填字段 ${f}`)
+  }
+  const issues = data.issues
+  if (!Array.isArray(issues)) return [...errs, 'issues 必须是数组（0 问题写 []）']
+  issues.forEach((d, i) => {
+    if (!d || typeof d !== 'object') {
+      errs.push(`issues[${i}] 必须是对象`)
+      return
+    }
+    const missing = CHECK_REQUIRED.filter(f => d[f] === undefined || d[f] === null || String(d[f]).trim() === '')
+    if (missing.length) errs.push(`issues[${i}]（${d.rule || d.element || '?'}）缺字段：${missing.join('、')}`)
+    if (d.severity && !SEVERITIES.has(d.severity)) errs.push(`issues[${i}].severity 非法：${d.severity}（只能是 error/warning/missing/extra/info）`)
+  })
+  return errs
+}
+
+/**
+ * 校验修复数据（fixData），返回错误数组（空数组 = 通过）。
+ */
+export function validateFixData(data) {
+  const errs = []
+  if (!data || typeof data !== 'object') return ['顶层必须是 JSON 对象']
+  for (const f of ['sourceFile', 'copyMode']) {
+    if (!String(data[f] || '').trim()) errs.push(`顶层缺必填字段 ${f}`)
+  }
+  const fixes = data.fixes
+  if (!Array.isArray(fixes)) return [...errs, 'fixes 必须是数组（无可执行条目写 []）']
+  fixes.forEach((d, i) => {
+    if (!d || typeof d !== 'object') {
+      errs.push(`fixes[${i}] 必须是对象`)
+      return
+    }
+    const missing = FIX_REQUIRED.filter(f => d[f] === undefined || d[f] === null || String(d[f]).trim() === '')
+    if (missing.length) errs.push(`fixes[${i}]（${d.rule || d.element || '?'}）缺字段：${missing.join('、')}`)
+    if (d.status && !FIX_STATUSES.has(d.status)) errs.push(`fixes[${i}].status 非法：${d.status}（只能是 fixed/skipped/failed）`)
+    if (d.specFile && !d.specQuote) errs.push(`fixes[${i}] 有 specFile 但缺 specQuote`)
+  })
+  return errs
 }
 
 /** Markdown 表格单元格转义：| 和换行 */
@@ -91,29 +138,27 @@ function writeReportFile(path, md) {
   writeFileSync(path, '\ufeff' + md, 'utf-8')
 }
 
-/** 从文件内容解析 JSON（兼容纯 JSON / ```json 代码块） */
+/** 从文件内容解析 JSON（兼容纯 JSON / ```json 代码块）；语法错附带行号与原文，便于一轮修正 */
 export function parseJson(content) {
   const text = String(content).trim()
 
+  const tryParse = (s) => {
+    try {
+      return JSON.parse(s)
+    } catch (err) {
+      throw new Error(describeSyntaxError(s, err.message))
+    }
+  }
+
   try {
-    return JSON.parse(text)
-  } catch {}
-
-  const m = text.match(/```json\s*([\s\S]*?)```/)
-  if (m) {
-    try {
-      return JSON.parse(m[1].trim())
-    } catch {}
+    return tryParse(text)
+  } catch (err) {
+    const m = text.match(/```json\s*([\s\S]*?)```/)
+    if (m) return tryParse(m[1].trim())
+    const m2 = text.match(/```\s*([\s\S]*?)```/)
+    if (m2) return tryParse(m2[1].trim())
+    throw err
   }
-
-  const m2 = text.match(/```\s*([\s\S]*?)```/)
-  if (m2) {
-    try {
-      return JSON.parse(m2[1].trim())
-    } catch {}
-  }
-
-  throw new Error('无法从文件中解析 JSON，请确认内容是纯 JSON 或包含 json 代码块')
 }
 
 /** 读 stdin 全文为 Buffer（stdin 模式：AI 经 heredoc 递交数据；编码统一交 decodeTextBuffer 兜底） */
@@ -231,19 +276,12 @@ _生成时间：${readableTimestamp()}_
 }
 
 /**
- * 检查模式统一入口。
- * stdin 模式（主线）：建工作目录 + 落盘 check JSON + 生成报告，AI 不写任何文件。
- * 文件模式（兜底）：JSON 已在盘上（AI 落盘偏差场景），报告按固定根归位，不重写 JSON。
+ * 检查模式统一入口（stdin / 文件递交同构）：
+ * 建 <领域key>-<时间戳>/ 工作目录 → 落盘 check JSON → 生成 md 报告（--out-dir 用户目录 > 工作目录）。
+ * AI 不写任何产物文件，报告命名固定 check-<时间戳>，与递交文件名无关。
  */
-export async function runCheck(data, { outDir, hasFile, jsonFile }) {
+export async function runCheck(data, { outDir }) {
   const issues = data.issues || []
-
-  if (hasFile) {
-    const md = generateCheckReport(data)
-    const reportPath = getReportPath(jsonFile, getOutputDir(jsonFile, outDir))
-    writeReportFile(reportPath, md)
-    return { reportPath, jsonPath: null, workDir: null, totalIssues: issues.length, sevCounts: countSeverity(issues) }
-  }
 
   const ts = timestamp()
   const workDir = join(config.REPORT_ROOT, `${safeDomain(data.specDomain)}-${ts}`)
@@ -252,13 +290,11 @@ export async function runCheck(data, { outDir, hasFile, jsonFile }) {
   const jsonPath = join(workDir, `check-${ts}.json`)
   writeFileSync(jsonPath, JSON.stringify(data, null, 2), 'utf-8')
 
-  // md 报告：--out-dir 用户指定目录（不过期）> 固定根工作目录（与 JSON 同目录，自动过期）
   const md = generateCheckReport(data)
   const reportDir = outDir ? normalizeOutDir(outDir) : workDir
   mkdirSync(reportDir, { recursive: true })
   const reportPath = join(reportDir, `check-${ts}.md`)
   writeReportFile(reportPath, md)
-
   return { reportPath, jsonPath, workDir, totalIssues: issues.length, sevCounts: countSeverity(issues) }
 }
 
@@ -344,23 +380,16 @@ _生成时间：${readableTimestamp()}_
 }
 
 /**
- * 修复模式统一入口。
- * stdin 模式（主线）：fix JSON + 修复报告写入 --work-dir 指定的检查工作目录。
- * 文件模式（兜底）：JSON 已在盘上，报告按固定根归位，不重写 JSON。
+ * 修复模式统一入口（stdin / 文件递交同构）：
+ * fix JSON + 修复报告写入 --work-dir 指定的检查工作目录（报告可经 --out-dir 改道用户目录）。
+ * 报告命名固定 fix-<时间戳>，与递交文件名无关。
  */
-export async function runFix(data, { workDir, outDir, hasFile, jsonFile }) {
+export async function runFix(data, { workDir, outDir }) {
   const fixes = data.fixes || []
   const count = {
     fixed: fixes.filter(f => f.status === 'fixed').length,
     failed: fixes.filter(f => f.status === 'failed').length,
     skipped: fixes.filter(f => f.status === 'skipped').length,
-  }
-
-  if (hasFile) {
-    const md = generateFixReport(data)
-    const reportPath = getReportPath(jsonFile, getOutputDir(jsonFile, outDir))
-    writeReportFile(reportPath, md)
-    return { reportPath, jsonPath: null, ...count, totalFixes: fixes.length }
   }
 
   const ts = timestamp()

@@ -17,10 +17,10 @@
  *   design-checker --list-specs [--spec-server <url>]
  *   design-checker --sync-spec <领域key> [--spec-server <url>]
  *   design-checker --scan-spec <领域key>
- *   design-checker [--out-dir <绝对目录>] <<'JSON'                    （检查递交，stdin）
- *   design-checker --fix --work-dir <检查工作目录> [--out-dir <绝对目录>] <<'JSON'  （修复递交，stdin）
- *   design-checker <issues.json> [--out-dir <绝对目录>]               （兼容旧文件输入）
- *   design-checker --fix <fix-result.json> [--out-dir <绝对目录>]     （兼容旧文件输入）
+ *   design-checker <数据文件路径> [--out-dir <绝对目录>]                   （检查递交：AI 先 Write 数据文件）
+ *   design-checker --fix --work-dir <检查工作目录> <数据文件路径> [...]      （修复递交）
+ *   （数据文件 = <skill目录>/report-data/report-data-<时间戳>.json；递交成功后自动删除；
+ *    stdin heredoc 为兼容旧通道保留；报告命名固定 check-/fix-<时间戳>，与递交文件名无关）
  *
  * 输出：进度与结果到 stdout（路径均为绝对路径），错误信息到 stderr 并以非零退出码退出。
  */
@@ -32,6 +32,7 @@ import { config } from '../lib/config.js'
 import { listSpecs, getSpecDomain, getSpecArchive } from '../lib/api.js'
 import {
   runCheck, runFix, readStdin, parseJson, decodeTextBuffer, safeDomain, pruneOldRuns,
+  normalizeOutDir, validateCheckData, validateFixData,
 } from '../lib/report.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -192,8 +193,8 @@ const RULE_VALUE_PATTERNS = [
   /\b\d+(?:\.\d+)?\s*%/,                       // 百分比（50%）
 ]
 
-/** 疑似规则行召回——规范关键词（定性规则兜底；宁多勿漏，AI 精审剔除） */
-const RULE_KEYWORD_RE = /(字号|字体|字重|行高|颜色|色彩|主色|背景|边框|描边|圆角|间距|边距|留白|内边距|外边距|高度|宽度|尺寸|大小|阴影|透明度|渐变|光晕|悬停|按下|禁用|选中|置灰|font|color|radius|spacing|border|shadow|opacity|height|width|padding|margin|size|weight|hover|active|focus|disabled)/i
+/** 疑似规则行召回——规范关键词（定性规则兜底；宁多勿漏，AI 精审剔除）。末段为定性描述关键词（风格/规整/层次等），供「定性规则检查」分解落地 */
+const RULE_KEYWORD_RE = /(字号|字体|字重|行高|颜色|色彩|主色|背景|边框|描边|圆角|间距|边距|留白|内边距|外边距|高度|宽度|尺寸|大小|阴影|透明度|渐变|光晕|悬停|按下|禁用|选中|置灰|风格|规整|层次|统一|简洁|呼吸|美感|协调|大气|优雅|font|color|radius|spacing|border|shadow|opacity|height|width|padding|margin|size|weight|hover|active|focus|disabled)/i
 
 /** 判定某行是否为疑似规则行 */
 function isRuleCandidateLine(line) {
@@ -281,21 +282,27 @@ function usage() {
   # 规范粗筛（纯只读；规范文件 > 3 个时，检查第 1 遍先跑此命令替代逐字通读）
   node ${join(__dirname, 'design-checker.mjs')} --scan-spec <领域key>
 
-  # 检查递交（stdin，主线）
-  node ${join(__dirname, 'design-checker.mjs')} [--out-dir <绝对目录>] <<'JSON'
+  # 检查递交（主通道：先 Write 数据文件，再传路径执行）
+  #   数据文件：<skill目录>/report-data/report-data-<时间戳 YYYYMMDDHHmmss>.json（会话唯一）
+  node ${join(__dirname, 'design-checker.mjs')} <数据文件路径> [--out-dir <绝对目录>]
   { "summary": "...", "sourceFile": "...", "specDomain": "<领域key>", "issues": [...] }
-  JSON
+  → 脚本校验 → 生成 check-<时间戳>.md 报告 + JSON 存档 → 删除数据文件
   → stdout：报告路径 + JSON 存档路径 + 工作目录 + 问题统计
+  → JSON 语法错定位行号原文；字段缺失/非法一次性列全（修正数据文件后重传）
+  → 报告只是留痕日志：递交反复失败时跳过（检查/修复结果不受影响），照常向用户汇报
 
-  # 修复递交（stdin，主线；--work-dir 从检查 stdout 原样透传）
-  node ${join(__dirname, 'design-checker.mjs')} --fix --work-dir <检查工作目录> [--out-dir <绝对目录>] <<'JSON'
+  # 修复递交（--work-dir 从检查 stdout 原样透传）
+  node ${join(__dirname, 'design-checker.mjs')} --fix --work-dir <检查工作目录> <数据文件路径> [--out-dir <绝对目录>]
   { "sourceFile": "...", "copyMode": "...", "fixedFiles": [...], "fixes": [...] }
-  JSON
-  → stdout：修复报告路径 + 修复数据存档路径 + 修复结果摘要
+  → 脚本校验 → 生成 fix-<时间戳>.md 报告 + JSON 存档 → 删除数据文件
 
-兼容旧文件输入（兜底）:
-  node ${join(__dirname, 'design-checker.mjs')} <issues.json> [--out-dir <绝对目录>]
-  node ${join(__dirname, 'design-checker.mjs')} --fix <fix-result.json> [--out-dir <绝对目录>]
+兼容 stdin 递交（旧通道保留）:
+  node ${join(__dirname, 'design-checker.mjs')} [--out-dir <绝对目录>] <<'JSON'
+  { ...检查数据... }
+  JSON
+  node ${join(__dirname, 'design-checker.mjs')} --fix --work-dir <检查工作目录> [--out-dir <绝对目录>] <<'JSON'
+  { ...修复数据... }
+  JSON
 
 参数:
   --out-dir <目录>    报告保存目录（🔴 仅用户指定过时由 AI 传入；必须是绝对目录；
@@ -318,13 +325,14 @@ function usage() {
 async function main() {
   const argv = process.argv.slice(2)
 
-  // 解析 --out-dir / --work-dir / --scan-spec / --sync-spec / --list-specs / --spec-server（参数位置不限）
+  // 参数解析（位置无关）：--fix 可出现在任意位置；其余 flag 同理；数据文件 = 唯一非 flag 位置参数
   let outDir = null
   let workDir = null
   let scanDomain = null
   let syncDomain = null
   let specServer = null
   let listSpecsMode = false
+  let isFix = false
   const rest = []
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--out-dir') {
@@ -359,13 +367,14 @@ async function main() {
       }
     } else if (argv[i] === '--list-specs') {
       listSpecsMode = true
+    } else if (argv[i] === '--fix') {
+      isFix = true
     } else {
       rest.push(argv[i])
     }
   }
 
-  const isFix = rest[0] === '--fix'
-  const jsonFile = isFix ? rest[1] : rest[0]
+  const jsonFile = rest[0]
   const hasFile = Boolean(jsonFile)
 
   if (argv.includes('-h') || argv.includes('--help')) {
@@ -388,14 +397,23 @@ async function main() {
     process.exit(0)
   }
 
-  // 输入来源：位置参数文件（旧模式兜底）> stdin（主线：AI 只递交数据，不落盘）；编码统一走 decodeTextBuffer 兜底
+  // 输入来源：位置参数数据文件（主通道：AI 先 Write JSON 到 report-data/ 再传路径）；
+  // stdin 为兼容保留。数据文件路径做 ~ 前缀 / 相对路径兜底归一；编码统一走 decodeTextBuffer
   let raw = ''
-  if (hasFile) {
-    if (!existsSync(jsonFile)) {
-      console.error(`✗ JSON 文件不存在: ${jsonFile}`)
+  const dataFile = jsonFile ? normalizeOutDir(jsonFile) : null
+  if (dataFile) {
+    if (!existsSync(dataFile)) {
+      console.error(`✗ 数据文件不存在: ${jsonFile}（递交方式：Write JSON 到 <skill目录>/report-data/report-data-<时间戳>.json，再把该路径作为参数传入）`)
       process.exit(1)
     }
-    raw = decodeTextBuffer(readFileSync(jsonFile), jsonFile)
+    if (statSync(dataFile).isDirectory()) {
+      console.error(`✗ 传入的是目录而非数据文件: ${jsonFile}（应传 report-data/ 下的 .json 文件本身，不是它所在的目录）`)
+      process.exit(1)
+    }
+    raw = decodeTextBuffer(readFileSync(dataFile), dataFile)
+  } else if (isFix) {
+    console.error('✗ 修复模式缺少数据文件参数（用法：--fix --work-dir <检查工作目录> <数据文件路径>）')
+    process.exit(1)
   } else {
     if (process.stdin.isTTY) {
       usage()
@@ -408,7 +426,18 @@ async function main() {
   try {
     data = parseJson(raw)
   } catch (err) {
-    console.error(`✗ ${err.message}`)
+    const hint = String(raw).trim() === '' ? '（数据文件为空——检查 Write 是否写入了内容）' : ''
+    console.error(`✗ JSON 语法错误: ${err.message}${hint}`)
+    console.error('（修正数据文件后重新递交；报告不影响检查/修复结果本身）')
+    process.exit(1)
+  }
+
+  // 字段级结构校验：一次性列出全部问题，便于一轮修正
+  const errs = isFix ? validateFixData(data) : validateCheckData(data)
+  if (errs.length) {
+    console.error(`✗ 递交数据校验失败（${errs.length} 处）：`)
+    for (const e of errs) console.error(`  - ${e}`)
+    console.error('（修正数据文件后重新递交；报告不影响检查/修复结果本身）')
     process.exit(1)
   }
 
@@ -417,24 +446,31 @@ async function main() {
 
   try {
     if (isFix) {
-      // 修复模式：workDir 优先级 --work-dir 参数 > 数据内 workDir 字段 > （文件模式）JSON 所在目录
-      const wd = workDir || data.workDir || (hasFile ? dirname(resolve(jsonFile)) : null)
+      // 修复模式：workDir = --work-dir（检查 stdout 已返回，原样透传）> 数据内 workDir 字段
+      const wd = workDir || data.workDir
       if (!wd) {
-        console.error('✗ 修复模式（stdin）需要 --work-dir <检查工作目录>（检查 stdout 已返回，原样透传即可）')
+        console.error('✗ 修复模式需要 --work-dir <检查工作目录>（检查 stdout 已返回，原样透传即可）')
         process.exit(1)
       }
-      const r = await runFix(data, { workDir: resolve(wd), outDir, hasFile, jsonFile })
+      const wdAbs = resolve(wd)
+      if (!existsSync(wdAbs)) {
+        console.error(`✗ 检查工作目录不存在: ${wd}（应使用检查 stdout 返回的「工作目录」原样透传，不要自己拼路径）`)
+        process.exit(1)
+      }
+      const r = await runFix(data, { workDir: wdAbs, outDir })
       console.log(`✓ 修复报告已生成: ${r.reportPath}`)
-      if (r.jsonPath) console.log(`✓ 修复数据已存档: ${r.jsonPath}`)
+      console.log(`✓ 修复数据已存档: ${r.jsonPath}`)
       console.log(`修复 ${r.fixed} / 失败 ${r.failed} / 跳过 ${r.skipped}，共 ${r.totalFixes} 条`)
     } else {
-      const r = await runCheck(data, { outDir, hasFile, jsonFile })
+      const r = await runCheck(data, { outDir })
       console.log(`✓ 报告已生成: ${r.reportPath}`)
-      if (r.jsonPath) console.log(`✓ 检查数据已存档: ${r.jsonPath}`)
-      if (r.workDir) console.log(`工作目录: ${r.workDir}`)
+      console.log(`✓ 检查数据已存档: ${r.jsonPath}`)
+      console.log(`工作目录: ${r.workDir}`)
       const c = r.sevCounts
       console.log(`共 ${r.totalIssues} 处问题（error ${c.error} / warning ${c.warning} / missing ${c.missing} / extra ${c.extra} / info ${c.info}）`)
     }
+    // 递交成功后删除数据文件（临时文件不滞留；失败时上文已 exit，文件保留供修正重传）
+    if (dataFile) rmSync(dataFile, { force: true })
   } catch (err) {
     console.error(`✗ ${err.message}`)
     process.exit(1)
