@@ -7,9 +7,9 @@ import {
 
 const router = Router()
 
-// ── 只读分发接口（skill 经 build-report.mjs --list-specs / --sync-spec 消费） ──
+// ── 只读分发接口（skill 经 bin/design-checker.mjs --list-specs / --sync-spec 消费） ──
 
-// GET /specs —— 领域清单（替代原 specFiles/index.md 的手工维护）
+// GET /specs —— 领域清单（以 specFiles/index.json 总表为准）
 router.get('/', (req, res) => {
   res.json({ specs: listDomains() })
 })
@@ -30,7 +30,7 @@ router.get('/:domain', (req, res) => {
     key: domain,
     name: meta.name || domain,
     description: meta.description || '',
-    version: meta.version ?? 0,
+    version: meta.version ?? '',
     updatedAt: meta.updatedAt || '',
     files,
   })
@@ -53,7 +53,7 @@ router.get('/:domain/file', (req, res) => {
     return res.status(413).json({ error: '文件超出大小限制' })
   }
   const meta = readMeta(domain) || {}
-  res.json({ domain, path, version: meta.version ?? 0, content })
+  res.json({ domain, path, version: meta.version ?? '', content })
 })
 
 // GET /specs/:domain/archive —— 整包下载（模式 A 全量同步：files 平铺 + meta）
@@ -69,7 +69,7 @@ router.get('/:domain/archive', (req, res) => {
   })
   res.json({
     domain,
-    version: meta.version ?? 0,
+    version: meta.version ?? '',
     meta: { name: meta.name || domain, description: meta.description || '', updatedAt: meta.updatedAt || '' },
     files,
   })

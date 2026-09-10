@@ -1,6 +1,8 @@
 import { Router } from 'express'
+import { mkdirSync } from 'fs'
+import { join } from 'path'
 import {
-  MAX_FILE_BYTES, MAX_BATCH_BYTES,
+  SPECS_ROOT, MAX_FILE_BYTES, MAX_BATCH_BYTES,
   validateDomainKey, validateRelPath, validateVersion, domainExists, readMeta,
   writeMeta, bumpVersion, writeSpecFile, deleteSpecFile, deleteDomain, listSpecFiles,
 } from '../utils/specStore.js'
@@ -28,7 +30,8 @@ router.post('/specs', (req, res) => {
   }
   if (domainExists(key)) return res.status(409).json({ error: `领域已存在: ${key}` })
 
-  const meta = writeMeta(key, { name: String(name).trim(), description: String(description || '').trim(), version: version || '1.0.0' })
+  mkdirSync(join(SPECS_ROOT, key), { recursive: true })   // 建领域目录
+  const meta = writeMeta(key, { name: String(name).trim(), description: String(description || '').trim(), version: version || '1.0.0' })  // 总表登记
   res.json({ ok: true, key, version: meta.version, updatedAt: meta.updatedAt })
 })
 

@@ -2,13 +2,14 @@
  * spec-server —— design-checker 规范库服务（独立部署，端口 3021）
  *
  * 职责：设计规范文档（任意可读文本格式）的存储与分发，纯数据管道，不解析规范内容。
- * 规范主库：spec-server/specFiles/<领域key>/（index.json = 领域元数据，version 为 semver 字符串；其余文件 = 规范文件，层级不限）
+ * 规范主库：spec-server/specFiles/（index.json = 领域总表，数组，version 为 semver 字符串；
+ *           <领域key>/ 子目录 = 该领域规范文件，层级不限）
  *
- * 只读接口（无鉴权，skill 经 build-report.mjs --list-specs / --sync-spec 消费）：
+ * 只读接口（无鉴权，skill 经 bin/design-checker.mjs --list-specs / --sync-spec 消费）：
  *   GET /specs                          领域清单 [{key, name, description, version, updatedAt, fileCount}]
  *   GET /specs/:domain                  单领域 meta + 文件清单 [{path, lines, bytes}]
  *   GET /specs/:domain/file?path=xxx    单文件原文 {path, content}
- *   GET /specs/:domain/archive          整包下载 {version, meta, files:[{path, content}]}（模式 A 全量同步）
+ *   GET /specs/:domain/archive          整包下载 {version, meta, files:[{path, content}]}（--sync-spec 全量拉取用）
  *
  * 管理接口（写操作；设置了 SPEC_ADMIN_TOKEN 环境变量时需 Header x-admin-token）：
  *   POST   /admin/specs                  新建领域        {key, name, description?}

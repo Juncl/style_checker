@@ -4,10 +4,10 @@ import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-/** 规范主库根目录：spec-server/specFiles/（按领域分子文件夹，入 git） */
+/** 规范主库根目录：spec-server/specFiles/（index.json = 领域总表；<领域key>/ = 规范文件目录，入 git） */
 export const SPECS_ROOT = join(__dirname, '..', 'specFiles')
 
-/** 保留文件名：任何层级均不作为规范文件分发（README.md = 领域说明；index.json = 领域元数据） */
+/** 保留文件名：任何层级均不作为规范文件分发（README.md = 领域说明；index.json 仅存在于根级总表，领域内不允许） */
 const RESERVED_FILES = new Set(['README.md', 'index.json'])
 
 /** 单文件 / 单次批量上传大小上限 */
@@ -36,23 +36,35 @@ export function validateRelPath(p) {
   return null
 }
 
-// ── 元数据（index.json） ────────────────────────────────
+// ── 领域总表（specFiles/index.json，数组：每个元素 = 一个领域条目） ──
 
-function metaPath(key) { return join(SPECS_ROOT, key, 'index.json') }
+/** 总表路径 */
+const INDEX_PATH = join(SPECS_ROOT, 'index.json')
+
+/** 读领域总表（不存在/格式异常兜底空数组） */
+function readIndex() {
+  try {
+    if (!existsSync(INDEX_PATH)) return []
+    const data = JSON.parse(readFileSync(INDEX_PATH, 'utf-8'))
+    return Array.isArray(data) ? data : []
+  } catch {
+    return []
+  }
+}
+
+/** 写领域总表（UTF-8，2 空格缩进） */
+function writeIndex(list) {
+  mkdirSync(SPECS_ROOT, { recursive: true })
+  writeFileSync(INDEX_PATH, JSON.stringify(list, null, 2) + '\n', 'utf-8')
+}
 
 export function domainExists(key) {
   return existsSync(join(SPECS_ROOT, key))
 }
 
-/** 读领域 index.json（不存在返回 null） */
+/** 读领域条目（从根总表按 key 查找，不存在返回 null） */
 export function readMeta(key) {
-  const p = metaPath(key)
-  if (!existsSync(p)) return null
-  try {
-    return JSON.parse(readFileSync(p, 'utf-8'))
-  } catch {
-    return null
-  }
+  return readIndex().find(e => e.key === key) || null
 }
 
 /** 人类可读时间戳 */
@@ -75,14 +87,16 @@ function bumpSemver(v) {
   return `${m[1]}.${m[2]}.${Number(m[3]) + 1}`
 }
 
-/** 写入领域 index.json（缺 updatedAt 时补当前时间） */
+/** 更新/追加总表中的领域条目（缺 updatedAt 时补当前时间） */
 export function writeMeta(key, meta) {
-  const dir = join(SPECS_ROOT, key)
-  mkdirSync(dir, { recursive: true })
-  const full = { key, name: meta.name || key, description: meta.description || '', ...meta }
-  if (!full.updatedAt) full.updatedAt = readableTimestamp()
-  writeFileSync(metaPath(key), JSON.stringify(full, null, 2) + '\n', 'utf-8')
-  return full
+  const list = readIndex()
+  const idx = list.findIndex(e => e.key === key)
+  const entry = { key, name: meta.name || key, description: meta.description || '', ...meta }
+  if (!entry.updatedAt) entry.updatedAt = readableTimestamp()
+  if (idx >= 0) list[idx] = { ...list[idx], ...entry }
+  else list.push(entry)
+  writeIndex(list)
+  return idx >= 0 ? list[idx] : entry
 }
 
 /**
@@ -146,27 +160,20 @@ export function deleteSpecFile(domainKey, relPath) {
   return true
 }
 
-/** 删除整个领域 */
+/** 删除整个领域（删领域目录 + 总表移除条目） */
 export function deleteDomain(domainKey) {
   rmSync(join(SPECS_ROOT, domainKey), { recursive: true, force: true })
+  writeIndex(readIndex().filter(e => e.key !== domainKey))
 }
 
-/** 全部领域清单（子目录即领域，meta 缺失时兜底） */
+/** 全部领域清单（以根总表为准，总表顺序即展示顺序） */
 export function listDomains() {
-  if (!existsSync(SPECS_ROOT)) return []
-  const out = []
-  for (const name of readdirSync(SPECS_ROOT).sort()) {
-    const p = join(SPECS_ROOT, name)
-    if (!statSync(p).isDirectory() || name.startsWith('.')) continue
-    const meta = readMeta(name) || {}
-    out.push({
-      key: name,
-      name: meta.name || name,
-      description: meta.description || '',
-      version: meta.version ?? 0,
-      updatedAt: meta.updatedAt || '',
-      fileCount: listSpecFiles(name).length,
-    })
-  }
-  return out
+  return readIndex().map(e => ({
+    key: e.key,
+    name: e.name || e.key,
+    description: e.description || '',
+    version: e.version ?? '—',
+    updatedAt: e.updatedAt || '',
+    fileCount: domainExists(e.key) ? listSpecFiles(e.key).length : 0,
+  }))
 }

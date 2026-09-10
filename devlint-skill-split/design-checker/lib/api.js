@@ -3,7 +3,7 @@
  *
  * 【职责】
  * 纯调接口：经 fetch 访问规范库服务（spec-server），返回原始 JSON，无本地副作用。
- * 同步落盘 / 三级兜底等编排逻辑在 bin/design-checker.mjs。
+ * 同步落盘 / 本地兜底等编排逻辑在 bin/design-checker.mjs。
  *
  * 【接口清单】（只读，无鉴权）
  *   GET /specs                          领域清单

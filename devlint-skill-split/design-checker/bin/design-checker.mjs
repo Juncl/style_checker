@@ -39,38 +39,41 @@ const SKILL_ROOT = join(__dirname, '..')
 
 // ── 模式：规范清单（--list-specs） ──────────────────────
 
-/** 读本地领域 index.json（不存在返回 null） */
-function readLocalIndex(domainKey) {
-  const p = join(config.SPEC_ROOT, domainKey, 'index.json')
-  if (!existsSync(p)) return null
-  try { return JSON.parse(readFileSync(p, 'utf-8')) } catch { return null }
+/** 读本地领域总表（specFiles/index.json 数组；不存在/格式异常兜底空数组） */
+function readLocalIndex() {
+  try {
+    const p = join(config.SPEC_ROOT, 'index.json')
+    if (!existsSync(p)) return []
+    const data = JSON.parse(readFileSync(p, 'utf-8'))
+    return Array.isArray(data) ? data : []
+  } catch {
+    return []
+  }
 }
 
-/** 扫描 skill 内 specFiles/ 自动生成领域清单（服务不可达时的本地兜底） */
+/** 读本地领域条目（从总表按 key 查找，不存在返回 null） */
+function readLocalMeta(domainKey) {
+  return readLocalIndex().find(e => e.key === domainKey) || null
+}
+
+/** 扫描 skill 内 specFiles/ 生成本地领域清单（服务不可达时的本地兜底，以根总表为准；过滤目录已不存在的死条目） */
 function localSpecList() {
-  if (!existsSync(config.SPEC_ROOT)) return []
-  const out = []
-  for (const name of readdirSync(config.SPEC_ROOT).sort()) {
-    const p = join(config.SPEC_ROOT, name)
-    if (!statSync(p).isDirectory() || name.startsWith('.')) continue
-    const meta = readLocalIndex(name) || {}
-    const fileCount = listSpecFiles(p).length
-    out.push({
-      key: name,
-      name: meta.name || name,
-      description: meta.description || '',
-      version: meta.version ?? '—',
-      updatedAt: meta.updatedAt || '',
-      fileCount,
-    })
-  }
-  return out
+  return readLocalIndex()
+    .filter(e => existsSync(join(config.SPEC_ROOT, e.key)))
+    .map(e => ({
+      key: e.key,
+      name: e.name || e.key,
+      description: e.description || '',
+      version: e.version ?? '—',
+      updatedAt: e.updatedAt || '',
+      fileCount: listSpecFiles(join(config.SPEC_ROOT, e.key)).length,
+    }))
 }
 
 /** 打印领域清单表 */
 function printSpecTable(specs, sourceLabel) {
   if (!specs.length) {
-    console.log(`规范清单为空（来源：${sourceLabel}）——请先经服务端管理接口上传规范并同步`)
+    console.log(`规范清单为空（来源：${sourceLabel}）`)
     return
   }
   console.log(`== 规范清单（来源：${sourceLabel}）==`)
@@ -101,7 +104,9 @@ function printSpecSource(source) {
 /**
  * 规范检查&更新（skill 内 specFiles/ 是唯一规范工作目录，本地自带一份）：
  * - 服务端可达 + 本地 version 一致（字符串比较，semver 如 "1.0.0"）→ 零写入
- * - 服务端可达 + version 不一致/本地无 index.json → 拉整包原子覆盖 specFiles/<领域key>/（先写 .tmp/ 再 rename）
+ * - 服务端可达 + version 不一致/本地总表无该领域 → 拉整包原子覆盖 specFiles/<领域key>/（先写 .tmp/ 再 rename）并更新本地总表
+ * - 📄 文档校验（version 有变化时必过）：拉取的 files 为空数组 / 条目缺 path 或 content
+ *   → 视为拉取失败，🔴 不动本地规范与总表，静默沿用旧版（来源标 local）
  * - 服务端不可达/服务端无此领域 + 本地有 → 静默用本地自带规范（来源标 local，🔴 不向用户提示）
  * - 本地无该领域且服务端无/不可达 → 报错退出（唯一提示场景：无此规范）
  */
@@ -113,10 +118,10 @@ async function runSyncSpec(domain, server) {
   try {
     const info = await getSpecDomain(key, server)
     const remoteVersion = String(info.version ?? '')
-    const localIndex = readLocalIndex(safeKey)
+    const localMeta = readLocalMeta(safeKey)
 
     // version 一致（字符串比较）→ 本地已是最新，零写入（服务端已校验，来源标 server）
-    if (localIndex && String(localIndex.version ?? '') === remoteVersion) {
+    if (localMeta && String(localMeta.version ?? '') === remoteVersion) {
       console.log(`✓ 规范已是最新（version ${remoteVersion}，${info.updatedAt || ''}），无需更新`)
       printSpecSource('server')
       return
@@ -125,15 +130,23 @@ async function runSyncSpec(domain, server) {
     const archive = await getSpecArchive(key, server)
     const files = Array.isArray(archive.files) ? archive.files : []
 
+    // 📄 文档校验：version 有变化但拉不到有效文件（空数组 / 条目缺 path 或 content）
+    // → 视为拉取失败，不动本地规范与总表，静默沿用旧版（本地有该领域时）
+    const valid = files.length > 0 && files.every(f => f && typeof f.path === 'string' && typeof f.content === 'string')
+    if (!valid) {
+      if (existsSync(localDomainDir)) {
+        console.log(`拉取的规范文件无效（version ${remoteVersion}，${files.length} 个文件），沿用本地自带规范`)
+        printSpecSource('local')
+        return
+      }
+      console.error(`✗ 服务端领域 ${key}（version ${remoteVersion}）无有效规范文件，本地也无该领域`)
+      process.exit(1)
+    }
+
     // 原子覆盖：先写 <领域>.tmp/ 再整体替换，避免中断产生半新半旧状态
     const tmpDir = `${localDomainDir}.tmp`
     rmSync(tmpDir, { recursive: true, force: true })
     mkdirSync(tmpDir, { recursive: true })
-    writeFileSync(join(tmpDir, 'index.json'), JSON.stringify({
-      key,
-      ...(archive.meta || {}),
-      version: archive.version ?? remoteVersion,
-    }, null, 2) + '\n', 'utf-8')
     for (const f of files) {
       const p = join(tmpDir, f.path)
       mkdirSync(dirname(p), { recursive: true })
@@ -141,6 +154,14 @@ async function runSyncSpec(domain, server) {
     }
     rmSync(localDomainDir, { recursive: true, force: true })
     renameSync(tmpDir, localDomainDir)
+
+    // 更新本地总表条目（不存在则追加）
+    const list = readLocalIndex()
+    const entry = { key, ...(archive.meta || {}), version: archive.version ?? remoteVersion }
+    const idx = list.findIndex(e => e.key === key)
+    if (idx >= 0) list[idx] = { ...list[idx], ...entry }
+    else list.push(entry)
+    writeFileSync(join(config.SPEC_ROOT, 'index.json'), JSON.stringify(list, null, 2) + '\n', 'utf-8')
 
     console.log(`✓ 规范库已更新: ${key}（${files.length} 个文件，version ${archive.version ?? remoteVersion}）`)
     printSpecSource('server')
