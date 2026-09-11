@@ -2,7 +2,7 @@
 /**
  * build.js —— 顶层调度器
  *
- * 依次调用 4 个子 build，打出 4 个 zip。
+ * 依次调用 3 个子 build，打出 3 个 zip。
  * 也可单独运行子 build：node ui-param-diff/build.js
  */
 
@@ -15,7 +15,7 @@ import { fileURLToPath } from 'url'
 const { join } = path
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
 const DIST = join(ROOT, 'dist')
-const SKILLS = ['ui-param-diff', 'design-system-checker', 'ui-pixel-diff', 'design-checker']
+const SKILLS = ['ui-param-diff', 'ui-pixel-diff', 'design-checker']
 
 // design-checker 为纯 md + 单脚本结构（无 bin/lib、无子 build.js），
 // 版本号由 design-checker/package.json 提供（打包时排除该文件），
@@ -50,7 +50,7 @@ function buildDesignChecker() {
 
 console.log('════════════════════════════════════════')
 console.log('  DevLint Skill Split 统一打包')
-console.log('  一次打出 4 个 skill 包')
+console.log('  一次打出 3 个 skill 包')
 console.log('════════════════════════════════════════\n')
 
 for (const name of SKILLS) {
