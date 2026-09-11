@@ -1,6 +1,6 @@
 # design-checker 工程逻辑
 
-> 配套阅读：[devlint-skill-split工程逻辑.md](./devlint-skill-split工程逻辑.md)。该文档描述的是 devlint-skill-split 的前三个子 skill（ui-param-diff / design-system-checker / ui-pixel-diff）；本文专项说明第 4 个子 skill **design-checker** 的内部逻辑。它与前三个 skill 形态完全不同——是工程里唯一的"**纯指令型**"skill：没有 CLI 命令、没有引擎代码、零外部依赖，检查与修复的执行者就是 AI 本身。
+> 配套阅读：[devlint-skill-split工程逻辑.md](./devlint-skill-split工程逻辑.md)。该文档描述的是 devlint-skill-split 的前两个子 skill（ui-param-diff / ui-pixel-diff）；本文专项说明第 3 个子 skill **design-checker** 的内部逻辑。它与前两个 skill 形态完全不同——是工程里唯一的"**纯指令型**"skill：没有 CLI 命令、没有引擎代码、零外部依赖，检查与修复的执行者就是 AI 本身。
 
 ---
 
@@ -30,9 +30,11 @@
 
 > **这个取舍是刻意的**：规范条目提取、元素与规则的匹配、"值是否在规范档位/色板内"这类判断本质是**语义理解**，难以固化成确定性算法，所以交给 AI 推理；而 JSON → Markdown 报告、severity 排序、统计这类**确定性工作**交给脚本（build-report.mjs）。skill 的职责是"把 AI 推理的输入输出格式、流程、红线全部文档化约束住"。
 
-### 1.3 与 design-system-checker 的辨析（名字最像，最易混淆）
+### 1.3 与已移除的 design-system-checker 的辨析
 
-| 维度 | design-system-checker | design-checker |
+> design-system-checker 已从工程中移除。以下对比保留作为历史参考，帮助理解 design-checker 的设计取舍。
+
+| 维度 | design-system-checker（已移除） | design-checker |
 |---|---|---|
 | 形态 | CLI 工具型（2 命令） | 纯指令型（文档 + 1 脚本） |
 | 规范来源 | server 规则库（`fetchSpecList()` 拉取，两阶段模糊匹配规范名/场景名） | 本地 `specFiles/` 规则库（index.md 清单 + 领域 key 映射 + 上下文推断） |
@@ -535,10 +537,10 @@ specFiles/
 
 ### 8.1 顶层 build.js 的特殊分支
 
-design-checker 是 4 个 skill 中唯一**没有子 build.js** 的——顶层 `build.js` 对它单独处理：
+design-checker 是 3 个 skill 中唯一**没有子 build.js** 的——顶层 `build.js` 对它单独处理：
 
 ```js
-const SKILLS = ['ui-param-diff', 'design-system-checker', 'ui-pixel-diff', 'design-checker']
+const SKILLS = ['ui-param-diff', 'ui-pixel-diff', 'design-checker']
 
 for (const name of SKILLS) {
   if (name === 'design-checker') {

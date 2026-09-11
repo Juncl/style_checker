@@ -1,6 +1,6 @@
 # devlint-skill-split 工程逻辑
 
-> 配套阅读：[devlint-mcp工程逻辑.md](./devlint-mcp工程逻辑.md)。本文说明 **devlint-skill-split** 的工程结构、三个子 skill 的内部逻辑，以及它们与 **devlint-mcp** 的关系。
+> 配套阅读：[devlint-mcp工程逻辑.md](./devlint-mcp工程逻辑.md) 和 [design-checker工程逻辑.md](./design-checker工程逻辑.md)。本文说明 **devlint-skill-split** 的工程结构、两个子 skill（ui-param-diff / ui-pixel-diff）的内部逻辑，以及它们与 **devlint-mcp** 的关系。第 3 个子 skill **design-checker** 形态完全不同（纯指令型），见配套文档。
 
 ---
 
@@ -8,17 +8,16 @@
 
 ### 1.1 设计理念：按主线拆分
 
-devlint-skill-split 把 UI 检查相关能力拆成 3 个职责单一的独立 skill，每个 skill 有自己的 SKILL.md、CLI 入口、zip 产物，互不依赖、独立触发、按需安装。这样设计带来两个好处：
+devlint-skill-split 把 UI 检查相关能力拆成独立 skill，每个 skill 有自己的 SKILL.md、CLI 入口、zip 产物，互不依赖、独立触发、按需安装（design-checker 例外，纯指令型无 CLI）。这样设计带来两个好处：
 
 1. **触发精准**：用户只想做"视觉检查"时，只会加载视觉检查的 SKILL.md，不会把采集/规范检查等无关指令塞进 AI 上下文。
 2. **按需安装**：用户只需其中一项能力时，只装对应的 skill，不捆绑无关能力。
 
-### 1.2 三个子 skill 一览
+### 1.2 两个子 skill 一览
 
 | 子 skill | CLI 命令名 | 命令数 | 能力 | 触发场景 |
 |---|---|---|---|---|
 | **ui-param-diff** | `ui-param-diff` | 4 | 采集 ArkUI/Web/设计稿 + 节点树算法比对 | UI 一致性检查、设计稿对比、找差异 |
-| **design-system-checker** | `design-system-checker` | 2 | 规范名模糊匹配 + 规范走查 | 设计规范检查、规范走查、是否符合 Octo |
 | **ui-pixel-diff** | `ui-pixel-diff` | 1 | 视觉检查（agent 看对话图 → Markdown 报告） | 图图对比、视觉检查、对比图片 |
 
 ### 1.3 顶层架构
@@ -26,25 +25,26 @@ devlint-skill-split 把 UI 检查相关能力拆成 3 个职责单一的独立 s
 ```
                           ┌──────────────────────────────────────────────────────────────┐
                           │                    devlint-skill-split                         │
-                          │                   （3 个独立 skill 的源码工程）                 │
+                          │               （3 个独立 skill 的源码工程，本文覆盖 2 个）      │
                           │                                                              │
    开发者 ──build──▶  顶层 build.js（调度器）                                              │
-                          │   依次调用 3 个子 build → dist/ 下产出 3 个 zip                │
+                          │   依次调用子 build → dist/ 下产出 zip                         │
                           │                                                              │
                           ├── ui-param-diff/         （UI 一致性检查）                     │
-                          ├── design-system-checker/ （设计规范检查）                      │
-                          └── ui-pixel-diff/         （视觉检查）                          │
+                          ├── ui-pixel-diff/         （视觉检查）                          │
+                          └── design-checker/        （设计还原检查，纯指令型，见配套文档）  │
                           │                                                              │
-                          │   三个子 build 都从 devlint-mcp/lib 按需拷贝引擎 → src/lib     │
+                          │   两个子 build 都从 devlint-mcp/lib 按需拷贝引擎 → src/lib     │
                           │   （各自只拷自己用到的子目录，互不重叠）                        │
+                          │   design-checker 无 build.js，顶层直接整目录拷贝 + zip         │
                           └──────────────────────────────────────────────────────────────┘
 
    用户 ──对话──▶ AI(opencode)
-                 │  按用户意图分别加载 3 个 skill 之一（互不干扰）
+                 │  按用户意图分别加载对应 skill（互不干扰）
                  │
                  ├── "UI 一致性检查" → 加载 ui-param-diff skill → bash 调 ui-param-diff ...
-                 ├── "设计规范走查"   → 加载 design-system-checker skill → bash 调 design-system-checker ...
-                 └── "对比图片"       → 加载 ui-pixel-diff skill → bash 调 ui-pixel-diff ...
+                 ├── "对比图片"       → 加载 ui-pixel-diff skill → bash 调 ui-pixel-diff ...
+                 └── "设计还原检查"   → 加载 design-checker skill（纯指令型，见配套文档）
 ```
 
 **核心价值**（与 devlint-mcp 一致）：
@@ -61,11 +61,11 @@ devlint-skill-split 把 UI 检查相关能力拆成 3 个职责单一的独立 s
 ```
 devlint-skill-split/
 ├── package.json              # name=devlint-skill-split，仅 build 脚本，无运行时依赖
-├── build.js                  # 顶层调度器：依次调用 3 个子 build，打出 3 个 zip
-├── dist/                     # 产物输出目录（3 个 zip + 解压目录）
+├── build.js                  # 顶层调度器：依次调用子 build，打出 zip
+├── dist/                     # 产物输出目录（zip + 解压目录）
 │   ├── ui-param-diff-<ver>.zip
-│   ├── design-system-checker-<ver>.zip
-│   └── ui-pixel-diff-<ver>.zip
+│   ├── ui-pixel-diff-<ver>.zip
+│   └── design-checker-<ver>.zip
 │
 ├── ui-param-diff/            # 子工程一：UI 一致性检查
 │   ├── package.json          # name=ui-param-diff，version 跟随 devlint-mcp（build 时读取）
@@ -75,30 +75,30 @@ devlint-skill-split/
 │   └── bin/
 │       └── ui-param-diff.js  # CLI 入口（4 命令）
 │
-├── design-system-checker/    # 子工程二：设计规范检查
-│   ├── package.json          # name=design-system-checker，version=1.0.1（自身管理）
+├── ui-pixel-diff/            # 子工程二：视觉检查
+│   ├── package.json          # name=ui-pixel-diff，version=1.0.1（自身管理）
 │   ├── build.js
 │   ├── SKILL.md
 │   ├── README.md
-│   └── bin/
-│       └── design-system-checker.js  # CLI 入口（2 命令）
+│   ├── bin/
+│   │   └── ui-pixel-diff.js  # CLI 入口（1 命令，两步 mode）
+│   └── lib/                  # skill 独有模块（源码工程直接包含，不来自 mcp）
+│       ├── imgCheckPrompt.js # system prompt 全文
+│       ├── vlmCheck.js       # --mode prompt：取回 prompt
+│       ├── mdBuilder.js      # --mode build：diff JSON → Markdown 报告
+│       ├── shared.js         # 公共工具（时间戳/落盘目录/base64/备选 server 方案）
+│       └── serverCheck.js    # server 兜底方案（备选，当前未启用）
 │
-└── ui-pixel-diff/            # 子工程三：视觉检查
-    ├── package.json          # name=ui-pixel-diff，version=1.0.1（自身管理）
-    ├── build.js
+└── design-checker/           # 子工程三：设计还原检查（纯指令型，详见配套文档）
+    ├── package.json          # version=1.1.0（自身管理）
     ├── SKILL.md
-    ├── README.md
+    ├── check-method.md
+    ├── fix-guide.md
     ├── bin/
-    │   └── ui-pixel-diff.js  # CLI 入口（1 命令，两步 mode）
-    └── lib/                  # skill 独有模块（源码工程直接包含，不来自 mcp）
-        ├── imgCheckPrompt.js # system prompt 全文
-        ├── vlmCheck.js       # --mode prompt：取回 prompt
-        ├── mdBuilder.js      # --mode build：diff JSON → Markdown 报告
-        ├── shared.js         # 公共工具（时间戳/落盘目录/base64/备选 server 方案）
-        └── serverCheck.js    # server 兜底方案（备选，当前未启用）
+    ├── lib/
+    ├── report-data/
+    └── specFiles/
 ```
-
-> 三个子工程**源码都不包含 `src/lib/`**，该目录由各自 `build.js` 在打包时从 `devlint-mcp/lib/` 按需拷贝生成。`ui-pixel-diff/lib/` 是 skill 独有模块，源码工程直接包含。
 
 ### 2.2 顶层 build.js（调度器）
 
@@ -106,12 +106,16 @@ devlint-skill-split/
 cd devlint-skill-split && npm run build    # = node build.js
 ```
 
-顶层 `build.js` 只做一件事：依次执行 3 个子 build，最后汇总打印产物清单：
+顶层 `build.js` 只做一件事：依次执行子 build，最后汇总打印产物清单：
 
 ```js
-const SKILLS = ['ui-param-diff', 'design-system-checker', 'ui-pixel-diff']
+const SKILLS = ['ui-param-diff', 'ui-pixel-diff', 'design-checker']
 for (const name of SKILLS) {
-  execSync(`node ${name}/build.js`, { stdio: 'inherit' })
+  if (name === 'design-checker') {
+    buildDesignChecker()   // 纯指令型，直接整目录拷贝 + zip
+  } else {
+    execSync(`node ${name}/build.js`, { stdio: 'inherit' })
+  }
 }
 ```
 
@@ -119,7 +123,6 @@ for (const name of SKILLS) {
 
 ```bash
 node ui-param-diff/build.js           # 只打 ui-param-diff
-node design-system-checker/build.js   # 只打 design-system-checker
 node ui-pixel-diff/build.js           # 只打 ui-pixel-diff
 ```
 
@@ -128,16 +131,16 @@ node ui-pixel-diff/build.js           # 只打 ui-pixel-diff
 | 子 skill | 版本号来源 | 当前版本 |
 |---|---|---|
 | ui-param-diff | **跟随 devlint-mcp**（build.js 读 `devlint-mcp/package.json` 的 version） | 1.0.10 |
-| design-system-checker | 自身 `package.json` 的 version | 1.0.1 |
 | ui-pixel-diff | 自身 `package.json` 的 version | 1.0.1 |
+| design-checker | 自身 `package.json` 的 version | 1.1.0 |
 
-> ui-param-diff 与 devlint-mcp 共用引擎最紧密（采集 + 检查全来自 mcp），版本跟随 mcp 便于同步升级；另两个 skill 引擎子集较稳定，版本独立管理。
+> ui-param-diff 与 devlint-mcp 共用引擎最紧密（采集 + 检查全来自 mcp），版本跟随 mcp 便于同步升级；另两个 skill 引擎子集较稳定（design-checker 更是无引擎），版本独立管理。
 
 ---
 
-## 三、通用机制（三个 skill 共用）
+## 三、通用机制（两个 skill 共用）
 
-以下机制三个子 skill 完全一致，不再在各子工程章节重复。
+以下机制两个子 skill（ui-param-diff / ui-pixel-diff）完全一致，不再在各子工程章节重复。
 
 ### 3.1 opencode skill 的概念
 
@@ -162,11 +165,11 @@ description: UI设计页面一致性检查能力。支持采集鸿蒙 ArkUI 开�
 
 - `name`：skill 唯一标识，对应 `~/.config/opencode/skills/<name>/SKILL.md`
 - `description`：触发条件描述，opencode 用它判断何时加载本 skill
-- 三个 skill 的 description 互不重叠，按用户意图精准触发
+- 两个 skill 的 description 互不重叠，按用户意图精准触发
 
 ### 3.2 CLI 入口设计原则
 
-三个子工程的 `bin/<entry>.js` 共用同一套设计：
+两个子工程的 `bin/<entry>.js` 共用同一套设计：
 
 - **无常驻进程**：每次调用都是独立 node 子进程，调用结束即退出
 - **统一 IO 约定**：结果 JSON 输出到 stdout，错误信息输出到 stderr（`✗ <msg>`）并以非零退出码退出
@@ -183,7 +186,7 @@ description: UI设计页面一致性检查能力。支持采集鸿蒙 ArkUI 开�
 |---|---|---|
 | 1. 校验源码 | 确认 `devlint-mcp/lib` 存在（ui-pixel-diff 额外确认自身 `lib/` 存在） | — |
 | 2. 清空 & 创建产物目录 | `dist/<name>-<ver>/` | — |
-| 3. 拷贝引擎 | `devlint-mcp/lib` → 产物 `src/lib`，**按各自 MCP_DIRS / MCP_FILES 清单按需拷贝**（排除 `node_modules`） | 三者拷贝范围不同，见各子工程章节 |
+| 3. 拷贝引擎 | `devlint-mcp/lib` → 产物 `src/lib`，**按各自 MCP_DIRS / MCP_FILES 清单按需拷贝**（排除 `node_modules`） | 两者拷贝范围不同，见各子工程章节 |
 | 4. patch 打点前缀 | `src/lib/utils/track.js` 中 `devlint_mcp_*` → `devlint_skill_*` | 三者统一 |
 | 5.（仅 ui-param-diff）拷贝脚本 | `devlint-mcp/script` → 产物 `src/script` | 保持 `getArkui.js` 中 `../../../script/export_arkui.exe` 相对路径正确 |
 | 6.（仅 ui-pixel-diff）拷贝 skill 独有 lib | `ui-pixel-diff/lib` → 产物 `lib/` | skill 独有模块，不来自 mcp |
@@ -192,11 +195,11 @@ description: UI设计页面一致性检查能力。支持采集鸿蒙 ArkUI 开�
 | 9. 生成产物 package.json | `name`/`version`/`bin`/`dependencies`（dependencies 继承自 devlint-mcp） | — |
 | 10. 打 zip | 跨平台：macOS/Linux 用 `zip`，Windows 用 PowerShell `Compress-Archive` | — |
 
-> **关键设计**：build.js 对 devlint-mcp **只读拷贝**，不修改任何 mcp 源码（唯一改动是 patch 产物副本中的打点前缀和 SKILL.md 占位符）。三个 skill 与 devlint-mcp 共用同一份引擎代码，差异只在入口层（CLI vs MCP server）和各自拷贝的引擎子集。
+> **关键设计**：build.js 对 devlint-mcp **只读拷贝**，不修改任何 mcp 源码（唯一改动是 patch 产物副本中的打点前缀和 SKILL.md 占位符）。两个 skill 与 devlint-mcp 共用同一份引擎代码，差异只在入口层（CLI vs MCP server）和各自拷贝的引擎子集。
 
 ### 3.4 安装流程
 
-三个 skill 安装方式完全一致（**无 install.js 脚本**，手动三步）：
+两个 skill 安装方式完全一致（**无 install.js 脚本**，手动三步）：
 
 ```bash
 # 1. 解压 <skill>-<ver>.zip
@@ -205,7 +208,6 @@ npm install --omit=dev
 npm link
 # 3. 拷贝 SKILL.md 到 opencode skills 目录
 #    ui-param-diff          → ~/.config/opencode/skills/UI设计一致性检查/SKILL.md
-#    design-system-checker  → ~/.config/opencode/skills/design-system-checker/SKILL.md
 #    ui-pixel-diff          → ~/.config/opencode/skills/ui-pixel-diff/SKILL.md
 # 4. 重启 opencode 使 skill 生效
 ```
@@ -220,7 +222,7 @@ npm link
 | 命令注册 | 全局 PATH（`npm link`） | 终端任意位置可执行 `<skill> ...` |
 | Skill 指令 | `~/.config/opencode/skills/<name>/SKILL.md` | opencode 启动时加载，按 description 触发 |
 
-### 3.5 硬性规则（三个 skill 一致）
+### 3.5 硬性规则（两个 skill 一致）
 
 **禁止修改 skill 源码**：skill 的所有文件（`bin/`、`src/`、`lib/`、`SKILL.md`、`package.json` 等）均为**只读**，AI 绝对不允许修改。
 
@@ -238,7 +240,7 @@ npm link
 
 ### 3.6 fallback 调用方式
 
-三个 skill 的 SKILL.md 都规定：`<skill>` 命令不可用时（command not found），AI 可直接：
+两个 skill 的 SKILL.md 都规定：`<skill>` 命令不可用时（command not found），AI 可直接：
 
 ```bash
 node <skill目录>/bin/<entry>.js <command> [options]
@@ -300,7 +302,7 @@ const MCP_DIRS = [
 const MCP_FILES = ['config.js']
 ```
 
-> 相比另两个 skill，ui-param-diff 是唯一拷贝 `collectData` 下三个采集子目录、且额外拷贝 `mcp/script` 的 skill。
+> 相比 ui-pixel-diff，ui-param-diff 是唯一拷贝 `collectData` 下三个采集子目录、且额外拷贝 `mcp/script` 的 skill。
 
 ### 4.3 4 个命令
 
@@ -404,134 +406,9 @@ const COMMANDS = {
 
 ---
 
-## 五、design-system-checker（设计规范检查）
+## 五、ui-pixel-diff（视觉检查）
 
 ### 5.1 工程定位
-
-负责**模糊匹配设计规范名/场景名**，并检查 HTML/URL 是否符合设计规范，输出问题清单。
-
-### 5.2 目录结构
-
-#### 源码工程（`devlint-skill-split/design-system-checker/`）
-
-```
-design-system-checker/
-├── package.json              # name=design-system-checker，version=1.0.1（自身管理）
-├── build.js                  # 独立打包脚本
-├── SKILL.md
-├── README.md
-└── bin/
-    └── design-system-checker.js  # CLI 入口：2 个子命令分发
-```
-
-#### 分发产物（`dist/design-system-checker-<ver>.zip` 解压后）
-
-```
-design-system-checker-<ver>/
-├── package.json              # 产物 package.json：含 bin 和 dependencies
-├── SKILL.md
-├── README.md
-├── bin/
-│   └── design-system-checker.js
-└── src/
-    └── lib/                  # 从 devlint-mcp/lib 按需拷贝
-        ├── config.js         # 配置（内外网切换）
-        ├── utils/            # tools.js / report.js / session.js / track.js / puppeteer.js
-        └── collectData/
-            └── uxCheckOut/   # 规范检查引擎（fetchSpecList / resolveSpec / collectDom / specCheck / index）
-```
-
-**build.js 拷贝清单**：
-
-```js
-const MCP_DIRS = [
-  'utils',
-  'collectData/uxCheckOut',
-]
-const MCP_FILES = ['config.js']
-```
-
-> 只拷贝规范检查相关的 `uxCheckOut` 子目录，不拷贝任何采集模块。
-
-### 5.3 2 个命令
-
-| 命令 | 职责 | 输出 |
-|---|---|---|
-| `list-design-specs` | 模糊匹配规范名/场景名，返回规则文件路径列表 | `filePaths` 或候选列表 JSON |
-| `design-spec-check` | 检查 HTML/URL 是否符合设计规范（需先调 list-design-specs） | 问题清单 JSON |
-
-子命令分发（`bin/design-system-checker.js`）：
-
-```js
-const COMMANDS = {
-  'list-design-specs':  cmdListDesignSpecs,   // → fetchSpecList() + resolveSpec()
-  'design-spec-check':  cmdDesignSpecCheck,   // → uxCheck()
-}
-```
-
-### 5.4 命令内部流程
-
-#### `list-design-specs`
-
-```
-1. 读取 --standard-name / --scene-name（均可选）
-2. fetchSpecList()  → 拉取规则库全量数据
-3. resolveSpec(specData, standardName, sceneName)  → 两阶段模糊匹配
-4. 输出 JSON，三种情况：
-   ① 唯一匹配 matched:true  → 含 filePaths，直接传给 design-spec-check
-   ② 需选规范 stage:"standard" → 含 candidates，展示让用户选定后重新调用
-   ③ 需选场景 stage:"scene"    → 含 candidates，展示让用户选定后重新调用
-```
-
-#### `design-spec-check`
-
-```
-1. 校验必填参数：--source、--spec-file-paths
-2. 解析 --spec-file-paths：支持逗号分隔字符串或 JSON 数组字符串
-3. uxCheck(source, specFilePaths)  → puppeteer 打开 source（HTML/URL）→ 采集 DOM → 按规则文件检查
-4. trackSpecCheckComplete(...)  → 打点（fire-and-forget）
-5. 输出问题清单 JSON
-```
-
-### 5.5 主线流程
-
-```
-用户意图：设计规范检查 / 规范走查 / 检查是否符合 Octo 规范
-  │
-  ├── 1. 先调 list-design-specs 匹配规范
-  │     list-design-specs [--standard-name <规范名>] [--scene-name <场景名>]
-  │     ├── matched=true       → 拿到 filePaths，进入步骤 2
-  │     ├── stage="standard"   → 展示规范候选，用户选定后用完整 standardName 重新调用
-  │     └── stage="scene"      → 展示场景候选，用户选定后用 standardName + sceneName 重新调用
-  │
-  └── 2. 拿到 filePaths 后调 design-spec-check
-        design-spec-check --source <HTML路径或URL> --spec-file-paths <path1,path2,...>
-```
-
-**规范名拆分规则**：用户给"Octo Web端深色"这种组合时，拆成 `--standard-name Octo --scene-name Web端深色` 分别传入。
-
-**禁止跳步**：`--spec-file-paths` 只接受规则文件路径，不能直接传规范名。必须先 `list-design-specs` 拿到 `filePaths` 再传入 `design-spec-check`。
-
-### 5.6 串联映射表
-
-| list-design-specs 返回字段 | design-spec-check 参数 |
-|---|---|
-| `filePaths`（数组） | `--spec-file-paths`（逗号分隔或 JSON 数组字符串） |
-
-- `matched=true` 时，拿到 `filePaths` 后**自动执行** `design-spec-check`，不需要用户再次确认
-- `matched=false` 时，必须先展示候选让用户选定，重新调用 `list-design-specs` 直到 `matched=true`
-
-### 5.7 结果呈现规则
-
-- 按问题分组展示，每条问题包含：规则名、问题描述、当前位置/值、期望值
-- 问题较多时先展示问题总数，再逐条列出
-- 无问题时直接说"页面符合设计规范，未发现问题"
-
----
-
-## 六、ui-pixel-diff（视觉检查）
-
-### 6.1 工程定位
 
 负责**视觉检查**：对比设计稿截图与开发实现截图，输出差异清单 Markdown 报告。
 
@@ -539,7 +416,7 @@ const COMMANDS = {
 
 > `lib/serverCheck.js` 保留了调 server VLM 的完整实现作为**备选方案（当前未启用）**，等非 VLM agent 有需求时再接入。
 
-### 6.2 目录结构
+### 5.2 目录结构
 
 #### 源码工程（`devlint-skill-split/ui-pixel-diff/`）
 
@@ -589,7 +466,7 @@ const MCP_FILES = ['config.js']
 
 > ui-pixel-diff 是三个 skill 里拷贝 mcp 引擎最少的一个（只要 config + utils），且唯一带 skill 独有 `lib/` 的 skill。build.js 统计文件数时 `src` 和 `lib` 都计入。
 
-### 6.3 命令：`ai-img-check`（两步 mode）
+### 5.3 命令：`ai-img-check`（两步 mode）
 
 只有一个命令 `ai-img-check`，通过 `--mode` 区分两步：
 
@@ -606,7 +483,7 @@ const COMMANDS = {
 }
 ```
 
-### 6.4 完整工作流（agent + skill 协作）
+### 5.4 完整工作流（agent + skill 协作）
 
 ```
 用户在对话中传入两张截图（设计稿 + 开发实现）
@@ -637,7 +514,7 @@ const COMMANDS = {
       → agent 告诉用户打开 md 报告查看
 ```
 
-### 6.5 lib/ 模块说明
+### 5.5 lib/ 模块说明
 
 #### `imgCheckPrompt.js` — system prompt 全文
 
@@ -690,14 +567,14 @@ buildMdReport({ diffFile })
 
 > 当前 SKILL.md 和 bin 入口均未接入。当 agent 非 VLM（无法直接看对话中的图）时才需要此方案：用户提供两张图片的本地文件路径 → skill 读文件转 base64 → 调 server VLM。接入方式：bin 顶部加 `import { aiImgCheck } from '../lib/serverCheck.js'`，cmdAiImgCheck 里恢复 `--mode server` 分支。
 
-### 6.6 结果呈现规则
+### 5.6 结果呈现规则
 
 - 展示**整体还原度**：等级（高/中/低）+ 评分（0-100）+ 差异总数（从 stdout 第二行摘要获取）
 - 告诉用户**打开生成的 Markdown 报告**（stdout 第一行的 reportPath）查看完整差异清单
 - 简要口述前几条重点差异（从 agent 自己输出的简短总结中提取，不复述全部）
 - 无差异时（totalDiffs=0）直接说"视觉检查未发现明显还原差异，还原度良好"
 
-### 6.7 与 `ui-param-diff` 的 `ui-style-check` 的区别
+### 5.7 与 `ui-param-diff` 的 `ui-style-check` 的区别
 
 | 维度 | ui-param-diff `ui-style-check` | ui-pixel-diff `ai-img-check` |
 |---|---|---|
@@ -712,53 +589,51 @@ buildMdReport({ diffFile })
 
 ---
 
-## 七、三个 skill 的关系与协同
+## 六、两个 skill 的关系与协同
 
-### 7.1 独立触发，互不干扰
+### 6.1 独立触发，互不干扰
 
-三个 skill 的 SKILL.md `description` 互不重叠，opencode 按用户意图精准加载：
+两个 skill 的 SKILL.md `description` 互不重叠，opencode 按用户意图精准加载：
 
 | 用户说的 | 加载的 skill |
 |---|---|
 | UI 一致性检查 / 设计稿对比 / 采集开发侧数据 / 找差异 | ui-param-diff |
-| 设计规范检查 / 规范走查 / 规范名匹配 / 是否符合 Octo | design-system-checker |
 | 图图对比 / 视觉检查 / 对比图片 | ui-pixel-diff |
 
-三个 skill 可同时安装，不会冲突（CLI 命令名、skill name 均不同）。
+两个 skill 可同时安装，不会冲突（CLI 命令名、skill name 均不同）。
 
-### 7.2 协同场景
+### 6.2 协同场景
 
 | 场景 | 协同方式 |
 |---|---|
 | 先算法比对再视觉补充 | ui-param-diff 采集 + `ui-style-check` 拿精确属性差异 → 再用 ui-pixel-diff `ai-img-check` 做视觉补充（算法看不到的整体观感问题） |
 | 采集复用 | ui-param-diff 的 `collect-design` 返回的 `designImagePath`、`collect-web`/`collect-arkui` 返回的 `devImagePath` 可直接作为 ui-pixel-diff 的截图传入对话（但 ui-pixel-diff 走对话图，不直接读文件路径） |
 
-### 7.3 引擎复用对照
+### 6.3 引擎复用对照
 
-三个 skill 都从 `devlint-mcp/lib` 按需拷贝引擎，各自拷贝范围：
+两个 skill 都从 `devlint-mcp/lib` 按需拷贝引擎，各自拷贝范围：
 
-| mcp/lib 子路径 | ui-param-diff | design-system-checker | ui-pixel-diff |
-|---|:---:|:---:|:---:|
-| `config.js` | ✅ | ✅ | ✅ |
-| `utils/` | ✅ | ✅ | ✅ |
-| `collectData/getArkui/` | ✅ | — | — |
-| `collectData/getWebDom/` | ✅ | — | — |
-| `collectData/getPixData/` | ✅ | — | — |
-| `collectData/uxCheckOut/` | — | ✅ | — |
-| `script/`（mcp/script） | ✅ | — | — |
-| skill 独有 `lib/` | — | — | ✅ |
+| mcp/lib 子路径 | ui-param-diff | ui-pixel-diff |
+|---|:---:|:---:|
+| `config.js` | ✅ | ✅ |
+| `utils/` | ✅ | ✅ |
+| `collectData/getArkui/` | ✅ | — |
+| `collectData/getWebDom/` | ✅ | — |
+| `collectData/getPixData/` | ✅ | — |
+| `script/`（mcp/script） | ✅ | — |
+| skill 独有 `lib/` | — | ✅ |
 
-> 三者共用 `config.js` + `utils/`，差异在各自的 `collectData` 子目录。打点前缀统一 patch 为 `devlint_skill_*`。
+> 两者共用 `config.js` + `utils/`，差异在各自的 `collectData` 子目录。打点前缀统一 patch 为 `devlint_skill_*`。
 
 ---
 
-## 八、与 devlint-mcp 的关系
+## 七、与 devlint-mcp 的关系
 
-### 8.1 与 devlint-mcp 的关系
+### 7.1 与 devlint-mcp 的关系
 
-三个 skill 与 devlint-mcp 共用同一份引擎代码（`devlint-mcp/lib/`），build.js 只读拷贝。差异只在入口层：
+两个 skill 与 devlint-mcp 共用同一份引擎代码（`devlint-mcp/lib/`），build.js 只读拷贝。差异只在入口层：
 
-| 维度 | devlint-mcp | devlint-skill-split（三个 skill） |
+| 维度 | devlint-mcp | devlint-skill-split（两个 skill） |
 |---|---|---|
 | **协议** | MCP（stdio JSON-RPC） | 无协议，直接 bash 调用 |
 | **进程模型** | 常驻子进程，opencode 启动时拉起 | 一次一进程，调用结束即退出 |
@@ -768,10 +643,10 @@ buildMdReport({ diffFile })
 | **指令文档** | 工具 description 内嵌在 server.js | 独立 SKILL.md（每个 skill 一份） |
 | **注册方式** | `opencode.json` 的 `mcp` 字段 | `npm link` + 拷贝 SKILL.md |
 | **配置文件** | 改 `opencode.json` | 不碰 `opencode.json` |
-| **分发形态** | `npm pack` 生成 tgz | build.js 生成 3 个 zip |
-| **能力拆分** | 一个 mcp 含全部工具 | 拆成 3 个 skill，各管一条主线 |
+| **分发形态** | `npm pack` 生成 tgz | build.js 生成 zip |
+| **能力拆分** | 一个 mcp 含全部工具 | 拆成 2 个 skill，各管一条主线 |
 
-### 8.2 何时用 skill-split，何时用 mcp
+### 7.2 何时用 skill-split，何时用 mcp
 
 | 场景 | 推荐 | 原因 |
 |---|---|---|
@@ -781,23 +656,23 @@ buildMdReport({ diffFile })
 | 只需视觉检查 | **skill-split**（仅装 ui-pixel-diff） | 不用装采集/规范检查等无关能力 |
 | 内网部署（无 opencode.json 配置权限） | **skill-split** | 只需解压 + link，不动配置文件 |
 
-### 8.3 切换注意事项
+### 7.3 切换注意事项
 
 - **不要同时安装 mcp 和 skill**：能力等价，同时安装会让 AI 同时看到 MCP 工具和 skill 指令，可能重复触发
 - **从 mcp 切到 skill-split**：在 `opencode.json` 中把 `devlint-mcp` 的 `enabled` 改为 `false`（或删除），然后安装需要的 skill 并重启 opencode
 - **从 skill-split 切到 mcp**：删除 `~/.config/opencode/skills/` 下对应 skill 目录 + `npm uninstall -g <skill>`（取消 link），然后在 `opencode.json` 启用 `devlint-mcp`，重启 opencode
-- **三个 skill 可按需部分安装**：例如只装 ui-pixel-diff 不装另两个，互不影响
+- **两个 skill 可按需部分安装**：例如只装 ui-pixel-diff 不装另一个，互不影响
 
 ---
 
-## 九、关键设计点总结
+## 八、关键设计点总结
 
 | 设计点 | 说明 |
 |---|---|
-| **按主线拆分为 3 个独立 skill** | 按"一条主线一个 skill"拆成 ui-param-diff / design-system-checker / ui-pixel-diff，独立触发、按需安装 |
-| **顶层 build.js 调度** | 一次打出 3 个 zip，也可单独运行子 build |
+| **按主线拆分为独立 skill** | 按"一条主线一个 skill"拆成 ui-param-diff / ui-pixel-diff（本文）+ design-checker（配套文档），独立触发、按需安装 |
+| **顶层 build.js 调度** | 一次打出 zip，也可单独运行子 build |
 | **引擎按需拷贝** | 各 skill 只从 devlint-mcp/lib 拷贝自己用到的子目录，互不重叠；共用 config.js + utils |
-| **版本策略** | ui-param-diff 跟随 devlint-mcp 版本；另两个自身 package.json 管理 |
+| **版本策略** | ui-param-diff 跟随 devlint-mcp 版本；ui-pixel-diff 自身 package.json 管理；design-checker 自身管理 |
 | **打点前缀统一** | build.js patch `devlint_mcp_*` → `devlint_skill_*` |
 | **ui-param-diff 的 HTML 报告** | `ui-style-check` 调 server `/report/html` 生成可视化交互式差异列表 |
 | **ui-pixel-diff 的 agent 自检模式** | agent 看对话图按 prompt 输出差异 JSON，skill 只整理报告；不调 server、不读图片文件、不占 server 额度；server 方案保留为备选 |
