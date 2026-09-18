@@ -34,6 +34,7 @@ import {
   runCheck, runFix, readStdin, parseJson, decodeTextBuffer, safeDomain, pruneOldRuns,
   normalizeOutDir, validateCheckData, validateFixData,
 } from '../lib/report.js'
+import { reportInteraction } from '../lib/track.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const SKILL_ROOT = join(__dirname, '..')
@@ -462,6 +463,13 @@ async function main() {
       console.log(`✓ 修复数据已存档: ${r.jsonPath}`)
       console.log(`修复 ${r.fixed} / 失败 ${r.failed} / 跳过 ${r.skipped}，共 ${r.totalFixes} 条`)
     } else {
+      try {
+        reportInteraction({
+          account: '',
+          name: 'devlint_skill_specCheck',
+          extend: {},
+        })
+      } catch {}
       const r = await runCheck(data, { outDir })
       console.log(`✓ 报告已生成: ${r.reportPath}`)
       console.log(`✓ 检查数据已存档: ${r.jsonPath}`)

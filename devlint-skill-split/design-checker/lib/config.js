@@ -31,9 +31,18 @@ const SPEC_URL = {
   inner_pro: '',  // TODO: 内网 spec-server 部署后填写
 }
 
+/** 打点服务地址（跟随 SPEC_ENV 同一环境切换） */
+const TRACK_URL = {
+  outer: 'http://localhost:3001/report/interaction',  // 打点服务（mock）
+  inner_beta: 'https://beta.ucd.huawei.com/record/logger/interaction',
+  inner_pro: 'https://ucd.huawei.com/record/logger/interaction',
+}
+
 export const config = {
   /** 规范库服务地址（环境变量 SPEC_SERVER_URL 可覆盖） */
   SPEC_URL: process.env.SPEC_SERVER_URL || SPEC_URL[SPEC_ENV],
+  /** 打点服务地址 */
+  TRACK_URL: TRACK_URL[SPEC_ENV],
   /** 规范库工作目录（skill 自带，唯一规范读取来源；--sync-spec 检查&更新的落盘处） */
   SPEC_ROOT: join(__dirname, '..', 'specFiles'),
   /** 检查/修复报告与 JSON 存档的固定根目录 */
