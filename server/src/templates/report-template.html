@@ -141,7 +141,7 @@ body {
   left: 0;
   width: 100%;
   height: 100%;
-  pointer-events: none;
+  cursor: default;
 }
 
 /* ── 右侧列表 ── */
@@ -242,7 +242,7 @@ body {
 
 /* 差异卡片 */
 .diff-card {
-  background: var(--octo-surface-page);
+  background: var(--octo-bg-canvas);
   border: 1px solid transparent;
   border-radius: 8px;
   margin-bottom: 12px;
@@ -256,7 +256,6 @@ body {
 }
 .diff-card.selected {
   background: var(--octo-primary-subtle);
-  border-color: var(--octo-primary);
 }
 .diff-low-badge {
   flex-shrink: 0;
@@ -474,6 +473,7 @@ body {
   var selectedKey = null;
   var hoveredKey = null;
   var canvasHover = null; /* { side, nodeId, node } 画布直接 hover 的节点（不属于 diff 时使用） */
+  var pinnedInspect = null; /* { side, nodeId } 画布点击非 diff 节点后钉住的 inspector */
 
   function isPrecise(d) { return d.severity === 'error'; }
 
@@ -588,6 +588,143 @@ body {
       ctx.stroke();
       ctx.setLineDash([]);
     }
+  }
+
+  /* 计算两矩形间距/内边距标注（移植 client tools.ts computeSpacingMarks）：
+     rect 为画布渲染坐标（定位标注），size 为展示数值坐标（原始 dp/vp，缺省回退 rect） */
+  function computeSpacingMarks(rectA, rectB, sizeA, sizeB) {
+    if (!rectA || !rectB) return []
+    var a = rectA, b = rectB
+    var sa = sizeA || rectA, sb = sizeB || rectB
+
+    var aContainsB = a.x <= b.x && a.y <= b.y && (a.x + a.w) >= (b.x + b.w) && (a.y + a.h) >= (b.y + b.h)
+    var bContainsA = b.x <= a.x && b.y <= a.y && (b.x + b.w) >= (a.x + a.w) && (b.y + b.h) >= (a.y + a.h)
+    var overlapsH  = a.x < b.x + b.w && b.x < a.x + a.w
+    var overlapsV  = a.y < b.y + b.h && b.y < a.y + a.h
+
+    if (overlapsH && overlapsV && !aContainsB && !bContainsA) return []
+
+    var marks = []
+
+    if (aContainsB || bContainsA) {
+      var p  = aContainsB ? a : b,  sp = aContainsB ? sa : sb
+      var c  = aContainsB ? b : a,  sc = aContainsB ? sb : sa
+      var top    = c.y - p.y,              sTop    = sc.y - sp.y
+      var bottom = (p.y + p.h) - (c.y + c.h), sBottom = (sp.y + sp.h) - (sc.y + sc.h)
+      var left   = c.x - p.x,              sLeft   = sc.x - sp.x
+      var right  = (p.x + p.w) - (c.x + c.w), sRight  = (sp.x + sp.w) - (sc.x + sc.w)
+      if (top > 0) marks.push({ type: 'spacing', axis: 'vertical', spaceRect: { x: c.x, y: p.y, w: c.w, h: top }, value: String(Math.round(sTop)) })
+      if (bottom > 0) marks.push({ type: 'spacing', axis: 'vertical', spaceRect: { x: c.x, y: c.y + c.h, w: c.w, h: bottom }, value: String(Math.round(sBottom)) })
+      if (left > 0) marks.push({ type: 'spacing', axis: 'horizontal', spaceRect: { x: p.x, y: c.y, w: left, h: c.h }, value: String(Math.round(sLeft)) })
+      if (right > 0) marks.push({ type: 'spacing', axis: 'horizontal', spaceRect: { x: c.x + c.w, y: c.y, w: right, h: c.h }, value: String(Math.round(sRight)) })
+    } else {
+      if (!overlapsH) {
+        var lR = a.x + a.w <= b.x ? a : b, slR = lR === a ? sa : sb
+        var rR = lR === a ? b : a, srR = lR === a ? sb : sa
+        var yTop = Math.max(lR.y, rR.y), yBot = Math.min(lR.y + lR.h, rR.y + rR.h)
+        var y = yTop < yBot ? yTop : Math.min(lR.y, rR.y)
+        var gh = yTop < yBot ? (yBot - yTop) : Math.max(lR.h, rR.h)
+        var yMid = y + gh / 2
+        marks.push({
+          type: 'spacing', axis: 'horizontal',
+          spaceRect: { x: lR.x + lR.w, y: y, w: rR.x - (lR.x + lR.w), h: gh },
+          capFirst:  { start: Math.min(lR.y, yMid), end: Math.max(lR.y + lR.h, yMid) },
+          capSecond: { start: Math.min(rR.y, yMid), end: Math.max(rR.y + rR.h, yMid) },
+          value: String(Math.round(srR.x - (slR.x + slR.w))),
+        })
+      }
+      if (!overlapsV) {
+        var tR = a.y + a.h <= b.y ? a : b, stR = tR === a ? sa : sb
+        var bR = tR === a ? b : a, sbR = tR === a ? sb : sa
+        var xLeft = Math.max(tR.x, bR.x), xRight = Math.min(tR.x + tR.w, bR.x + bR.w)
+        var x = xLeft < xRight ? xLeft : Math.min(tR.x, bR.x)
+        var gw = xLeft < xRight ? (xRight - xLeft) : Math.max(tR.w, bR.w)
+        var xMid = x + gw / 2
+        marks.push({
+          type: 'spacing', axis: 'vertical',
+          spaceRect: { x: x, y: tR.y + tR.h, w: gw, h: bR.y - (tR.y + tR.h) },
+          capFirst:  { start: Math.min(tR.x, xMid), end: Math.max(tR.x + tR.w, xMid) },
+          capSecond: { start: Math.min(bR.x, xMid), end: Math.max(bR.x + bR.w, xMid) },
+          value: String(Math.round(sbR.y - (stR.y + stR.h))),
+        })
+      }
+    }
+    return marks
+  }
+
+  /* 间距标注数值标签（蓝底白字） */
+  function drawSpacingLabel(ctx, text, x, y) {
+    var FONT_SIZE = 10
+    ctx.font = 'bold ' + FONT_SIZE + 'px sans-serif'
+    var tw = ctx.measureText(text).width
+    var padX = 4, padY = 2
+    var bw = tw + padX * 2, bh = FONT_SIZE + padY * 2
+    ctx.fillStyle = '#0067D1'
+    ctx.fillRect(x - bw / 2, y - bh / 2, bw, bh)
+    ctx.fillStyle = '#fff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(text, x, y)
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'alphabetic'
+  }
+
+  /* hover 实时间距标注（蓝色箭头 + 端帽 + 数值，移植 client ImagePanel） */
+  function drawHoverSpacingMark(ctx, mark, sx, sy) {
+    var sr = mark && mark.spaceRect
+    if (!sr) return
+    var COLOR = '#0067D1'
+    var DASH = [3, 3]
+    var ARROW_SZ = 4
+
+    ctx.save()
+    ctx.strokeStyle = COLOR
+    ctx.fillStyle = COLOR
+    ctx.lineWidth = 1
+
+    if (mark.axis === 'horizontal') {
+      if (sr.w < 0.5) { ctx.restore(); return }
+      var xL = sr.x * sx
+      var xR = (sr.x + sr.w) * sx
+      var yMid = (sr.y + sr.h / 2) * sy
+      var c1T = (mark.capFirst ? mark.capFirst.start : sr.y) * sy
+      var c1B = (mark.capFirst ? mark.capFirst.end : sr.y + sr.h) * sy
+      var c2T = (mark.capSecond ? mark.capSecond.start : sr.y) * sy
+      var c2B = (mark.capSecond ? mark.capSecond.end : sr.y + sr.h) * sy
+      ctx.setLineDash([])
+      ctx.beginPath(); ctx.moveTo(xL, yMid); ctx.lineTo(xR, yMid); ctx.stroke()
+      drawArrowHead(ctx, xL, yMid, Math.PI, ARROW_SZ)
+      drawArrowHead(ctx, xR, yMid, 0, ARROW_SZ)
+      ctx.setLineDash(DASH)
+      ctx.beginPath()
+      ctx.moveTo(xL, c1T); ctx.lineTo(xL, c1B)
+      ctx.moveTo(xR, c2T); ctx.lineTo(xR, c2B)
+      ctx.stroke()
+      ctx.setLineDash([])
+      if (mark.value != null) drawSpacingLabel(ctx, mark.value, (xL + xR) / 2, yMid)
+    } else {
+      if (sr.h < 0.5) { ctx.restore(); return }
+      var yT = sr.y * sy
+      var yB = (sr.y + sr.h) * sy
+      var xMid = (sr.x + sr.w / 2) * sx
+      var c1L = (mark.capFirst ? mark.capFirst.start : sr.x) * sx
+      var c1R = (mark.capFirst ? mark.capFirst.end : sr.x + sr.w) * sx
+      var c2L = (mark.capSecond ? mark.capSecond.start : sr.x) * sx
+      var c2R = (mark.capSecond ? mark.capSecond.end : sr.x + sr.w) * sx
+      ctx.setLineDash([])
+      ctx.beginPath(); ctx.moveTo(xMid, yT); ctx.lineTo(xMid, yB); ctx.stroke()
+      drawArrowHead(ctx, xMid, yT, -Math.PI / 2, ARROW_SZ)
+      drawArrowHead(ctx, xMid, yB, Math.PI / 2, ARROW_SZ)
+      ctx.setLineDash(DASH)
+      ctx.beginPath()
+      ctx.moveTo(c1L, yT); ctx.lineTo(c1R, yT)
+      ctx.moveTo(c2L, yB); ctx.lineTo(c2R, yB)
+      ctx.stroke()
+      ctx.setLineDash([])
+      if (mark.value != null) drawSpacingLabel(ctx, mark.value, xMid, (yT + yB) / 2)
+    }
+
+    ctx.restore()
   }
 
   function modeDiffs() {
@@ -719,6 +856,75 @@ body {
     drawOverlay(img);
   }
 
+  /* 节点是否属于当前选中卡片对应的节点对或钉住节点（含对侧映射，hover 时不重复画框） */
+  function isSelectedNode(side, nodeId) {
+    if (pinnedInspect) {
+      if (pinnedInspect.side === side && pinnedInspect.nodeId === nodeId) return true;
+      if (pinnedInspect.side !== side && getPairedNodeId(pinnedInspect.side, pinnedInspect.nodeId, side) === nodeId) return true;
+    }
+    if (!selectedKey) return false;
+    var items = findItemsByNodeKey(selectedKey);
+    if (items.length === 0) {
+      var single = findItemByKey(selectedKey);
+      if (single) items = [single];
+    }
+    var idField = side === 'dev' ? 'arkuiNodeId' : 'designNodeId';
+    for (var i = 0; i < items.length; i++) {
+      if (items[i][idField] === nodeId) return true;
+    }
+    return false;
+  }
+
+  /* 经匹配节点对取对侧节点 id（含无 diff 的成对节点；数据无 pairs 时返回 null） */
+  function getPairedNodeId(fromSide, nodeId, toSide) {
+    if (!nodeId || !DATA.pairs) return null;
+    var fromField = fromSide === 'dev' ? 'arkuiId' : 'designId';
+    var toField = toSide === 'dev' ? 'arkuiId' : 'designId';
+    for (var i = 0; i < DATA.pairs.length; i++) {
+      if (DATA.pairs[i][fromField] === nodeId) return DATA.pairs[i][toField];
+    }
+    return null;
+  }
+
+  /* 对侧 hover 节点映射到本侧的节点 id（经匹配节点对） */
+  function getCrossHoverNodeId(side) {
+    if (!canvasHover || canvasHover.side === side) return null;
+    return getPairedNodeId(canvasHover.side, canvasHover.nodeId, side);
+  }
+
+  /* 选中（或钉住）节点 vs hover 节点的实时间距标注（hover 对侧节点时经节点对映射联动） */
+  function getHoverSpacingMarks(side, nodeMap) {
+    var idField = side === 'dev' ? 'arkuiNodeId' : 'designNodeId';
+    /* 选中节点：优先选中卡片对应节点对，其次画布点击钉住的节点 */
+    var selId = null;
+    if (selectedKey) {
+      var items = findItemsByNodeKey(selectedKey);
+      if (items.length === 0) {
+        var single = findItemByKey(selectedKey);
+        if (single) items = [single];
+      }
+      if (items.length) selId = items[0][idField] || null;
+    } else if (pinnedInspect) {
+      selId = pinnedInspect.side === side
+        ? pinnedInspect.nodeId
+        : getPairedNodeId(pinnedInspect.side, pinnedInspect.nodeId, side);
+    }
+    if (!selId) return [];
+    var selNode = nodeMap[selId];
+    if (!selNode || !selNode.rect) return [];
+    /* hover 节点：本侧直接 hover，或对侧 hover 经 diff 节点对映射到本侧 */
+    var hoverNode = null;
+    if (canvasHover) {
+      var hoverId = canvasHover.side === side ? canvasHover.nodeId : getCrossHoverNodeId(side);
+      if (hoverId) hoverNode = nodeMap[hoverId];
+    }
+    if (!hoverNode || !hoverNode.rect || hoverNode.id === selId) return [];
+    /* 数值坐标：design 侧用原始 dp size（缺省回退 rect），dev 侧与 client 一致用 rect */
+    var sizeA = (side === 'design' && selNode.size) ? selNode.size : selNode.rect;
+    var sizeB = (side === 'design' && hoverNode.size) ? hoverNode.size : hoverNode.rect;
+    return computeSpacingMarks(selNode.rect, hoverNode.rect, sizeA, sizeB);
+  }
+
   /* 在 canvas 上绘制 diff 节点框，canvas 对齐图片实际渲染尺寸 */
   function drawOverlay(img) {
     var wrapper = img.parentElement;
@@ -764,11 +970,14 @@ body {
       nodeMap[nodes[k].id] = nodes[k];
     }
 
-    /* canvasHover 层：蓝虚线（画布直接 hover 的非 diff 节点） */
-    if (canvasHover && canvasHover.side === side) {
-      var chNode = canvasHover.nodeId ? nodeMap[canvasHover.nodeId] : null;
-      if (chNode && chNode.rect) {
-        drawNodeRect(ctx, chNode.rect, sx, sy, 'rgba(0,103,209,0.10)', '#0067D1', 1.5, [4, 3]);
+    /* canvasHover 层：红虚线（本侧直接 hover，或对侧 hover 经节点对映射的联动节点；选中节点不重复画） */
+    if (canvasHover) {
+      var chId = canvasHover.side === side ? canvasHover.nodeId : getCrossHoverNodeId(side);
+      if (chId) {
+        var chNode = nodeMap[chId];
+        if (chNode && chNode.rect && !isSelectedNode(side, chId)) {
+          drawNodeRect(ctx, chNode.rect, sx, sy, 'rgba(224,33,40,0.10)', '#E02128', 1, [4, 3]);
+        }
       }
     }
 
@@ -788,7 +997,7 @@ body {
           hDrawn[hNodeId] = true;
           var hn = hNodeId ? nodeMap[hNodeId] : null;
           if (hn && hn.rect) {
-            drawNodeRect(ctx, hn.rect, sx, sy, 'rgba(224,33,40,0.10)', '#E02128', 1.5, [4, 3]);
+            drawNodeRect(ctx, hn.rect, sx, sy, 'rgba(224,33,40,0.10)', '#E02128', 1, [4, 3]);
           }
         }
       }
@@ -809,10 +1018,29 @@ body {
           sDrawn[sNodeId] = true;
           var sn = sNodeId ? nodeMap[sNodeId] : null;
           if (sn && sn.rect) {
-            drawNodeRect(ctx, sn.rect, sx, sy, 'rgba(224,33,40,0.20)', '#E02128', 2, []);
+            drawNodeRect(ctx, sn.rect, sx, sy, 'rgba(224,33,40,0.20)', '#E02128', 1, []);
           }
         }
       }
+    }
+
+    /* pinned 层：点击的非 diff 节点红实线；对侧经匹配节点对联动同款红框 */
+    if (pinnedInspect) {
+      var pId = pinnedInspect.side === side
+        ? pinnedInspect.nodeId
+        : getPairedNodeId(pinnedInspect.side, pinnedInspect.nodeId, side);
+      if (pId) {
+        var pnNode = nodeMap[pId];
+        if (pnNode && pnNode.rect) {
+          drawNodeRect(ctx, pnNode.rect, sx, sy, 'rgba(224,33,40,0.20)', '#E02128', 1, []);
+        }
+      }
+    }
+
+    /* hover 实时间距标注（蓝色）：选中节点 vs hover 节点 */
+    var hoverMarks = getHoverSpacingMarks(side, nodeMap);
+    for (var hm = 0; hm < hoverMarks.length; hm++) {
+      drawHoverSpacingMark(ctx, hoverMarks[hm], sx, sy);
     }
 
     ctx.restore();
@@ -966,6 +1194,8 @@ body {
       activeGroup = 'all';
       selectedKey = null;
       hoveredKey = null;
+      pinnedInspect = null;
+      clearCanvasHover();
       hideAllInspectors();
       renderListOnly();
       redrawAll();
@@ -976,6 +1206,8 @@ body {
       activeGroup = groupBtn.getAttribute('data-group');
       selectedKey = null;
       hoveredKey = null;
+      pinnedInspect = null;
+      clearCanvasHover();
       hideAllInspectors();
       renderListOnly();
       redrawAll();
@@ -985,6 +1217,7 @@ body {
     if (card) {
       var key = card.getAttribute('data-key');
       selectedKey = (selectedKey === key) ? null : key;
+      pinnedInspect = null;
       renderListOnly();
       redrawAll();
       if (selectedKey) {
@@ -1122,9 +1355,25 @@ body {
     hideInspector('design');
   }
 
-  /* 选中报告卡片时显示对应节点 inspector */
+  /* 选中报告卡片时显示对应节点 inspector；无选中时恢复画布点击钉住的节点 */
   function syncInspectorFromSelection() {
-    if (!selectedKey) { hideAllInspectors(); return; }
+    if (!selectedKey) {
+      if (pinnedInspect) {
+        var pNode = findNodeById(pinnedInspect.side, pinnedInspect.nodeId);
+        hideAllInspectors();
+        if (pNode) showInspector(pinnedInspect.side, pNode, getDiffLabelsForNode(pinnedInspect.side, pNode.id));
+        /* 对侧经匹配节点对联动 inspector（无 diff 的成对节点也有） */
+        var otherSide = pinnedInspect.side === 'dev' ? 'design' : 'dev';
+        var otherId = getPairedNodeId(pinnedInspect.side, pinnedInspect.nodeId, otherSide);
+        if (otherId) {
+          var oNode = findNodeById(otherSide, otherId);
+          if (oNode) showInspector(otherSide, oNode, getDiffLabelsForNode(otherSide, otherId));
+        }
+        return;
+      }
+      hideAllInspectors();
+      return;
+    }
     var items = findItemsByNodeKey(selectedKey);
     if (items.length === 0) {
       var single = findItemByKey(selectedKey);
@@ -1179,14 +1428,33 @@ body {
     return best;
   }
 
-  /* 根据节点 id 反查所属 diff 的 nodeKey（命中画布节点 → 联动报告） */
-  function findNodeKeyByNodeId(side, nodeId) {
+  /* 根据节点 id 反查所属 diff 的 nodeKey（先查当前可见列表，命中即联动） */
+  function findVisibleNodeKey(side, nodeId) {
     var idField = side === 'dev' ? 'arkuiNodeId' : 'designNodeId';
     var list = visibleDiffs();
     for (var i = 0; i < list.length; i++) {
       if (list[i][idField] === nodeId) return nodeKey(list[i]);
     }
     return null;
+  }
+
+  /* 在全量 items 中反查节点第一个 diff（用于被筛选隐藏时自动切换 mode/group 后联动） */
+  function findAnyItemByNodeId(side, nodeId) {
+    var idField = side === 'dev' ? 'arkuiNodeId' : 'designNodeId';
+    for (var i = 0; i < DATA.items.length; i++) {
+      if (DATA.items[i][idField] === nodeId) return DATA.items[i];
+    }
+    return null;
+  }
+
+  /* 收集节点全部 diff 的属性 label（hover / pinned inspector 高亮用） */
+  function getDiffLabelsForNode(side, nodeId) {
+    var idField = side === 'dev' ? 'arkuiNodeId' : 'designNodeId';
+    var labels = {};
+    for (var i = 0; i < DATA.items.length; i++) {
+      if (DATA.items[i][idField] === nodeId) labels[DATA.items[i].label] = 1;
+    }
+    return Object.keys(labels);
   }
 
   document.getElementById('images').addEventListener('click', function (e) {
@@ -1200,9 +1468,17 @@ body {
     var coords = getCanvasCoords(e, img);
     var node = hitTestNode(side, coords.px, coords.py);
     if (node) {
-      /* 反查 diff 选中报告卡片 */
-      var nk = findNodeKeyByNodeId(side, node.id);
+      /* 反查 diff 选中报告卡片：先当前可见列表；仅在当前模式（精准/模糊）内联动，不跨模式切换 */
+      var nk = findVisibleNodeKey(side, node.id);
+      if (!nk) {
+        var fallback = findAnyItemByNodeId(side, node.id);
+        if (fallback && isPrecise(fallback) === (mode === 'precise')) {
+          if (activeGroup !== 'all' && activeGroup !== fallback.groupKey) activeGroup = 'all';
+          nk = nodeKey(fallback);
+        }
+      }
       selectedKey = nk || null;
+      pinnedInspect = nk ? null : { side: side, nodeId: node.id };
       renderListOnly();
       if (selectedKey) {
         syncInspectorFromSelection();
@@ -1210,15 +1486,56 @@ body {
         if (sel) sel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       } else {
         hideAllInspectors();
-        showInspector(side, node, []);
+        showInspector(side, node, getDiffLabelsForNode(side, node.id));
       }
       redrawAll();
     } else {
       hideAllInspectors();
       selectedKey = null;
+      pinnedInspect = null;
       renderListOnly();
       redrawAll();
     }
+  });
+
+  /* ── 画布 hover：命中节点 → 蓝虚线高亮 + inspector + pointer 光标 ── */
+  function clearCanvasHover() {
+    if (!canvasHover) return;
+    canvasHover = null;
+    var canvases = document.querySelectorAll('.img-wrapper canvas');
+    for (var i = 0; i < canvases.length; i++) canvases[i].style.cursor = 'default';
+    redrawAll();
+    syncInspectorFromSelection();
+  }
+
+  document.getElementById('images').addEventListener('mousemove', function (e) {
+    var canvas = e.target.closest('canvas');
+    if (!canvas) { clearCanvasHover(); return; }
+    var wrapper = canvas.closest('.img-wrapper');
+    if (!wrapper) { clearCanvasHover(); return; }
+    var side = wrapper.getAttribute('data-side');
+    var img = wrapper.querySelector('img');
+    if (!img || !img.naturalWidth) return;
+    var coords = getCanvasCoords(e, img);
+    var node = hitTestNode(side, coords.px, coords.py);
+    var newId = node ? node.id : null;
+    var curId = (canvasHover && canvasHover.side === side) ? canvasHover.nodeId : null;
+    if (newId === curId) return;
+    canvasHover = node ? { side: side, nodeId: node.id, node: node } : null;
+    canvas.style.cursor = node ? 'pointer' : 'default';
+    redrawAll();
+    if (node) {
+      showInspector(side, node, getDiffLabelsForNode(side, node.id));
+    } else {
+      syncInspectorFromSelection();
+    }
+  });
+
+  document.getElementById('images').addEventListener('mouseout', function (e) {
+    var canvas = e.target.closest('canvas');
+    if (!canvas) return;
+    if (e.relatedTarget && canvas.contains(e.relatedTarget)) return;
+    clearCanvasHover();
   });
 
   /* 初始化 */

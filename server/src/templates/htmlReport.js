@@ -194,6 +194,7 @@ function buildReportData(result, imageBuffers = {}) {
     .map(n => ({
       id: n.id,
       rect: n.rect,
+      size: n.size || null,
       name: n.name || '',
       textContent: n.textContent || '',
       type: n.type || 'container',
@@ -208,12 +209,18 @@ function buildReportData(result, imageBuffers = {}) {
   }
   const groups = ISSUE_GROUPS.filter(g => g.key === 'all' || groupCounts[g.key])
 
+  /* 匹配节点对（含无 diff 的）：画布点击/hover 的双侧联动映射用 */
+  const pairs = (result.pairs || [])
+    .filter(p => p.design?.id && p.arkui?.id)
+    .map(p => ({ designId: p.design.id, arkuiId: p.arkui.id }))
+
   return {
     platform: result.platform || 'unknown',
     errorCount,
     warningCount,
     items,
     groups,
+    pairs,
     arkuiCanvas: result.canvas?.arkui || null,
     designCanvas: result.canvas?.design || null,
     arkuiNodes,
