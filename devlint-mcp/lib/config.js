@@ -16,16 +16,10 @@ const TRACK_URL = {
   inner_beta: 'https://beta.ucd.huawei.com/record/logger/interaction',
   inner_pro: 'https://ucd.huawei.com/record/logger/interaction'
 }
-const SPEC_URL = {
-  outer: 'http://localhost:3001/mock/spec',   // 规范库 base（与 inner 等价，拼后缀）
-  inner_beta: 'http://7.192.170.117:3100',
-  inner_pro: 'http://7.192.170.117:3100'
-}
 
 export const config = {
   CHECK_SERVER_URL: CHECK_URL[CHECK_ENV],
   TRACK_URL: TRACK_URL[CHECK_ENV],
-  SPEC_URL: SPEC_URL[CHECK_ENV],
   DIR_NAME: '.octo-uxlint',
   // MCP 和 skill 的使用指南链接
   MCP_GUIDE_URL: 'https://wiki.huawei.com/wiki/WIKI2026082612457583',

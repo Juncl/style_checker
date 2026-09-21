@@ -139,31 +139,3 @@ export function trackCheckComplete({ account, platform, stats, diffCount }) {
     })
   } catch {}
 }
-
-/**
- * 上报设计规范检查完成事件
- *
- * extend 为规范检查特有业务数据，外层 payload 结构与 trackCheckComplete 完全一致
- * （统一走 reportInteraction，仅 name 不同）。
- *
- * @param {Object} data
- * @param {string} data.account - 用户账号（为空时自动用本机 IP 兜底）
- * @param {string[]} data.specFilePaths - 规则文件路径数组
- * @param {Object} data.stats - 检查统计信息 { total, errorCount, warningCount }
- * @param {number} data.issueCount - 问题项总数
- */
-export function trackSpecCheckComplete({ account, specFilePaths, stats, issueCount }) {
-  try {
-    reportInteraction({
-      account,
-      name: 'devlint_mcp_specCheck',
-      extend: {
-        specCount: (specFilePaths || []).length,
-        issueCount: issueCount ?? 0,
-        total: stats?.total ?? 0,
-        errorCount: stats?.errorCount ?? 0,
-        warningCount: stats?.warningCount ?? 0,
-      },
-    })
-  } catch {}
-}
