@@ -105,6 +105,25 @@ function truncate(text, max) {
   return text.length > max ? text.slice(0, max) + '...' : text
 }
 
+// 根据关系类型计算间距标注的 spaceRect（参考 ReportPage.vue buildSpacingMark）
+function buildSpacingMark(rects, axis, kind) {
+  if (!rects || !Array.isArray(rects) || rects.length < 2) return null
+  const [anchorRect, nodeRect] = rects
+  if (!anchorRect || !nodeRect) return null
+  const nr = nodeRect
+  const nbr = anchorRect
+  const isParent = kind === 'parent-child'
+  let spaceRect
+  if (axis === 'vertical') {
+    const top = isParent ? nbr.y : nbr.y + nbr.h
+    spaceRect = { x: nr.x, y: top, w: nr.w, h: nr.y - top }
+  } else {
+    const left = isParent ? nbr.x : nbr.x + nbr.w
+    spaceRect = { x: left, y: nr.y, w: nr.x - left, h: nr.h }
+  }
+  return { spaceRect, axis }
+}
+
 // ── 图片 buffer → base64 data URI ──
 
 function bufferToDataUri(buffer, fallbackName) {
@@ -124,7 +143,8 @@ function buildReportData(result, imageBuffers = {}) {
   const items = diffs.map(d => {
     const devNode = arkuiById.get(d.arkuiNodeId)
     const designNode = designById.get(d.designNodeId)
-    const cardName = d.textContent || d.designName || d.relatedDesignName || d.name || '节点'
+    const cardName = d.textContent || d.arkuiName || d.relatedArkuiName || d.designName || d.name || '节点'
+    const isSpacing = String(d.property || '').startsWith('spacing.')
     return {
       severity: d.severity || 'error',
       property: d.property,
@@ -141,6 +161,9 @@ function buildReportData(result, imageBuffers = {}) {
       designValue: d.designValue,
       designNodeId: d.designNodeId,
       arkuiNodeId: d.arkuiNodeId,
+      confidence: d.confidence || 'medium',
+      spacingDev: isSpacing ? buildSpacingMark(d.relationRects?.arkui, d.relationAxis, d.relationKind) : null,
+      spacingDesign: isSpacing ? buildSpacingMark(d.relationRects?.design, d.relationAxis, d.relationKind) : null,
     }
   })
 
@@ -157,10 +180,26 @@ function buildReportData(result, imageBuffers = {}) {
 
   const arkuiNodes = (result.allArkuiNodes || [])
     .filter(n => n.rect)
-    .map(n => ({ id: n.id, rect: n.rect }))
+    .map(n => ({
+      id: n.id,
+      rect: n.rect,
+      name: n.name || '',
+      textContent: n.textContent || '',
+      type: n.type || 'container',
+      rawType: n.rawType || '',
+      style: n.style || {},
+    }))
   const designNodes = (result.allDesignNodes || [])
     .filter(n => n.rect)
-    .map(n => ({ id: n.id, rect: n.rect }))
+    .map(n => ({
+      id: n.id,
+      rect: n.rect,
+      name: n.name || '',
+      textContent: n.textContent || '',
+      type: n.type || 'container',
+      rawType: n.rawType || '',
+      style: n.style || {},
+    }))
 
   const groupCounts = { all: items.length }
   for (const it of items) {

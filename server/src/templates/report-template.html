@@ -246,8 +246,49 @@ body {
   border: 1px solid transparent;
   border-radius: 8px;
   margin-bottom: 12px;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
 }
 .diff-card:last-child { margin-bottom: 0; }
+.diff-card:hover {
+  background: var(--octo-surface-hover);
+  border-color: var(--octo-border-default);
+}
+.diff-card.selected {
+  background: var(--octo-primary-subtle);
+  border-color: var(--octo-primary);
+}
+.diff-low-badge {
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 6px;
+  background: rgba(208, 216, 253, 0.50);
+  color: #1F55B5;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.diff-card-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--octo-text-secondary);
+  background: rgba(25, 25, 25, 0.06);
+  padding: 0 6px;
+  border-radius: 4px;
+  height: 18px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.diff-prop-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+  border-top: 1px solid var(--octo-border-separator);
+}
+.diff-prop-group:first-child { border-top: none; padding-top: 0; }
+.diff-prop-group:last-child { padding-bottom: 0; }
 .diff-card-head {
   display: flex;
   align-items: center;
@@ -349,6 +390,71 @@ body {
   border: 1px solid rgba(0, 0, 0, 0.12);
   flex-shrink: 0;
 }
+
+/* ── 节点详情 inspector ── */
+.node-inspector {
+  position: absolute;
+  z-index: 20;
+  min-width: 160px;
+  max-width: 220px;
+  background: var(--octo-surface-page);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.06);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.node-inspector.visible { opacity: 1; }
+.inspector-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--octo-border-separator);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--octo-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--octo-text-secondary);
+  background: rgba(25, 25, 25, 0.06);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.inspector-body {
+  padding: 4px 0;
+}
+.inspector-prop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  font-size: 11px;
+}
+.inspector-prop-key {
+  color: var(--octo-text-secondary);
+  flex-shrink: 0;
+  min-width: 48px;
+}
+.inspector-prop-val {
+  color: var(--octo-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.inspector-prop-diff .inspector-prop-val {
+  color: var(--report-dev-color);
+  font-weight: 500;
+}
 </style>
 </head>
 <body>
@@ -365,8 +471,124 @@ body {
   var DATA = JSON.parse(document.getElementById('report-data').textContent);
   var mode = 'precise';
   var activeGroup = 'all';
+  var selectedKey = null;
+  var hoveredKey = null;
+  var canvasHover = null; /* { side, nodeId, node } 画布直接 hover 的节点（不属于 diff 时使用） */
 
   function isPrecise(d) { return d.severity === 'error'; }
+
+  function foldKey(d) {
+    return (d.designNodeId || '') + '|' + (d.arkuiNodeId || '') + '|' + d.property;
+  }
+
+  function nodeKey(d) {
+    return (d.designNodeId || '') + '|' + (d.arkuiNodeId || '');
+  }
+
+  function findItemByKey(key) {
+    for (var i = 0; i < DATA.items.length; i++) {
+      if (foldKey(DATA.items[i]) === key) return DATA.items[i];
+    }
+    return null;
+  }
+
+  function findItemsByNodeKey(key) {
+    var arr = [];
+    for (var i = 0; i < DATA.items.length; i++) {
+      if (nodeKey(DATA.items[i]) === key) arr.push(DATA.items[i]);
+    }
+    return arr;
+  }
+
+  // 组内 property 按 ISSUE_GROUPS 顺序排序
+  var ISSUE_ORDER = (function () {
+    var m = {};
+    for (var i = 0; i < DATA.groups.length; i++) m[DATA.groups[i].key] = i;
+    return m;
+  })();
+  function groupOrder(d) { return ISSUE_ORDER[d.groupKey] == null ? 99 : ISSUE_ORDER[d.groupKey]; }
+
+  function redrawAll() {
+    var imgs = document.querySelectorAll('.img-wrapper img');
+    for (var i = 0; i < imgs.length; i++) {
+      drawOverlay(imgs[i]);
+    }
+  }
+
+  function drawNodeRect(ctx, rect, sx, sy, fill, stroke, lineWidth, dash) {
+    var x = rect.x * sx, y = rect.y * sy, w = rect.w * sx, h = rect.h * sy;
+    ctx.fillStyle = fill;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineWidth;
+    ctx.setLineDash(dash);
+    ctx.strokeRect(x, y, w, h);
+    ctx.setLineDash([]);
+  }
+
+  function drawArrowHead(ctx, tx, ty, angle, size) {
+    ctx.save();
+    ctx.translate(tx, ty);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-size, -size * 0.45);
+    ctx.lineTo(-size, size * 0.45);
+    ctx.closePath();
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawSpacingMark(ctx, mark, sx, sy) {
+    var sr = mark.spaceRect;
+    if (!sr) return;
+    var COLOR = '#E02128';
+    var DASH = [3, 3];
+    var ARROW_SZ = 5;
+    ctx.strokeStyle = COLOR;
+    ctx.fillStyle = COLOR;
+    ctx.lineWidth = 1;
+    if (mark.axis === 'horizontal') {
+      var xL = sr.x * sx;
+      var xR = (sr.x + sr.w) * sx;
+      var yMid = (sr.y + sr.h / 2) * sy;
+      var capTop = sr.y * sy;
+      var capBottom = (sr.y + sr.h) * sy;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(xL, yMid);
+      ctx.lineTo(xR, yMid);
+      ctx.stroke();
+      drawArrowHead(ctx, xL, yMid, Math.PI, ARROW_SZ);
+      drawArrowHead(ctx, xR, yMid, 0, ARROW_SZ);
+      ctx.setLineDash(DASH);
+      ctx.beginPath();
+      ctx.moveTo(xL, capTop); ctx.lineTo(xL, capBottom);
+      ctx.moveTo(xR, capTop); ctx.lineTo(xR, capBottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      var yT = sr.y * sy;
+      var yB = (sr.y + sr.h) * sy;
+      var xMid = (sr.x + sr.w / 2) * sx;
+      var capLeft = sr.x * sx;
+      var capRight = (sr.x + sr.w) * sx;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(xMid, yT);
+      ctx.lineTo(xMid, yB);
+      ctx.stroke();
+      drawArrowHead(ctx, xMid, yT, -Math.PI / 2, ARROW_SZ);
+      drawArrowHead(ctx, xMid, yB, Math.PI / 2, ARROW_SZ);
+      ctx.setLineDash(DASH);
+      ctx.beginPath();
+      ctx.moveTo(capLeft, yT); ctx.lineTo(capRight, yT);
+      ctx.moveTo(capLeft, yB); ctx.lineTo(capRight, yB);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
 
   function modeDiffs() {
     return mode === 'fuzzy'
@@ -464,6 +686,7 @@ body {
       html += '<div class="img-stage"><div class="img-wrapper" data-side="dev">';
       html += '<img src="' + esc(DATA.devImgUrl) + '" alt="开发侧截图">';
       html += '<canvas></canvas>';
+      html += '<div class="node-inspector" data-side="dev"></div>';
       html += '</div></div></div>';
     }
 
@@ -474,6 +697,7 @@ body {
       html += '<div class="img-stage"><div class="img-wrapper" data-side="design">';
       html += '<img src="' + esc(DATA.designImgUrl) + '" alt="设计侧截图">';
       html += '<canvas></canvas>';
+      html += '<div class="node-inspector" data-side="design"></div>';
       html += '</div></div></div>';
     }
 
@@ -535,40 +759,60 @@ body {
     var sx = W / canvasData.w;
     var sy = H / canvasData.h;
 
-    var visibleNodeIds = {};
-    for (var i = 0; i < DATA.items.length; i++) {
-      var item = DATA.items[i];
-      if (item.severity !== 'error' && item.severity !== 'warning') continue;
-      if (String(item.property).startsWith('spacing.')) continue;
-      if (side === 'dev' && item.arkuiNodeId) {
-        visibleNodeIds[item.arkuiNodeId] = item.severity;
-      } else if (side === 'design' && item.designNodeId) {
-        visibleNodeIds[item.designNodeId] = item.severity;
+    var nodeMap = {};
+    for (var k = 0; k < nodes.length; k++) {
+      nodeMap[nodes[k].id] = nodes[k];
+    }
+
+    /* canvasHover 层：蓝虚线（画布直接 hover 的非 diff 节点） */
+    if (canvasHover && canvasHover.side === side) {
+      var chNode = canvasHover.nodeId ? nodeMap[canvasHover.nodeId] : null;
+      if (chNode && chNode.rect) {
+        drawNodeRect(ctx, chNode.rect, sx, sy, 'rgba(0,103,209,0.10)', '#0067D1', 1.5, [4, 3]);
       }
     }
 
-    for (var j = 0; j < nodes.length; j++) {
-      var n = nodes[j];
-      if (!n.rect) continue;
-      var sev = visibleNodeIds[n.id];
-      if (!sev) continue;
-      var r = n.rect;
-      if (!r.w || !r.h || (r.w < 3 && r.h < 3)) continue;
-      var x = r.x * sx;
-      var y = r.y * sy;
-      var w = r.w * sx;
-      var h = r.h * sy;
-      if (sev === 'error') {
-        ctx.fillStyle = 'rgba(224, 33, 40, 0.15)';
-        ctx.strokeStyle = '#E02128';
-      } else {
-        ctx.fillStyle = 'rgba(255, 80, 0, 0.12)';
-        ctx.strokeStyle = '#ff5000';
+    /* hover 层：红虚线 */
+    if (hoveredKey) {
+      var hItems = findItemsByNodeKey(hoveredKey);
+      if (hItems.length === 0) {
+        var hSingle = findItemByKey(hoveredKey);
+        if (hSingle) hItems = [hSingle];
       }
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([]);
-      ctx.fillRect(x, y, w, h);
-      ctx.strokeRect(x, y, w, h);
+      var hDrawn = {};
+      for (var hi = 0; hi < hItems.length; hi++) {
+        var hItem = hItems[hi];
+        if (String(hItem.property).startsWith('spacing.')) continue;
+        var hNodeId = side === 'dev' ? hItem.arkuiNodeId : hItem.designNodeId;
+        if (hNodeId && !hDrawn[hNodeId]) {
+          hDrawn[hNodeId] = true;
+          var hn = hNodeId ? nodeMap[hNodeId] : null;
+          if (hn && hn.rect) {
+            drawNodeRect(ctx, hn.rect, sx, sy, 'rgba(224,33,40,0.10)', '#E02128', 1.5, [4, 3]);
+          }
+        }
+      }
+    }
+
+    /* selected 层：红实线+背景，或间距 H 形箭头 */
+    if (selectedKey) {
+      var sItems = findItemsByNodeKey(selectedKey);
+      if (sItems.length === 0) {
+        var sSingle = findItemByKey(selectedKey);
+        if (sSingle) sItems = [sSingle];
+      }
+      var sDrawn = {};
+      for (var si = 0; si < sItems.length; si++) {
+        var sItem = sItems[si];
+        var sNodeId = side === 'dev' ? sItem.arkuiNodeId : sItem.designNodeId;
+        if (sNodeId && !sDrawn[sNodeId]) {
+          sDrawn[sNodeId] = true;
+          var sn = sNodeId ? nodeMap[sNodeId] : null;
+          if (sn && sn.rect) {
+            drawNodeRect(ctx, sn.rect, sx, sy, 'rgba(224,33,40,0.20)', '#E02128', 2, []);
+          }
+        }
+      }
     }
 
     ctx.restore();
@@ -620,12 +864,53 @@ body {
     /* 卡片列表 */
     if (list.length === 0) {
       html += '<div class="diff-cards"><div class="diff-empty"><div class="diff-empty-icon">&#10003;</div><p>无差异项</p></div></div>';
+    } else if (mode === 'precise' && activeGroup === 'all') {
+      /* 全部 tab：同节点合并成一组 */
+      var grouped = {};
+      var gOrder = [];
+      for (var gi = 0; gi < list.length; gi++) {
+        var nk = nodeKey(list[gi]);
+        if (!grouped[nk]) { grouped[nk] = []; gOrder.push(nk); }
+        grouped[nk].push(list[gi]);
+      }
+      html += '<div class="diff-cards">';
+      for (var oi = 0; oi < gOrder.length; oi++) {
+        var items = grouped[gOrder[oi]];
+        items.sort(function (a, b) { return groupOrder(a) - groupOrder(b); });
+        var first = items[0];
+        var hasLow = false;
+        for (var li = 0; li < items.length; li++) if (items[li].confidence === 'low') { hasLow = true; break; }
+        var gCls = 'diff-card' + (selectedKey === gOrder[oi] ? ' selected' : '');
+        html += '<div class="' + gCls + '" data-key="' + esc(gOrder[oi]) + '">';
+        html += '<div class="diff-card-head"><div class="diff-card-title">';
+        if (hasLow) html += '<span class="diff-low-badge">仅参考</span>';
+        html += '<span class="diff-card-name" title="' + esc(first.cardName) + '">' + esc(first.cardName) + '</span>';
+        if (items.length > 1) html += '<span class="diff-card-count">' + items.length + '项</span>';
+        html += '</div></div>';
+        html += '<div class="diff-card-body">';
+        for (var ii = 0; ii < items.length; ii++) {
+          var d = items[ii];
+          html += '<div class="diff-prop-group">';
+          html += '<div class="diff-prop-row"><span class="diff-prop-key">类型</span><span class="diff-prop-val">' + esc(d.label) + '</span></div>';
+          html += '<div class="diff-cmp">';
+          html += '<div class="diff-cmp-row"><span class="diff-cmp-key">开发</span><span class="diff-cmp-val diff-cmp-val--dev">' + renderVal(d.property, d.arkuiValue) + '</span></div>';
+          html += '<div class="diff-cmp-row"><span class="diff-cmp-key">设计</span><span class="diff-cmp-val diff-cmp-val--design">' + renderVal(d.property, d.designValue) + '</span></div>';
+          html += '</div>';
+          html += '</div>';
+        }
+        html += '</div>';
+        html += '</div>';
+      }
+      html += '</div>';
     } else {
       html += '<div class="diff-cards">';
       for (var j = 0; j < list.length; j++) {
         var d = list[j];
-        html += '<div class="diff-card">';
+        var k = foldKey(d);
+        var cardCls = 'diff-card' + (selectedKey === k ? ' selected' : '');
+        html += '<div class="' + cardCls + '" data-key="' + esc(k) + '">';
         html += '<div class="diff-card-head"><div class="diff-card-title">';
+        if (d.confidence === 'low') html += '<span class="diff-low-badge">仅参考</span>';
         html += '<span class="diff-card-name" title="' + esc(d.cardName) + '">' + esc(d.cardName) + '</span>';
         html += '</div>';
         html += '</div>';
@@ -641,7 +926,16 @@ body {
       html += '</div>';
     }
 
+    /* 保存滚动位置，重建 DOM 后恢复（避免 innerHTML 重置 scrollTop） */
+    var cardsEl = el.querySelector('.diff-cards');
+    var savedScroll = cardsEl ? cardsEl.scrollTop : 0;
+
     el.innerHTML = html;
+
+    if (cardsEl) {
+      var newCardsEl = el.querySelector('.diff-cards');
+      if (newCardsEl) newCardsEl.scrollTop = savedScroll;
+    }
 
     /* 更新 slider */
     var slider = document.getElementById('slider');
@@ -670,14 +964,260 @@ body {
     if (modeBtn && !modeBtn.classList.contains('match-mode-tab--disabled')) {
       mode = modeBtn.getAttribute('data-mode');
       activeGroup = 'all';
+      selectedKey = null;
+      hoveredKey = null;
+      hideAllInspectors();
       renderListOnly();
+      redrawAll();
       return;
     }
     var groupBtn = e.target.closest('.diff-tab');
     if (groupBtn) {
       activeGroup = groupBtn.getAttribute('data-group');
+      selectedKey = null;
+      hoveredKey = null;
+      hideAllInspectors();
       renderListOnly();
+      redrawAll();
       return;
+    }
+    var card = e.target.closest('.diff-card');
+    if (card) {
+      var key = card.getAttribute('data-key');
+      selectedKey = (selectedKey === key) ? null : key;
+      renderListOnly();
+      redrawAll();
+      if (selectedKey) {
+        var sel = document.querySelector('.diff-card.selected');
+        if (sel) sel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        syncInspectorFromSelection();
+      } else {
+        hideAllInspectors();
+      }
+      return;
+    }
+  });
+
+  document.getElementById('list').addEventListener('mouseover', function (e) {
+    var card = e.target.closest('.diff-card');
+    if (card) {
+      var key = card.getAttribute('data-key');
+      if (hoveredKey !== key) {
+        hoveredKey = key;
+        redrawAll();
+      }
+    }
+  });
+
+  document.getElementById('list').addEventListener('mouseout', function (e) {
+    var card = e.target.closest('.diff-card');
+    if (card && !card.contains(e.relatedTarget)) {
+      hoveredKey = null;
+      redrawAll();
+    }
+  });
+
+  /* ── 节点详情 inspector ── */
+
+  var COLOR_PROPS_SET = { fontColor: 1, backgroundColor: 1, 'border.color': 1, borderColor: 1, 'shadow.color': 1 };
+
+  function formatColorVal(v) {
+    if (!v) return '';
+    var s = String(v);
+    var hex = (s.match(/#[0-9A-Fa-f]{6,8}/) || [''])[0];
+    if (!hex) return s;
+    return hex;
+  }
+
+  function formatBorderRadius(br) {
+    if (!br) return '';
+    var v = [br.topLeft, br.topRight, br.bottomRight, br.bottomLeft];
+    var uniform = v.every(function (x) { return x === v[0]; });
+    return uniform ? String(v[0]) : v.join('/');
+  }
+
+  function formatPadding(p) {
+    if (!p) return '';
+    var uniform = p.top === p.right && p.right === p.bottom && p.bottom === p.left;
+    return uniform ? String(p.top) : (p.top + ' ' + p.right + ' ' + p.bottom + ' ' + p.left);
+  }
+
+  function buildInspectorRows(style, type) {
+    var rows = [];
+    if (!style) return rows;
+    if (style.fontSize != null) rows.push({ label: '字号', val: style.fontSize });
+    if (style.fontWeight != null) rows.push({ label: '字重', val: style.fontWeight });
+    if (style.fontColor) rows.push({ label: '颜色', val: formatColorVal(style.fontColor), color: style.fontColor });
+    if (style.fontFamily) rows.push({ label: '字体', val: style.fontFamily });
+    if (style.backgroundColor) rows.push({ label: '填充', val: formatColorVal(style.backgroundColor), color: style.backgroundColor });
+    if (style.borderRadius) rows.push({ label: '圆角', val: formatBorderRadius(style.borderRadius) });
+    if (style.border && style.border.width != null) rows.push({ label: '描边宽度', val: style.border.width });
+    if (style.border && style.border.color) rows.push({ label: '描边颜色', val: formatColorVal(style.border.color), color: style.border.color });
+    if (style.shadow) rows.push({ label: '阴影', val: formatColorVal(style.shadow), color: style.shadow });
+    if (style.blur != null) rows.push({ label: '模糊', val: style.blur });
+    if (style.opacity != null && style.opacity !== 1) rows.push({ label: '不透明度', val: style.opacity });
+    if (style.textAlign) rows.push({ label: '对齐', val: style.textAlign });
+    if (style.lineHeight != null) rows.push({ label: '行高', val: style.lineHeight });
+    if (style.padding && type === 'container') rows.push({ label: '内边距', val: formatPadding(style.padding) });
+    return rows;
+  }
+
+  function showInspector(side, node, diffProps) {
+    var wrapper = document.querySelector('.img-wrapper[data-side="' + side + '"]');
+    if (!wrapper) return;
+    var ins = wrapper.querySelector('.node-inspector');
+    if (!ins) return;
+    if (!node) { ins.classList.remove('visible'); return; }
+
+    var name = node.textContent || node.name || '节点';
+    var html = '<div class="inspector-header"><span class="inspector-name">' + esc(name) + '</span>';
+    if (node.rawType) html += '<span class="inspector-badge">' + esc(node.rawType) + '</span>';
+    html += '</div><div class="inspector-body">';
+    var rows = buildInspectorRows(node.style, node.type);
+    var diffSet = {};
+    if (diffProps) for (var i = 0; i < diffProps.length; i++) diffProps[diffProps[i]] = 1;
+    for (var j = 0; j < rows.length; j++) {
+      var r = rows[j];
+      var cls = 'inspector-prop' + (diffSet[r.label] ? ' inspector-prop-diff' : '');
+      html += '<div class="' + cls + '"><span class="inspector-prop-key">' + esc(r.label) + '</span>';
+      html += '<span class="inspector-prop-val">';
+      if (r.color) {
+        var css = colorToCss(r.color);
+        html += '<span class="color-dot" style="background:' + css + '"></span>';
+      }
+      html += esc(r.val) + '</span></div>';
+    }
+    html += '</div>';
+    ins.innerHTML = html;
+
+    /* 定位到节点右侧 */
+    var img = wrapper.querySelector('img');
+    var canvasData = side === 'dev' ? DATA.arkuiCanvas : DATA.designCanvas;
+    if (!img || !canvasData) { ins.classList.add('visible'); return; }
+    var boxW = img.clientWidth, boxH = img.clientHeight;
+    var natW = img.naturalWidth, natH = img.naturalHeight;
+    var scale = Math.min(boxW / natW, boxH / natH);
+    var W = natW * scale, H = natH * scale;
+    var offX = (boxW - W) / 2, offY = (boxH - H) / 2;
+    var sx = W / canvasData.w, sy = H / canvasData.h;
+    var nx = node.rect.x * sx + offX;
+    var ny = node.rect.y * sy + offY;
+    var nw = node.rect.w * sx;
+    var insW = ins.offsetWidth || 200;
+    var left = nx + nw + 8;
+    if (left + insW > wrapper.clientWidth - 4) left = nx - insW - 8;
+    if (left < 4) left = 4;
+    ins.style.left = left + 'px';
+    ins.style.top = ny + 'px';
+    ins.classList.add('visible');
+  }
+
+  function hideInspector(side) {
+    var ins = document.querySelector('.node-inspector[data-side="' + side + '"]');
+    if (ins) ins.classList.remove('visible');
+  }
+
+  function hideAllInspectors() {
+    hideInspector('dev');
+    hideInspector('design');
+  }
+
+  /* 选中报告卡片时显示对应节点 inspector */
+  function syncInspectorFromSelection() {
+    if (!selectedKey) { hideAllInspectors(); return; }
+    var items = findItemsByNodeKey(selectedKey);
+    if (items.length === 0) {
+      var single = findItemByKey(selectedKey);
+      if (single) items = [single];
+    }
+    if (items.length === 0) { hideAllInspectors(); return; }
+    var devId = items[0].arkuiNodeId;
+    var designId = items[0].designNodeId;
+    var diffProps = {};
+    for (var i = 0; i < items.length; i++) diffProps[items[i].label] = 1;
+    if (devId) {
+      var devNode = findNodeById('dev', devId);
+      if (devNode) showInspector('dev', devNode, Object.keys(diffProps));
+    } else { hideInspector('dev'); }
+    if (designId) {
+      var designNode = findNodeById('design', designId);
+      if (designNode) showInspector('design', designNode, Object.keys(diffProps));
+    } else { hideInspector('design'); }
+  }
+
+  function findNodeById(side, id) {
+    var nodes = side === 'dev' ? DATA.arkuiNodes : DATA.designNodes;
+    for (var i = 0; i < nodes.length; i++) if (nodes[i].id === id) return nodes[i];
+    return null;
+  }
+
+  /* canvas 点击：命中节点 → 显示 inspector + 高亮 */
+  function getCanvasCoords(e, img) {
+    var canvasData = e.target.parentElement.getAttribute('data-side') === 'dev' ? DATA.arkuiCanvas : DATA.designCanvas;
+    var r = img.getBoundingClientRect();
+    var natW = img.naturalWidth, natH = img.naturalHeight;
+    var scale = Math.min(r.width / natW, r.height / natH);
+    var W = natW * scale, H = natH * scale;
+    var offX = (r.width - W) / 2, offY = (r.height - H) / 2;
+    var px = (e.clientX - r.left - offX) / W * canvasData.w;
+    var py = (e.clientY - r.top - offY) / H * canvasData.h;
+    return { px: px, py: py };
+  }
+
+  function hitTestNode(side, px, py) {
+    var nodes = side === 'dev' ? DATA.arkuiNodes : DATA.designNodes;
+    var best = null, bestArea = Infinity;
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var r = n.rect;
+      if (!r) continue;
+      if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
+        var area = r.w * r.h;
+        if (area < bestArea) { bestArea = area; best = n; }
+      }
+    }
+    return best;
+  }
+
+  /* 根据节点 id 反查所属 diff 的 nodeKey（命中画布节点 → 联动报告） */
+  function findNodeKeyByNodeId(side, nodeId) {
+    var idField = side === 'dev' ? 'arkuiNodeId' : 'designNodeId';
+    var list = visibleDiffs();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i][idField] === nodeId) return nodeKey(list[i]);
+    }
+    return null;
+  }
+
+  document.getElementById('images').addEventListener('click', function (e) {
+    var canvas = e.target.closest('canvas');
+    if (!canvas) return;
+    var wrapper = canvas.closest('.img-wrapper');
+    if (!wrapper) return;
+    var side = wrapper.getAttribute('data-side');
+    var img = wrapper.querySelector('img');
+    if (!img) return;
+    var coords = getCanvasCoords(e, img);
+    var node = hitTestNode(side, coords.px, coords.py);
+    if (node) {
+      /* 反查 diff 选中报告卡片 */
+      var nk = findNodeKeyByNodeId(side, node.id);
+      selectedKey = nk || null;
+      renderListOnly();
+      if (selectedKey) {
+        syncInspectorFromSelection();
+        var sel = document.querySelector('.diff-card.selected');
+        if (sel) sel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      } else {
+        hideAllInspectors();
+        showInspector(side, node, []);
+      }
+      redrawAll();
+    } else {
+      hideAllInspectors();
+      selectedKey = null;
+      renderListOnly();
+      redrawAll();
     }
   });
 
