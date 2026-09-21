@@ -1063,13 +1063,12 @@ body {
           }
         }
       }
-      /* 间距 H 形标注（对齐 client：选中 spacing 卡片时两侧画布各画本侧间距） */
-      for (var sj = 0; sj < sItems.length; sj++) {
-        if (String(sItems[sj].property).indexOf('spacing.') === 0) {
-          var sMark = side === 'dev' ? sItems[sj].spacingDev : sItems[sj].spacingDesign;
-          if (sMark && sMark.spaceRect) {
-            drawSpacingMark(ctx, sMark, sx, sy);
-          }
+      /* 间距 H 形标注：间距单独出现——仅单独选中间距单条卡片时两侧画布各画本侧间距 */
+      var sSpacingSingle = findItemByKey(selectedKey);
+      if (sSpacingSingle && String(sSpacingSingle.property).indexOf('spacing.') === 0) {
+        var sMark = side === 'dev' ? sSpacingSingle.spacingDev : sSpacingSingle.spacingDesign;
+        if (sMark && sMark.spaceRect) {
+          drawSpacingMark(ctx, sMark, sx, sy);
         }
       }
     }
@@ -1474,32 +1473,30 @@ body {
       return;
     }
     var items = findItemsByNodeKey(selectedKey);
-    if (items.length === 0) {
-      var single = findItemByKey(selectedKey);
-      if (single) items = [single];
-    }
+    var single = findItemByKey(selectedKey);
+    if (items.length === 0 && single) items = [single];
     if (items.length === 0) { hideAllInspectors(); return; }
     var devId = items[0].arkuiNodeId;
     var designId = items[0].designNodeId;
-    var diffProps = {};
-    for (var i = 0; i < items.length; i++) diffProps[items[i].label] = 1;
-    /* 间距类 diff 优先间距模式 inspector（对齐 client），无标注数据的侧回退节点模式 */
-    var spacingItem = null;
-    for (var sp = 0; sp < items.length; sp++) {
-      if (String(items[sp].property).indexOf('spacing.') === 0) { spacingItem = items[sp]; break; }
-    }
-    if (spacingItem) {
-      if (!showSpacingInspector('dev', spacingItem)) {
+    /* 间距是单独出现的：仅单独选中间距单条卡片时进入间距模式；节点联动（合并卡片）不含间距 */
+    if (single && String(single.property).indexOf('spacing.') === 0) {
+      if (!showSpacingInspector('dev', single)) {
         var spDevNode = devId ? findNodeById('dev', devId) : null;
-        if (spDevNode) showInspector('dev', spDevNode, Object.keys(diffProps));
+        if (spDevNode) showInspector('dev', spDevNode, []);
         else hideInspector('dev');
       }
-      if (!showSpacingInspector('design', spacingItem)) {
+      if (!showSpacingInspector('design', single)) {
         var spDesignNode = designId ? findNodeById('design', designId) : null;
-        if (spDesignNode) showInspector('design', spDesignNode, Object.keys(diffProps));
+        if (spDesignNode) showInspector('design', spDesignNode, []);
         else hideInspector('design');
       }
       return;
+    }
+    /* 节点模式：过滤间距类，只按样式类 diff 高亮 */
+    var diffProps = {};
+    for (var i = 0; i < items.length; i++) {
+      if (String(items[i].property).indexOf('spacing.') === 0) continue;
+      diffProps[items[i].label] = 1;
     }
     if (devId) {
       var devNode = findNodeById('dev', devId);
@@ -1545,12 +1542,17 @@ body {
     return best;
   }
 
-  /* 根据节点 id 反查所属 diff 的 nodeKey（先查当前可见列表，命中即联动） */
+  /* 当前渲染模式下卡片的 data-key：合并模式（精准+全部）为 nodeKey，其余为 foldKey */
+  function cardKeyForItem(item) {
+    return (mode === 'precise' && activeGroup === 'all') ? nodeKey(item) : foldKey(item);
+  }
+
+  /* 根据节点 id 反查所属 diff 的卡片 key（先查当前可见列表，命中即联动） */
   function findVisibleNodeKey(side, nodeId) {
     var idField = side === 'dev' ? 'arkuiNodeId' : 'designNodeId';
     var list = visibleDiffs();
     for (var i = 0; i < list.length; i++) {
-      if (list[i][idField] === nodeId) return nodeKey(list[i]);
+      if (list[i][idField] === nodeId) return cardKeyForItem(list[i]);
     }
     return null;
   }
@@ -1591,7 +1593,7 @@ body {
         var fallback = findAnyItemByNodeId(side, node.id);
         if (fallback && isPrecise(fallback) === (mode === 'precise')) {
           if (activeGroup !== 'all' && activeGroup !== fallback.groupKey) activeGroup = 'all';
-          nk = nodeKey(fallback);
+          nk = cardKeyForItem(fallback);
         }
       }
       selectedKey = nk || null;
