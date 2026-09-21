@@ -268,6 +268,19 @@ body {
   line-height: 20px;
   white-space: nowrap;
 }
+.diff-card-index {
+  flex-shrink: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: var(--report-dev-color);
+  color: #FFFFFF;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
 .diff-card-count {
   flex-shrink: 0;
   font-size: 11px;
@@ -474,6 +487,7 @@ body {
   var hoveredKey = null;
   var canvasHover = null; /* { side, nodeId, node } 画布直接 hover 的节点（不属于 diff 时使用） */
   var pinnedInspect = null; /* { side, nodeId } 画布点击非 diff 节点后钉住的 inspector */
+  var cardIndexByKey = {}; /* 卡片 key → 当前列表序号（1 开始，画布节点联动徽标用） */
 
   function isPrecise(d) { return d.severity === 'error'; }
 
@@ -524,6 +538,23 @@ body {
     ctx.setLineDash(dash);
     ctx.strokeRect(x, y, w, h);
     ctx.setLineDash([]);
+  }
+
+  /* 节点左上角序号徽标（蓝底白字，与卡片序号对应） */
+  function drawIndexBadge(ctx, idx, px, py) {
+    var text = String(idx);
+    ctx.font = 'bold 9px sans-serif';
+    var tw = ctx.measureText(text).width;
+    var bw = Math.max(14, tw + 6);
+    var bh = 14;
+    ctx.fillStyle = '#E02128';
+    ctx.fillRect(px, py, bw, bh);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, px + bw / 2, py + bh / 2 + 0.5);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
   }
 
   function drawArrowHead(ctx, tx, ty, angle, size) {
@@ -978,6 +1009,12 @@ body {
         if (chNode && chNode.rect && !isSelectedNode(side, chId)) {
           drawNodeRect(ctx, chNode.rect, sx, sy, 'rgba(224,33,40,0.10)', '#E02128', 1, [4, 3]);
         }
+        /* hover 节点对应可见卡片时画序号徽标 */
+        if (chNode && chNode.rect) {
+          var chKey = findVisibleNodeKey(side, chId);
+          var chIdx = chKey ? cardIndexByKey[chKey] : null;
+          if (chIdx) drawIndexBadge(ctx, chIdx, chNode.rect.x * sx, chNode.rect.y * sy);
+        }
       }
     }
 
@@ -989,6 +1026,7 @@ body {
         if (hSingle) hItems = [hSingle];
       }
       var hDrawn = {};
+      var hIdx = cardIndexByKey[hoveredKey];
       for (var hi = 0; hi < hItems.length; hi++) {
         var hItem = hItems[hi];
         if (String(hItem.property).startsWith('spacing.')) continue;
@@ -998,12 +1036,13 @@ body {
           var hn = hNodeId ? nodeMap[hNodeId] : null;
           if (hn && hn.rect) {
             drawNodeRect(ctx, hn.rect, sx, sy, 'rgba(224,33,40,0.10)', '#E02128', 1, [4, 3]);
+            if (hIdx) drawIndexBadge(ctx, hIdx, hn.rect.x * sx, hn.rect.y * sy);
           }
         }
       }
     }
 
-    /* selected 层：红实线+背景，或间距 H 形箭头 */
+    /* selected 层：红实线+背景；间距类 diff 追加 H 形箭头标注 */
     if (selectedKey) {
       var sItems = findItemsByNodeKey(selectedKey);
       if (sItems.length === 0) {
@@ -1011,6 +1050,7 @@ body {
         if (sSingle) sItems = [sSingle];
       }
       var sDrawn = {};
+      var sIdx = cardIndexByKey[selectedKey];
       for (var si = 0; si < sItems.length; si++) {
         var sItem = sItems[si];
         var sNodeId = side === 'dev' ? sItem.arkuiNodeId : sItem.designNodeId;
@@ -1019,6 +1059,16 @@ body {
           var sn = sNodeId ? nodeMap[sNodeId] : null;
           if (sn && sn.rect) {
             drawNodeRect(ctx, sn.rect, sx, sy, 'rgba(224,33,40,0.20)', '#E02128', 1, []);
+            if (sIdx) drawIndexBadge(ctx, sIdx, sn.rect.x * sx, sn.rect.y * sy);
+          }
+        }
+      }
+      /* 间距 H 形标注（对齐 client：选中 spacing 卡片时两侧画布各画本侧间距） */
+      for (var sj = 0; sj < sItems.length; sj++) {
+        if (String(sItems[sj].property).indexOf('spacing.') === 0) {
+          var sMark = side === 'dev' ? sItems[sj].spacingDev : sItems[sj].spacingDesign;
+          if (sMark && sMark.spaceRect) {
+            drawSpacingMark(ctx, sMark, sx, sy);
           }
         }
       }
@@ -1090,6 +1140,8 @@ body {
     html += '</div>';
 
     /* 卡片列表 */
+    cardIndexByKey = {};
+    var seq = 0;
     if (list.length === 0) {
       html += '<div class="diff-cards"><div class="diff-empty"><div class="diff-empty-icon">&#10003;</div><p>无差异项</p></div></div>';
     } else if (mode === 'precise' && activeGroup === 'all') {
@@ -1108,9 +1160,12 @@ body {
         var first = items[0];
         var hasLow = false;
         for (var li = 0; li < items.length; li++) if (items[li].confidence === 'low') { hasLow = true; break; }
+        seq++;
+        cardIndexByKey[gOrder[oi]] = seq;
         var gCls = 'diff-card' + (selectedKey === gOrder[oi] ? ' selected' : '');
         html += '<div class="' + gCls + '" data-key="' + esc(gOrder[oi]) + '">';
         html += '<div class="diff-card-head"><div class="diff-card-title">';
+        html += '<span class="diff-card-index">' + seq + '</span>';
         if (hasLow) html += '<span class="diff-low-badge">仅参考</span>';
         html += '<span class="diff-card-name" title="' + esc(first.cardName) + '">' + esc(first.cardName) + '</span>';
         if (items.length > 1) html += '<span class="diff-card-count">' + items.length + '项</span>';
@@ -1135,9 +1190,12 @@ body {
       for (var j = 0; j < list.length; j++) {
         var d = list[j];
         var k = foldKey(d);
+        seq++;
+        cardIndexByKey[k] = seq;
         var cardCls = 'diff-card' + (selectedKey === k ? ' selected' : '');
         html += '<div class="' + cardCls + '" data-key="' + esc(k) + '">';
         html += '<div class="diff-card-head"><div class="diff-card-title">';
+        html += '<span class="diff-card-index">' + seq + '</span>';
         if (d.confidence === 'low') html += '<span class="diff-low-badge">仅参考</span>';
         html += '<span class="diff-card-name" title="' + esc(d.cardName) + '">' + esc(d.cardName) + '</span>';
         html += '</div>';
@@ -1350,6 +1408,47 @@ body {
     if (ins) ins.classList.remove('visible');
   }
 
+  /* 间距模式 inspector：显示间距 label + 距离值，定位到 spaceRect（对齐 client） */
+  function showSpacingInspector(side, item) {
+    var wrapper = document.querySelector('.img-wrapper[data-side="' + side + '"]');
+    if (!wrapper) return false;
+    var ins = wrapper.querySelector('.node-inspector');
+    if (!ins) return false;
+    var mark = side === 'dev' ? item.spacingDev : item.spacingDesign;
+    var value = side === 'dev' ? item.arkuiValue : item.designValue;
+    if (!mark || !mark.spaceRect || value == null) return false;
+
+    var html = '<div class="inspector-header"><span class="inspector-name">' + esc(item.label || '间距') + '</span></div>';
+    html += '<div class="inspector-body">';
+    html += '<div class="inspector-prop inspector-prop-diff"><span class="inspector-prop-key">距离</span>';
+    html += '<span class="inspector-prop-val">' + esc(String(value)) + '</span></div>';
+    html += '</div>';
+    ins.innerHTML = html;
+
+    /* 定位到间距区域右侧 */
+    var img = wrapper.querySelector('img');
+    var canvasData = side === 'dev' ? DATA.arkuiCanvas : DATA.designCanvas;
+    if (!img || !canvasData) { ins.classList.add('visible'); return true; }
+    var boxW = img.clientWidth, boxH = img.clientHeight;
+    var natW = img.naturalWidth, natH = img.naturalHeight;
+    var scale = Math.min(boxW / natW, boxH / natH);
+    var W = natW * scale, H = natH * scale;
+    var offX = (boxW - W) / 2, offY = (boxH - H) / 2;
+    var sx = W / canvasData.w, sy = H / canvasData.h;
+    var sr = mark.spaceRect;
+    var nx = sr.x * sx + offX;
+    var ny = sr.y * sy + offY;
+    var nw = sr.w * sx;
+    var insW = ins.offsetWidth || 200;
+    var left = nx + nw + 8;
+    if (left + insW > wrapper.clientWidth - 4) left = nx - insW - 8;
+    if (left < 4) left = 4;
+    ins.style.left = left + 'px';
+    ins.style.top = ny + 'px';
+    ins.classList.add('visible');
+    return true;
+  }
+
   function hideAllInspectors() {
     hideInspector('dev');
     hideInspector('design');
@@ -1384,6 +1483,24 @@ body {
     var designId = items[0].designNodeId;
     var diffProps = {};
     for (var i = 0; i < items.length; i++) diffProps[items[i].label] = 1;
+    /* 间距类 diff 优先间距模式 inspector（对齐 client），无标注数据的侧回退节点模式 */
+    var spacingItem = null;
+    for (var sp = 0; sp < items.length; sp++) {
+      if (String(items[sp].property).indexOf('spacing.') === 0) { spacingItem = items[sp]; break; }
+    }
+    if (spacingItem) {
+      if (!showSpacingInspector('dev', spacingItem)) {
+        var spDevNode = devId ? findNodeById('dev', devId) : null;
+        if (spDevNode) showInspector('dev', spDevNode, Object.keys(diffProps));
+        else hideInspector('dev');
+      }
+      if (!showSpacingInspector('design', spacingItem)) {
+        var spDesignNode = designId ? findNodeById('design', designId) : null;
+        if (spDesignNode) showInspector('design', spDesignNode, Object.keys(diffProps));
+        else hideInspector('design');
+      }
+      return;
+    }
     if (devId) {
       var devNode = findNodeById('dev', devId);
       if (devNode) showInspector('dev', devNode, Object.keys(diffProps));
