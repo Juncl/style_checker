@@ -48,10 +48,11 @@ export function buildDesignTree(designJson, arkuiCanvasWidthVp, designScale = 1)
   // 1a. 按 path 重建树结构
   const rawTreeRoot = rebuildAsTree(rawNodes)
 
-  // 1b. 字段统一（递归把 _raw 转 UnifiedNode）
-  const root = rawTreeRoot
+  // 1b. 字段统一（递归把 _raw 转 UnifiedNode；富文本 TEXT 会返回节点数组，root 为 FRAME 仅作防御）
+  const convertedRoot = rawTreeRoot
     ? convertToUnified(rawTreeRoot, origCanvasWidth, origCanvasHeight, scale, canvasWidth, canvasHeight, designScale)
     : null
+  const root = Array.isArray(convertedRoot) ? convertedRoot[0] : convertedRoot
 
   return { canvasWidth, canvasHeight, origCanvasWidth, origCanvasHeight, root }
 }
@@ -133,10 +134,23 @@ function convertToUnified(wrap, origCanvasW, origCanvasH, scale, canvasW, canvas
   }
 
   for (const childWrap of wrap.children) {
-    unified.children.push(convertToUnified(childWrap, origCanvasW, origCanvasH, scale, canvasW, canvasH, dpScale))
+    const converted = convertToUnified(childWrap, origCanvasW, origCanvasH, scale, canvasW, canvasH, dpScale)
+    // 富文本 TEXT 拆分返回节点数组，统一挂接
+    if (Array.isArray(converted)) {
+      for (const n of converted) unified.children.push(n)
+    } else {
+      unified.children.push(converted)
+    }
   }
 
   applyMaskClip(unified.children, canvasW, canvasH)
+
+  // 富文本拆分：TEXT 的 style.text 多段 → N 个分段文本节点（删父留子，
+  // 与开发侧 Span 拆分理念一致：分段样式各自独立参与匹配与比对）
+  if (raw.type === TEXT_TYPE && !hmSymbol && Array.isArray(style.text) && style.text.length > 1) {
+    const segNodes = buildDesignTextSegments(unified, raw, style, scale, canvasW, canvasH, dpScale)
+    if (segNodes) return segNodes
+  }
 
   return unified
 }
@@ -383,17 +397,31 @@ function refitTextRect(unified, scale, canvasW) {
   unified.normRect.w = (textWidth * scale) / canvasW
 }
 
-// 估算文本渲染宽度（dp 域）：中文/全角字符按 fontSize，其他字符按 fontSize×0.6
+/**
+ * 估算文本渲染宽度（dp 域）：按字符类别取系数（与开发侧 ArkUI 路径一致，
+ * 对标 HarmonyOS Sans 度量；HarmonyHeiTi 同源，PingFang 量级相近）
+ *   中文/全角字符 1.0、数字 0.55、半角空格 0.26、小写字母 0.52、大写字母 0.65、
+ *   半角窄标点（, . : ; ! ' ·）0.26、其他半角符号（/ ¥ % - 等）0.55
+ */
 function estimateTextWidth(content, fontSize) {
   let w = 0
   for (const ch of String(content)) {
-    if (/[一-龥　-〿＀-￯]/.test(ch)) {
-      w += fontSize
-    } else {
-      w += fontSize * 0.6
-    }
+    w += charWidthFactor(ch) * fontSize
   }
   return w
+}
+
+/** 单字符宽度系数（相对 fontSize 的 em 值） */
+function charWidthFactor(ch) {
+  // 中文及全角字符（CJK 统一表意、全角标点/空格、全角形式、假名等）
+  if (/[一-龥　-〿＀-￯]/.test(ch)) return 1
+  if (ch === ' ') return 0.26
+  const code = ch.codePointAt(0)
+  if (code >= 0x30 && code <= 0x39) return 0.55          // 数字
+  if (code >= 0x61 && code <= 0x7a) return 0.52          // 小写字母
+  if (code >= 0x41 && code <= 0x5a) return 0.65          // 大写字母
+  if (",.:;'!·".includes(ch)) return 0.26                // 半角窄标点
+  return 0.55                                            // 其他半角符号（/ ¥ % - ( ) 等）
 }
 
 // ─── TEXT 节点 y/h 重构（高度收敛） ──────────────────────────────────────────
@@ -424,4 +452,202 @@ function refitTextHeight(unified, scale, canvasH) {
   unified.rect.h = r4(newH * scale)
   unified.normRect.y = (newY * scale) / canvasH
   unified.normRect.h = (newH * scale) / canvasH
+}
+
+// ─── 富文本分段拆分（与开发侧 Span 拆分理念一致） ──────────────────────────────
+
+/**
+ * TEXT 富文本（style.text 多段）→ N 个分段文本节点（删父留子，step1 内完成）。
+ *
+ * 设计侧分段无位置信息，全部在父 rect（refit 收紧后，dp 域 size）内做单行水平
+ * 排版估算，宽度模型与开发侧一致（charWidthFactor 分类系数）：
+ *   - 各段宽度按 estimateTextWidth(段 fontSize) 估算
+ *   - 整段不溢出：按父 textAlign 对齐；溢出：各段等比压缩至父宽
+ *   - y 按各段 fontSize 垂直居中（单行基线近似）
+ *   - 纯空格段不生成节点，宽度计入游标
+ *   - 相邻同样式段（字号/字重/颜色/字体四项归一化后相同）合并为一个节点
+ *
+ * 触发门槛（不满足任一即返回 null 保留父节点）：
+ *   父 rect 有效 / 单行（h < 首段 fs×1.9，多行不拆）/ 合并后 ≥ 2 组
+ *   （合并后仅 1 组时拆分等价于整段，无意义且徒增排版误差）
+ *
+ * @returns {Array|null} 分段节点数组；无法拆分返回 null（调用方保留父节点）
+ */
+function buildDesignTextSegments(parentUnified, raw, style, scale, canvasW, canvasH, dpScale) {
+  const size = parentUnified.size
+  if (!size || size.w <= 0 || size.h <= 0) return null
+
+  const segsRaw = style.text || []
+  if (segsRaw.length <= 1) return null
+
+  // 单行判据（与 refitTextHeight 一致）：多行富文本（自动换行/含 \n）不拆
+  const firstFs = (segsRaw[0]?.fontSize != null ? segsRaw[0].fontSize : 0) * dpScale
+  if (!(firstFs > 0) || size.h >= firstFs * 1.9) return null
+
+  // 收集有效段（无内容或无字号的跳过，宽度按 0 计）
+  const segs = []
+  for (let i = 0; i < segsRaw.length; i++) {
+    const t = segsRaw[i]
+    const content = t.characters != null ? String(t.characters) : ''
+    const fontSize = (t.fontSize != null ? t.fontSize : 0) * dpScale
+    if (!content || !(fontSize > 0)) continue
+    const seg = {
+      idx: i,
+      raw: t,
+      content,
+      fontSize,
+      estW: estimateTextWidth(content, fontSize),
+      isBlank: content.trim().length === 0,
+    }
+    seg.styleKey = designSegStyleKey(t, fontSize)
+    segs.push(seg)
+  }
+  if (segs.length === 0) return null
+
+  // 相邻同样式段合并（设计侧空格在段内，相邻即直接相邻；纯空格段作为间隔，content 原样拼入）
+  const groups = []
+  let cur = null
+  for (const g of segs) {
+    if (g.isBlank) {
+      if (cur) cur.items.push(g)
+      continue
+    }
+    if (cur && cur.styleKey === g.styleKey) {
+      cur.items.push(g)
+    } else {
+      cur = { styleKey: g.styleKey, items: [g] }
+      groups.push(cur)
+    }
+  }
+  if (groups.length <= 1) return null
+
+  // 排版（dp 域）：整段不溢出按 textAlign 对齐，溢出等比压缩至父宽
+  const totalEst = segs.reduce((s, g) => s + g.estW, 0)
+  let x0, scaleFactor
+  if (totalEst <= size.w) {
+    const align = style.textAlign || 'left'
+    if (align === 'center') x0 = size.x + (size.w - totalEst) / 2
+    else if (align === 'right' || align === 'end') x0 = size.x + size.w - totalEst
+    else x0 = size.x
+    scaleFactor = 1
+  } else {
+    x0 = size.x
+    scaleFactor = size.w / totalEst
+  }
+  let x = x0
+  for (const g of segs) {
+    g.layoutRect = { x, w: g.estW * scaleFactor }
+    x += g.estW * scaleFactor
+  }
+
+  // 每组生成节点：rect 取组内首段 x 到尾段右缘（中间空格段宽度已含在游标内）
+  const nodes = []
+  for (const grp of groups) {
+    const items = grp.items
+    const vis = items.filter(it => !it.isBlank)
+    if (vis.length === 0) continue
+    const lead = vis[0]
+    const last = vis[vis.length - 1]
+    const rectDp = {
+      x: lead.layoutRect.x,
+      y: size.y + (size.h - lead.fontSize) / 2,
+      w: (last.layoutRect.x + last.layoutRect.w) - lead.layoutRect.x,
+      h: lead.fontSize,
+    }
+    const content = items.map(it => it.content).join('')
+    nodes.push(makeDesignTextSegmentNode(parentUnified, raw, content, lead, rectDp, scale, canvasW, canvasH, dpScale))
+  }
+  if (nodes.length === 0) return null
+
+  // TEXT 理论无子节点，保守按原序追加遗留子孙
+  nodes.push(...parentUnified.children)
+  return nodes
+}
+
+/** 设计侧分段样式 key：字号/字重/颜色/字体四项（均归一化后比较） */
+function designSegStyleKey(t, fontSize) {
+  const fw = normalizeDesignFontWeight(t.fontWeight)
+  let fc = null
+  if (Array.isArray(t.data)) {
+    const solid = t.data.find(d => d.type === 'SOLID')
+    if (solid?.color) {
+      fc = normalizeDesignColor(solid.color)
+    } else {
+      const grad = t.data.find(d => d.type === 'GRADIENT_LINEAR')
+      if (grad && Array.isArray(grad.data) && grad.data.length > 0) {
+        fc = `linear-gradient(${grad.angle ?? 0}deg, ${grad.data.map(s => `${normalizeDesignColor(s.color)} ${s.position ?? '0%'}`).join(', ')})`
+      }
+    }
+  }
+  return JSON.stringify([fontSize, fw, fc, t.fontFamily || null])
+}
+
+/** 由分段（或合并组）生成独立 text 节点，字段约定与开发侧 Span 拆分一致 */
+function makeDesignTextSegmentNode(parentUnified, raw, content, lead, rectDp, scale, canvasW, canvasH, dpScale) {
+  const t = lead.raw
+  const pStyle = parentUnified.style || {}
+
+  // 段级样式（字段与 extractDesignStyle 的 TEXT 分支一致；textAlign/opacity 继承父）
+  const style = {}
+  if (pStyle.opacity !== undefined) style.opacity = pStyle.opacity
+  style.textAlign = pStyle.textAlign || 'left'
+  style.fontSize = lead.fontSize
+  style.fontWeight = normalizeDesignFontWeight(t.fontWeight)
+  style.fontFamily = t.fontFamily || null
+  // lineHeight === 1 是 Figma "默认行高" 哨兵值，用原始值比较再决定要不要缩放
+  style.lineHeight = (typeof t.lineHeight === 'number' && t.lineHeight !== 1)
+    ? t.lineHeight * dpScale
+    : null
+  style.letterSpacing = t.letterSpacing != null ? t.letterSpacing * dpScale : null
+  if (Array.isArray(t.data)) {
+    const solidFill = t.data.find(d => d.type === 'SOLID')
+    if (solidFill?.color) {
+      style.fontColor = normalizeDesignColor(solidFill.color)
+    }
+    const gradient = t.data.find(d => d.type === 'GRADIENT_LINEAR')
+    if (gradient && Array.isArray(gradient.data) && gradient.data.length > 0) {
+      const angle = gradient.angle ?? 0
+      const stops = gradient.data
+        .map(stop => `${normalizeDesignColor(stop.color)} ${stop.position ?? '0%'}`)
+        .join(', ')
+      style.fontColor = `linear-gradient(${angle}deg, ${stops})`
+    }
+  }
+
+  // 伪 _raw：浅拷贝原 raw，仅替换 content / style.text（单段）/ rect（段 dp 坐标换回伪 dp），
+  // 保证 step2 的 _raw.type / _raw.style.opacity / _raw.componentData 等读取兼容
+  const segRaw = {
+    ...raw,
+    content,
+    style: { ...raw.style, text: [t] },
+    rect: {
+      x: rectDp.x / dpScale,
+      y: rectDp.y / dpScale,
+      w: rectDp.w / dpScale,
+      h: rectDp.h / dpScale,
+    },
+  }
+
+  return {
+    id: `${parentUnified.id}:${lead.idx}`,
+    source: 'design',
+    type: 'text',
+    rawType: 'text',
+    name: parentUnified.name,
+    path: [...parentUnified.path, lead.idx],
+    size: { x: r4(rectDp.x), y: r4(rectDp.y), w: r4(rectDp.w), h: r4(rectDp.h) },
+    rect: { x: r4(rectDp.x * scale), y: r4(rectDp.y * scale), w: r4(rectDp.w * scale), h: r4(rectDp.h * scale) },
+    normRect: {
+      x: (rectDp.x * scale) / canvasW,
+      y: (rectDp.y * scale) / canvasH,
+      w: (rectDp.w * scale) / canvasW,
+      h: (rectDp.h * scale) / canvasH,
+    },
+    visible: parentUnified.visible,
+    style,
+    textContent: content,
+    children: [],
+    _raw: segRaw,
+    _spanSplit: true,
+  }
 }

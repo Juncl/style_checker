@@ -61,7 +61,9 @@ export function buildArkuiTree(arkuiJson) {
   const canvasWidthVp = canvasWidthPx / resolution
   const canvasHeightVp = canvasHeightPx / resolution
 
-  const root = walk(content, resolution, canvasWidthVp, canvasHeightVp, [0])
+  const walked = walk(content, resolution, canvasWidthVp, canvasHeightVp, [0])
+  // walk 对富文本 Text（含 Span 子节点）返回节点数组；root 为框架节点，仅作防御
+  const root = Array.isArray(walked) ? walked[0] : walked
 
   return { canvasWidthVp, canvasHeightVp, resolution, root }
 }
@@ -220,9 +222,13 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compT
   if (text) unified.textContent = text
 
   const children = node['$children'] || []
+  // 富文本域预扫描：Text 下直接 Span + 语法 wrapper（IfElse 等）子树内的 Span
+  const textSpanDomain = type === 'Text' ? collectTextSpans(children) : null
   // 旋转影响区：当前节点在旋转链内，其整棵子树的 $rect 都被 ArkUI 污染。
   const inRotatedZone = !!(nextRotationChain && nextRotationChain.length > 0)
   for (let i = 0; i < children.length; i++) {
+    // 富文本域内的 Span 由拆分（buildSpanNodes）统一处理，不在此递归
+    if (textSpanDomain && textSpanDomain.skipChildren.has(children[i])) continue
     const childAttrs = children[i]['$attrs'] || {}
     const childAngle = parseFloat(childAttrs.rotate?.angle)
     const childSelfRotated = Number.isFinite(childAngle) && childAngle !== 0
@@ -234,11 +240,11 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compT
       const childRectRaw = parseArkuiRect(children[i]['$rect'])
       const childVpRect = childRectRaw ? toVpRect(childRectRaw, resolution) : null
       if (vpRect && childVpRect && clipRectsMatch(vpRect, childVpRect)) {
-        unified.children.push(walk(children[i], resolution, canvasW, canvasH, [...path, i], nextClipRadius, nextCompType, nextRotationChain, childLayoutRect))
+        pushWalkResult(unified, walk(children[i], resolution, canvasW, canvasH, [...path, i], nextClipRadius, nextCompType, nextRotationChain, childLayoutRect))
         continue
       }
     }
-    unified.children.push(walk(children[i], resolution, canvasW, canvasH, [...path, i], null, nextCompType, nextRotationChain, childLayoutRect))
+    pushWalkResult(unified, walk(children[i], resolution, canvasW, canvasH, [...path, i], null, nextCompType, nextRotationChain, childLayoutRect))
   }
 
   // Button / TextInput：拆分出虚拟文本子节点（便于与设计侧匹配）
@@ -248,7 +254,25 @@ function walk(node, resolution, canvasW, canvasH, path, clipRadius = null, compT
     unified.children.push(splitText)
   }
 
+  // 富文本拆分：Text + 富文本域内的 Span → N 个独立文本节点。
+  // ArkUI 富文本的字号/字重/颜色分散在各 Span 上，父 Text 的 attrs 只是缺省值
+  // （取值失真），拆分后以各 Span 独立节点参与后续匹配与比对；删父留子在
+  // step1 内完成（Span 节点类型统一改为 text）。
+  if (textSpanDomain && textSpanDomain.spans.length > 0) {
+    const spanNodes = buildSpanNodes(unified, textSpanDomain.spans, resolution, canvasW, canvasH, nextCompType, path, baseRect)
+    if (spanNodes) return spanNodes
+  }
+
   return unified
+}
+
+// walk 可能返回单节点（常规）或节点数组（富文本 Text 拆分），统一挂接到父 children
+function pushWalkResult(parent, result) {
+  if (Array.isArray(result)) {
+    for (const n of result) parent.children.push(n)
+  } else {
+    parent.children.push(result)
+  }
 }
 
 // ─── 旋转修正 ──────────────────────────────────────────────────────────────────
@@ -447,18 +471,267 @@ function maybeBuildSplitTextChild(parentUnified, type, attrs, vpRect, resolution
 }
 
 /**
- * 估算文本宽度（vp）：中文字符按 fontSize 算，其他字符按 fontSize*0.55 算
+ * 估算文本宽度（vp）：按字符类别取系数（对标 HarmonyOS Sans 实际度量）
+ *   中文/全角字符 1.0、数字 0.55、半角空格 0.26、小写字母 0.52、大写字母 0.65、
+ *   半角窄标点（, . : ; ! ' ·）0.26、其他半角符号（/ ¥ % - 等）0.55
  */
 function estimateTextWidth(content, fontSize) {
   let w = 0
   for (const ch of String(content)) {
-    if (/[一-龥　-〿＀-￯]/.test(ch)) {
-      w += fontSize
-    } else {
-      w += fontSize * 0.6
-    }
+    w += charWidthFactor(ch) * fontSize
   }
   return w
+}
+
+/** 单字符宽度系数（相对 fontSize 的 em 值） */
+function charWidthFactor(ch) {
+  // 中文及全角字符（CJK 统一表意、全角标点/空格、全角形式、假名等）
+  if (/[一-龥　-〿＀-￯]/.test(ch)) return 1
+  if (ch === ' ') return 0.26
+  const code = ch.codePointAt(0)
+  if (code >= 0x30 && code <= 0x39) return 0.55          // 数字
+  if (code >= 0x61 && code <= 0x7a) return 0.52          // 小写字母
+  if (code >= 0x41 && code <= 0x5a) return 0.65          // 大写字母
+  if (",.:;'!·".includes(ch)) return 0.26                // 半角窄标点
+  return 0.55                                            // 其他半角符号（/ ¥ % - ( ) 等）
+}
+
+// ─── 富文本 Span 拆分 ──────────────────────────────────────────────────────────
+
+// 语法 wrapper：Text 富文本域内允许存在的无视觉语法节点（其子树内的 Span
+// 语义上仍属于外层 Text 的富文本，收集时穿透处理）
+const SYNTAX_WRAPPER_TYPES = new Set(['IfElse', 'ForEach', 'LazyForEach'])
+
+/**
+ * 收集 Text 富文本域内的所有 Span（直接子节点 + 语法 wrapper 子树内的）。
+ * @returns {{ spans: Array, skipChildren: Set }} skipChildren = 需从 children 循环
+ *   剔除的直接子节点（Span 及"子树全为富文本域"的语法 wrapper）
+ */
+function collectTextSpans(children) {
+  const spans = []
+  const skipChildren = new Set()
+  for (const child of children) {
+    if (SPAN_TYPES.has(child['$type'])) {
+      spans.push(child)
+      skipChildren.add(child)
+    } else if (SYNTAX_WRAPPER_TYPES.has(child['$type'])) {
+      const inner = collectTextSpans(child['$children'] || [])
+      // wrapper 子树全部属于富文本域 → 整体剔除，内部 Span 收入
+      if (inner.spans.length > 0 && inner.skipChildren.size === (child['$children'] || []).length) {
+        spans.push(...inner.spans)
+        skipChildren.add(child)
+      }
+      // 部分 Span 的 wrapper 不剔除（保守，其内部 Span 走旧路径被 step2 unwrap）
+    }
+  }
+  return { spans, skipChildren }
+}
+
+/**
+ * Text + 富文本域内的 Span → N 个独立文本节点（删父留子，step1 内完成）。
+ *
+ * rect 来源两级：
+ *   1. Span 自带独立 $rect（与父原始 rect 不同）→ 直接采信（真实 bounds）
+ *   2. 无独立 rect（=父 rect 或缺失）→ 参与父级排版估算：
+ *      父 rect（已 refit 收紧）内单行水平排版，各段宽度按 estimateTextWidth
+ *      估算；整段不溢出按父 textAlign 对齐，溢出等比压缩；y 按自身 fontSize
+ *      垂直居中（单行基线近似）；多行不支持换行排版（v1 已知限制）
+ *
+ * 纯空格段不生成节点（估算组宽度仍计入游标，保持后续段位置正确）。
+ *
+ * @param {Array} spanChildren 富文本域内的 Span 原始节点列表（已穿透语法 wrapper）
+ * @param {object|null} parentBaseRect 父 Text 的原始布局矩形（refit/旋转修正前，
+ *        用于判定 Span 是否自带独立 rect）
+ * @returns {Array|null} 拆分节点数组；无法拆分返回 null（调用方保留父节点兜底，
+ *                      此时行为退化为现状：父保留整段文本，Span 不进树）
+ */
+function buildSpanNodes(parentUnified, spanChildren, resolution, canvasW, canvasH, compType, path, parentBaseRect) {
+  const vpRect = parentUnified.rect
+  const parentRectValid = !!(vpRect && vpRect.w > 0 && vpRect.h > 0)
+
+  // 收集有效 Span 段（无内容或无字号的跳过，估算组宽度按 0 计）
+  const segs = []
+  const layoutSegs = []
+  for (let i = 0; i < spanChildren.length; i++) {
+    const child = spanChildren[i]
+    const attrs = child['$attrs'] || {}
+    const content = attrs.content != null ? String(attrs.content) : ''
+    const fontSize = parseActualFontSize(attrs.actualFontSize, resolution) ?? parseVp(attrs.fontSize)
+    if (!content || !fontSize || fontSize <= 0) continue
+
+    // Inspector 可能为 Span 导出独立 $rect：与父原始 rect 不同（差 ≥ 0.5）即为
+    // 该段真实 bounds，直接采信；与父相同（case14 型）或缺失才走父级排版估算。
+    // 注：部分 Text 自身 rect 无效（0×0，如 case2/case8），但 Span rect 真实有效
+    const spanRectRaw = parseArkuiRect(child['$rect'])
+    const spanVpRect = spanRectRaw ? toVpRect(spanRectRaw, resolution) : null
+    const hasOwnRect = spanVpRect && spanVpRect.w > 0 && spanVpRect.h > 0
+      && !(parentBaseRect && clipRectsMatch(parentBaseRect, spanVpRect))
+
+    const seg = {
+      id: child['$ID'],
+      attrs, content, fontSize,
+      ownRect: hasOwnRect ? spanVpRect : null,
+      estW: estimateTextWidth(content, fontSize),
+      pathIdx: i,
+      isBlank: content.trim().length === 0,
+    }
+    // 归一化样式 key（字号/字重/颜色/字体），供相邻段合并判定
+    seg.styleKey = spanStyleKey(attrs, fontSize)
+    segs.push(seg)
+    if (!hasOwnRect) layoutSegs.push(seg)
+  }
+  if (segs.length === 0) return null
+
+  // 父 rect 为 0（无效）时一律不拆：此时 Text 的 Inspector 布局信息缺失，
+  // 拆分风险大于收益，兜底保留父节点（后续 zero-size 剪枝按原有行为处理）
+  if (!parentRectValid) return null
+
+  // 估算组：父 rect 内单行水平排版（对齐 / 压缩），结果写入各段 layoutRect
+  if (layoutSegs.length > 0) {
+    const totalEst = layoutSegs.reduce((s, g) => s + g.estW, 0)
+    let x0, scale
+    if (totalEst <= vpRect.w) {
+      const align = normalizeTextAlign(parentUnified._attrs?.textAlign) || 'left'
+      if (align === 'center') x0 = vpRect.x + (vpRect.w - totalEst) / 2
+      else if (align === 'right') x0 = vpRect.x + vpRect.w - totalEst
+      else x0 = vpRect.x
+      scale = 1
+    } else {
+      x0 = vpRect.x
+      scale = vpRect.w / totalEst
+    }
+    let x = x0
+    for (const g of layoutSegs) {
+      const h = Math.min(g.fontSize, vpRect.h)
+      g.layoutRect = { x, y: vpRect.y + (vpRect.h - h) / 2, w: g.estW * scale, h }
+      x += g.estW * scale
+    }
+  }
+
+  // 相邻同样式段合并：文字样式（字号/字重/颜色/字体）完全一致且左右相连
+  // （中间仅隔纯空格段，空格不参与样式比较、content 原样拼入）的段合为一个节点。
+  // rect 来源不同的段（自带 vs 估算）不跨来源合并。
+  const groups = []
+  let cur = null
+  for (const g of segs) {
+    if (g.isBlank) {
+      if (cur) cur.items.push(g)
+      continue
+    }
+    const rectKind = g.ownRect ? 'own' : 'layout'
+    if (cur && cur.styleKey === g.styleKey && cur.rectKind === rectKind) {
+      cur.items.push(g)
+    } else {
+      cur = { styleKey: g.styleKey, rectKind, items: [g] }
+      groups.push(cur)
+    }
+  }
+
+  const nodes = []
+  for (const grp of groups) {
+    const items = grp.items
+    const vis = items.filter(it => !it.isBlank)
+    if (vis.length === 0) continue
+    const lead = vis[0]
+    let rect
+    if (grp.rectKind === 'own') {
+      // 全自带 rect：取组内（含空格段）真实 bounds 的包围盒
+      let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity
+      for (const it of items) {
+        if (!it.ownRect) continue
+        x1 = Math.min(x1, it.ownRect.x)
+        y1 = Math.min(y1, it.ownRect.y)
+        x2 = Math.max(x2, it.ownRect.x + it.ownRect.w)
+        y2 = Math.max(y2, it.ownRect.y + it.ownRect.h)
+      }
+      rect = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 }
+    } else {
+      // 估算组：首段 x 到尾段右缘（中间空格段宽度已含在游标内）
+      const first = vis[0]
+      const last = vis[vis.length - 1]
+      rect = {
+        x: first.layoutRect.x,
+        y: first.layoutRect.y,
+        w: (last.layoutRect.x + last.layoutRect.w) - first.layoutRect.x,
+        h: first.layoutRect.h,
+      }
+    }
+    const mergedContent = items.map(it => it.content).join('')
+    nodes.push(makeSpanTextNode({ ...lead, content: mergedContent }, rect, parentUnified, resolution, canvasW, canvasH, [...path, lead.pathIdx], compType))
+  }
+  if (nodes.length === 0) return null
+
+  // Text 下非 Span 的遗留子孙（理论不应存在，保守按原序追加）
+  nodes.push(...parentUnified.children)
+  return nodes
+}
+
+/** Span 段的归一化样式 key：字号 / 字重 / 颜色 / 字体 四项（均归一化后比较） */
+function spanStyleKey(attrs, fontSize) {
+  const fw = normalizeArkuiFontWeight(attrs.fontWeight)
+  const fc = attrs.fontColor ? normalizeArkuiColor(attrs.fontColor) : null
+  const ff = attrs.fontFamily || null
+  return JSON.stringify([fontSize, fw, fc, ff])
+}
+
+/** 由单条 Span 段生成独立 text 节点（字段约定同 maybeBuildSplitTextChild） */
+function makeSpanTextNode(seg, rect, parentUnified, resolution, canvasW, canvasH, path, compType) {
+  const { attrs, content, fontSize } = seg
+
+  const style = { width: rect.w, height: rect.h, fontSize }
+  const fw = normalizeArkuiFontWeight(attrs.fontWeight)
+  if (fw !== null) style.fontWeight = fw
+  if (attrs.fontColor) style.fontColor = normalizeArkuiColor(attrs.fontColor)
+  if (attrs.fontFamily) style.fontFamily = attrs.fontFamily
+  const ls = parseVp(attrs.letterSpacing)
+  if (ls !== null && ls !== 0) style.letterSpacing = ls
+  const lh = parseVp(attrs.lineHeight)
+  if (lh !== null && lh > 0) style.lineHeight = lh
+  // 继承父 Text 的整体透明度
+  if (parentUnified.style && parentUnified.style.opacity !== undefined) {
+    style.opacity = parentUnified.style.opacity
+  }
+
+  // _attrs：step2 hardPruneReason 仅读 visibility / opacity，自父继承
+  const _attrs = { content }
+  if (parentUnified._attrs && parentUnified._attrs.visibility) {
+    _attrs.visibility = parentUnified._attrs.visibility
+  }
+
+  const node = {
+    id: String(seg.id != null ? seg.id : `${parentUnified.id}:s${path[path.length - 1]}`),
+    source: 'arkui',
+    type: 'text',
+    rawType: 'text',
+    name: 'Text',
+    path,
+    rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
+    size: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
+    normRect: {
+      x: rect.x / canvasW,
+      y: rect.y / canvasH,
+      w: rect.w / canvasW,
+      h: rect.h / canvasH,
+    },
+    visible: true,
+    style,
+    textContent: content,
+    children: [],
+    _frameworkType: false,
+    _spanType: false,
+    _blankType: false,
+    _viewTag: null,
+    _attrs,
+    _rectRaw: {
+      x1: rect.x * resolution,
+      y1: rect.y * resolution,
+      x2: (rect.x + rect.w) * resolution,
+      y2: (rect.y + rect.h) * resolution,
+    },
+    _spanSplit: true,
+  }
+  if (compType) node.compType = compType
+  return node
 }
 
 /**

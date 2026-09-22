@@ -66,6 +66,17 @@ export function compareStyles(pair, opts = {}) {
     topologyScore: pair.topologyScore ?? null,
     regionScore: pair.regionScore ?? null,
   }
+  // ── 开发侧 image 类型：除圆角外其他属性均不对比 ────────────────────────────
+  // Image 的填充/阴影/透明度等样式实际由图片内容决定，与设计侧节点比对无意义；
+  // 圆角仍需比对（clip 父容器裁剪的圆角已在解析侧传播），其内部既有豁免
+  // （开发侧 image 无圆角值时跳过）保留在 diffBorderRadius 内生效
+  if (normalizedNodeType(an) === 'image') {
+    if (dn.type !== 'text' && an.type !== 'text') {
+      diffBorderRadius(diffs, ctx, dn, an, ds.borderRadius, as_.borderRadius)
+    }
+    return diffs
+  }
+
   // ── 文字节点属性 ──────────────────────────────────────────────────────────
   if (dn.type === 'text' && an.type === 'text') {
     if (!isTitlebarType(an)) {

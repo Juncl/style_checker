@@ -45,7 +45,9 @@ export function buildDumpTree(dumpText) {
   const canvasWidthVp  = canvasWidthPx / resolution
   const canvasHeightVp = canvasHeightPx / resolution
 
-  const root = convertNode(rawRoot, resolution, canvasWidthVp, canvasHeightVp, [0], { x: 0, y: 0 })
+  const walked = convertNode(rawRoot, resolution, canvasWidthVp, canvasHeightVp, [0], { x: 0, y: 0 })
+  // convertNode 对富文本 Text（含 Span 子节点）返回节点数组；root 为框架节点，仅作防御
+  const root = Array.isArray(walked) ? walked[0] : walked
   return { canvasWidthVp, canvasHeightVp, resolution, root }
 }
 
@@ -177,17 +179,33 @@ function convertNode(rawNode, resolution, canvasW, canvasH, path, accumTranslate
 
   if (textContent) unified.textContent = textContent
 
-  // 递归子节点（Span 内容已归并到父 Text，跳过）。传 newAccum 让 translate 向下传播。
+  // 富文本域预扫描：直接 Span + 语法 wrapper（IfElse 等）子树内的 Span
+  const textSpanDomain = isText ? collectTextSpans(children) : null
+
+  // 递归子节点（富文本域内的 Span 由 buildDumpSpanNodes 统一处理，不在此递归）。
+  // 传 newAccum 让 translate 向下传播。
   let ci = 0
   for (const child of children) {
-    if (isText && SPAN_TYPES.has(child.type)) continue
-    unified.children.push(convertNode(child, resolution, canvasW, canvasH, [...path, ci++], newAccum))
+    if (textSpanDomain && textSpanDomain.skipChildren.has(child)) continue
+    const converted = convertNode(child, resolution, canvasW, canvasH, [...path, ci++], newAccum)
+    if (Array.isArray(converted)) {
+      for (const n of converted) unified.children.push(n)
+    } else {
+      unified.children.push(converted)
+    }
   }
 
   // Button / TextInput：拆分虚拟文本子节点（与 JSON 路径保持一致）
   if (type === 'Button' || type === 'TextInput') {
     const splitChild = maybeSplitTextChild(unified, type, props, vpRect, resolution, canvasW, canvasH, path)
     if (splitChild) unified.children.push(splitChild)
+  }
+
+  // 富文本拆分：Text + 富文本域内的 Span → N 个独立文本节点（与 JSON 路径保持一致）。
+  // 拆分以 Span 列表为准，父 Text 删除、Span 节点顶替原位，类型统一改为 text。
+  if (textSpanDomain && textSpanDomain.spans.length > 0) {
+    const spanNodes = buildDumpSpanNodes(unified, props, textSpanDomain.spans, resolution, canvasW, canvasH, path)
+    if (spanNodes) return spanNodes
   }
 
   return unified
@@ -462,10 +480,223 @@ function maybeSplitTextChild(parentUnified, type, props, vpRect, resolution, can
   }
 }
 
+/**
+ * 估算文本宽度（vp）：按字符类别取系数（与 JSON 路径一致，对标 HarmonyOS Sans）
+ *   中文/全角字符 1.0、数字 0.55、半角空格 0.26、小写字母 0.52、大写字母 0.65、
+ *   半角窄标点（, . : ; ! ' ·）0.26、其他半角符号（/ ¥ % - 等）0.55
+ */
 function estimateTextWidth(content, fontSize) {
   let w = 0
   for (const ch of String(content)) {
-    w += /[一-龥　-〿＀-￯]/.test(ch) ? fontSize : fontSize * 0.55
+    w += charWidthFactor(ch) * fontSize
   }
   return w
+}
+
+/** 单字符宽度系数（相对 fontSize 的 em 值） */
+function charWidthFactor(ch) {
+  if (/[一-龥　-〿＀-￯]/.test(ch)) return 1
+  if (ch === ' ') return 0.26
+  const code = ch.codePointAt(0)
+  if (code >= 0x30 && code <= 0x39) return 0.55
+  if (code >= 0x61 && code <= 0x7a) return 0.52
+  if (code >= 0x41 && code <= 0x5a) return 0.65
+  if (",.:;'!·".includes(ch)) return 0.26                // 半角窄标点
+  return 0.55                                            // 其他半角符号（/ ¥ % - ( ) 等）
+}
+
+// ─── 富文本 Span 拆分（与 JSON 路径的 buildSpanNodes 逻辑一致） ────────────────
+
+// 语法 wrapper：Text 富文本域内允许存在的无视觉语法节点（其子树内的 Span
+// 语义上仍属于外层 Text 的富文本，收集时穿透处理）
+const SYNTAX_WRAPPER_TYPES = new Set(['IfElse', 'ForEach', 'LazyForEach'])
+
+/**
+ * 收集 Text 富文本域内的所有 Span（直接子节点 + 语法 wrapper 子树内的）。
+ * @returns {{ spans: Array, skipChildren: Set }} skipChildren = 需从 children 循环
+ *   剔除的直接子节点（Span 及"子树全为富文本域"的语法 wrapper）
+ */
+function collectTextSpans(children) {
+  const spans = []
+  const skipChildren = new Set()
+  for (const child of children) {
+    if (SPAN_TYPES.has(child.type)) {
+      spans.push(child)
+      skipChildren.add(child)
+    } else if (SYNTAX_WRAPPER_TYPES.has(child.type)) {
+      const inner = collectTextSpans(child.children || [])
+      // wrapper 子树全部属于富文本域 → 整体剔除，内部 Span 收入
+      if (inner.spans.length > 0 && inner.skipChildren.size === (child.children || []).length) {
+        spans.push(...inner.spans)
+        skipChildren.add(child)
+      }
+      // 部分 Span 的 wrapper 不剔除（保守，其内部 Span 走旧路径被 step2 unwrap）
+    }
+  }
+  return { spans, skipChildren }
+}
+
+/**
+ * Text + 直接 Span 子节点 → N 个独立文本节点（删父留子，step1 内完成）。
+ * 排版规则与 JSON 路径一致：父 rect 内单行水平排版，按父 TextAlign 对齐，
+ * 溢出时各段等比压缩；纯空格段不生成节点但宽度计入游标。
+ *
+ * @param {Array} spanChildren 富文本域内的 Span 原始节点列表（已穿透语法 wrapper）
+ * @returns {Array|null} 拆分节点数组；无法拆分返回 null（调用方保留父节点兜底）
+ */
+function buildDumpSpanNodes(parentUnified, parentProps, spanChildren, resolution, canvasW, canvasH, path) {
+  const vpRect = parentUnified.rect
+  if (!vpRect || vpRect.w <= 0 || vpRect.h <= 0) return null
+
+  // 收集有效 Span 段（无内容或无字号的跳过，宽度按 0 计）
+  const segs = []
+  let segIdx = 0
+  for (const child of spanChildren) {
+    const content = getSpanContent(child.props)
+    const fsFp = getProp(child.props, /^FontSize:\s*([\d.]+)fp/)
+    const fsPx = getProp(child.props, /^FontSize:\s*([\d.]+)px/)
+    const fontSize = fsFp ? parseFloat(fsFp) : (fsPx ? parseFloat(fsPx) / resolution : null)
+    if (content && fontSize && fontSize > 0) {
+      const id = getProp(child.props, /^ID:\s*(\d+)/)
+      const seg = {
+        id, props: child.props, content, fontSize,
+        estW: estimateTextWidth(content, fontSize),
+        pathIdx: segIdx++,
+        isBlank: content.trim().length === 0,
+      }
+      seg.styleKey = dumpSpanStyleKey(child.props, fontSize)
+      segs.push(seg)
+    }
+  }
+  if (segs.length === 0) return null
+
+  // 整段与父 rect 的宽度关系决定对齐 / 压缩
+  const totalEst = segs.reduce((s, g) => s + g.estW, 0)
+  let x0, scale
+  if (totalEst <= vpRect.w) {
+    const ta = getProp(parentProps, /^TextAlign:\s*(\w+)/)
+    const align = ta ? normalizeDumpTextAlign(ta) : 'left'
+    if (align === 'center') x0 = vpRect.x + (vpRect.w - totalEst) / 2
+    else if (align === 'right') x0 = vpRect.x + vpRect.w - totalEst
+    else x0 = vpRect.x
+    scale = 1
+  } else {
+    x0 = vpRect.x
+    scale = vpRect.w / totalEst
+  }
+
+  // 估算排版：每段分配游标区间（空格段不生成节点但占游标）
+  let x = x0
+  for (const g of segs) {
+    const h = Math.min(g.fontSize, vpRect.h)
+    g.layoutRect = { x, y: vpRect.y + (vpRect.h - h) / 2, w: g.estW * scale, h }
+    x += g.estW * scale
+  }
+
+  // 相邻同样式段合并：文字样式（字号/字重/颜色/字体）完全一致且左右相连
+  // （中间仅隔纯空格段，空格不参与样式比较、content 原样拼入）的段合为一个节点
+  const groups = []
+  let cur = null
+  for (const g of segs) {
+    if (g.isBlank) {
+      if (cur) cur.items.push(g)
+      continue
+    }
+    if (cur && cur.styleKey === g.styleKey) {
+      cur.items.push(g)
+    } else {
+      cur = { styleKey: g.styleKey, items: [g] }
+      groups.push(cur)
+    }
+  }
+
+  const nodes = []
+  for (const grp of groups) {
+    const items = grp.items
+    const vis = items.filter(it => !it.isBlank)
+    if (vis.length === 0) continue
+    const lead = vis[0]
+    const last = vis[vis.length - 1]
+    // 合并 rect：首段 x 到尾段右缘（中间空格段宽度已含在游标内）
+    const rect = {
+      x: lead.layoutRect.x,
+      y: lead.layoutRect.y,
+      w: (last.layoutRect.x + last.layoutRect.w) - lead.layoutRect.x,
+      h: lead.layoutRect.h,
+    }
+    const mergedContent = items.map(it => it.content).join('')
+    nodes.push(makeDumpSpanTextNode({ ...lead, content: mergedContent }, rect, parentUnified, resolution, canvasW, canvasH, [...path, lead.pathIdx]))
+  }
+  if (nodes.length === 0) return null
+
+  // Text 下非 Span 的遗留子孙（理论不应存在，保守按原序追加）
+  nodes.push(...parentUnified.children)
+  return nodes
+}
+
+/** dump Span 段的归一化样式 key：字号 / 字重 / 颜色 / 字体 四项（均归一化后比较） */
+function dumpSpanStyleKey(props, fontSize) {
+  const fw = parseDumpFontWeight(props)
+  // Span 的颜色字段为 TextColor（Text 节点自身用 FontColor），两者兼容
+  const fc = getProp(props, /^FontColor:\s*(#[0-9A-Fa-f]{6,8})/)
+    || getProp(props, /^TextColor:\s*(#[0-9A-Fa-f]{6,8})/)
+  const ff = getProp(props, /^fontFamily:\s*(.+?)(?:\s+prop:.*)?$/)
+  return JSON.stringify([fontSize, fw, fc ? normalizeArkuiColor(fc) : null, ff ? ff.trim() : null])
+}
+
+/** 由单条 Span 段生成独立 text 节点（字段约定同 maybeSplitTextChild） */
+function makeDumpSpanTextNode(seg, rect, parentUnified, resolution, canvasW, canvasH, path) {
+  const { props, content, fontSize } = seg
+
+  const style = { width: rect.w, height: rect.h, fontSize }
+  const fw = parseDumpFontWeight(props)
+  if (fw !== null) style.fontWeight = fw
+  // Span 的颜色字段为 TextColor（Text 节点自身用 FontColor），两者兼容
+  const fc = getProp(props, /^FontColor:\s*(#[0-9A-Fa-f]{6,8})/)
+    || getProp(props, /^TextColor:\s*(#[0-9A-Fa-f]{6,8})/)
+  if (fc) style.fontColor = normalizeArkuiColor(fc)
+  const ff = getProp(props, /^fontFamily:\s*(.+?)(?:\s+prop:.*)?$/)
+  if (ff) style.fontFamily = ff.trim()
+  const lsPx = getProp(props, /^LetterSpacing:\s*([\d.]+)px/)
+  if (lsPx) {
+    const v = parseFloat(lsPx) / resolution
+    if (v !== 0) style.letterSpacing = v
+  }
+  // 继承父 Text 的整体透明度
+  if (parentUnified.style && parentUnified.style.opacity !== undefined) {
+    style.opacity = parentUnified.style.opacity
+  }
+
+  // _attrs：step2 hardPruneReason 仅读 visibility / opacity，自父继承
+  const _attrs = {}
+  if (parentUnified._attrs && parentUnified._attrs.visibility) {
+    _attrs.visibility = parentUnified._attrs.visibility
+  }
+
+  return {
+    id: String(seg.id != null ? seg.id : `${parentUnified.id}:s${path[path.length - 1]}`),
+    source: 'arkui',
+    type: 'text',
+    rawType: 'text',
+    name: 'Text',
+    path,
+    rect: { x: r4(rect.x), y: r4(rect.y), w: r4(rect.w), h: r4(rect.h) },
+    size: { x: r4(rect.x), y: r4(rect.y), w: r4(rect.w), h: r4(rect.h) },
+    normRect: { x: rect.x / canvasW, y: rect.y / canvasH, w: rect.w / canvasW, h: rect.h / canvasH },
+    visible: true,
+    style,
+    textContent: content,
+    children: [],
+    _frameworkType: false,
+    _spanType: false,
+    _blankType: false,
+    _attrs,
+    _rectRaw: {
+      x1: rect.x * resolution,
+      y1: rect.y * resolution,
+      x2: (rect.x + rect.w) * resolution,
+      y2: (rect.y + rect.h) * resolution,
+    },
+    _spanSplit: true,
+  }
 }
