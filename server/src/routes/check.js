@@ -174,7 +174,12 @@ router.post(
         return res.status(400).json({ error: 'ArkUI 主流程需要 arkuiImage 文件' })
       }
       const designJson = JSON.parse(files.designJson[0].buffer.toString('utf-8'))
-      const devJson    = JSON.parse(files.arkuiJson[0].buffer.toString('utf-8'))
+      // 自动识别开发侧格式：JSON 文本走 JSON.parse，其余视为 ArkUI Inspector dump 文本（与 /parse/dev 一致）
+      const devRawText = files.arkuiJson[0].buffer.toString('utf-8')
+      const trimmedDev = devRawText.trimStart()
+      const devJson    = trimmedDev.startsWith('{') || trimmedDev.startsWith('[')
+        ? JSON.parse(devRawText)
+        : devRawText  // dump 格式
       const result = await runCheck(designJson, devJson, 'upload', {
         designImageBuffer: files.designImage?.[0]?.buffer,
         devImageBuffer:    files.arkuiImage?.[0]?.buffer,

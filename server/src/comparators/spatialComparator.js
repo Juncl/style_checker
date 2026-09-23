@@ -296,7 +296,7 @@ function toStyleDiff(result, direction) {
     confidence,
     spaceId,
     designSpaceId,
-    description: `${label}偏差 ${diffDistance.toFixed(1)}vp（设计 ${de.displayDistance.toFixed(1)} / 开发 ${hm.displayDistance.toFixed(1)}）`,
+    description: `${label}不匹配`,
     designValue: `${de.displayDistance.toFixed(1)}`,
     arkuiValue: `${hm.displayDistance.toFixed(1)}`,
     designNodeId: de.node.id,

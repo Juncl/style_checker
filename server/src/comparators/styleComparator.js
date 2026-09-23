@@ -20,6 +20,29 @@ const TOLERANCE = {
   colorDelta:    0,    // 颜色欧氏距离（0-442 范围）；0 表示完全精确匹配
 }
 
+// 属性 key → 中文标签（统一生成「xx不匹配」描述用）
+const PROP_LABEL = {
+  fontSize:         '字号',
+  'fontSize.scale':  '字体缩放',
+  fontWeight:       '字重',
+  fontColor:        '颜色',
+  fontFamily:       '字体',
+  textAlign:        '文字对齐',
+  opacity:          '透明度',
+  backgroundColor:  '填充',
+  borderRadius:     '圆角',
+  borderWidth:      '描边宽度',
+  borderColor:      '描边颜色',
+  padding:          '内边距',
+  blur:             '模糊',
+  shadow:           '投影',
+  itemSpacing:      '元素间距',
+}
+
+function labelFor(key) {
+  return PROP_LABEL[key] || key
+}
+
 // 硬豁免：节点 rawType 在以下集合时，无论有无 backgroundColor 都不参与填充对比
 // - image / img：填充语义在 ArkUI 是 fillColor / objectFit，不是 backgroundColor
 // - canvas：canvas 背景色无展示意义，对比无意义
@@ -162,7 +185,7 @@ function compareManualStyles(pair) {
     const arkuiStr  = formatManualVal(key, arkuiVal)
 
     if (designStr !== arkuiStr) {
-      diffs.push({ ...makeDiff(ctx, key, designStr, arkuiStr, 'error', `人工: ${key}`), _isManual: true })
+      diffs.push({ ...makeDiff(ctx, key, designStr, arkuiStr, 'error', `${labelFor(key)}不匹配`), _isManual: true })
     }
   }
 
@@ -203,7 +226,7 @@ function diffNumber(diffs, ctx, prop, dv, av, tol, label, errorThreshold) {
     const errThresh = errorThreshold !== undefined ? errorThreshold : tol * 3
     diffs.push(makeDiff(ctx, prop, `${dv}`, `${av}`,
       delta > errThresh ? 'error' : 'warning',
-      `${label}偏差 ${dv > av ? '+' : ''}${(dv - av).toFixed(1)}`))
+      `${label}不匹配`))
   }
 }
 
@@ -219,7 +242,7 @@ function diffColor(diffs, ctx, prop, dv, av, label) {
   // 两者均透明，不报差异
   if ((!dv || dv === '#00000000') && (!av || av === '#00000000')) return
   if (!dv || !av) {
-    diffs.push(makeDiff(ctx, prop, dv || '—', av || '—', 'warning', `${label}：一侧缺失`))
+    diffs.push(makeDiff(ctx, prop, dv || '—', av || '—', 'warning', `${label}不匹配`))
     return
   }
   const delta = colorDelta(dv, av)
@@ -228,7 +251,7 @@ function diffColor(diffs, ctx, prop, dv, av, label) {
       `${dv} (${toDisplayColor(dv)})`,
       `${av} (${toDisplayColor(av)})`,
       null,
-      `${label}不匹配 ΔE≈${delta.toFixed(0)}`
+      `${label}不匹配`
     ))
   }
 }
@@ -253,7 +276,7 @@ function diffOpacity(diffs, ctx, dv, av) {
   if (d === null || a === null) return
   if (d === 0 || a === 0) return
   if (Math.abs(d - a) > TOLERANCE.opacity) {
-    diffs.push(makeDiff(ctx, 'opacity', String(d), String(a), 'warning', `透明度偏差`))
+    diffs.push(makeDiff(ctx, 'opacity', String(d), String(a), 'warning', '透明度不匹配'))
   }
 }
 
@@ -268,7 +291,7 @@ function diffBorderRadius(diffs, ctx, designNode, arkuiNode, dv, av) {
   // 软豁免：开发侧 image 类型且开发侧无圆角值 → 跳过（Image 圆角由 clip 父节点裁剪实现，自身不设）
   if (normalizedNodeType(arkuiNode) === 'image' && !av) return
   if (!dv || !av) {
-    diffs.push(makeDiff(ctx, 'borderRadius', dv ? formatRadius(dv) : '—', av ? formatRadius(av) : '—', 'warning', '圆角：一侧缺失'))
+    diffs.push(makeDiff(ctx, 'borderRadius', dv ? formatRadius(dv) : '—', av ? formatRadius(av) : '—', 'warning', '圆角不匹配'))
     return
   }
   const keys = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft']
@@ -278,7 +301,7 @@ function diffBorderRadius(diffs, ctx, designNode, arkuiNode, dv, av) {
   const mismatched = keys.filter(k => Math.abs((dEffective[k] || 0) - (aEffective[k] || 0)) > TOLERANCE.borderRadius)
   if (mismatched.length > 0) {
     diffs.push(makeDiff(ctx, 'borderRadius', formatRadius(dv), formatRadius(av), 'warning',
-      `圆角不匹配（${mismatched.join(', ')}）`))
+      '圆角不匹配'))
   }
 }
 
@@ -289,7 +312,7 @@ function diffPadding(diffs, ctx, dv, av) {
   const mismatched = keys.filter(k => Math.abs((dv[k] || 0) - (av[k] || 0)) > TOLERANCE.padding)
   if (mismatched.length > 0) {
     diffs.push(makeDiff(ctx, 'padding', formatPadding(dv), formatPadding(av), 'warning',
-      `内边距不匹配（${mismatched.join(', ')}）`))
+      '内边距不匹配'))
   }
 }
 
@@ -297,7 +320,7 @@ function diffBlur(diffs, ctx, dv, av, prop = 'blur', label = '模糊') {
   if (!dv && !av) return
 
   if (dv && !av) {
-    diffs.push(makeDiff(ctx, prop, dv, '—', 'warning', `${label}：实现缺失`))
+    diffs.push(makeDiff(ctx, prop, dv, '—', 'warning', `${label}不匹配`))
     return
   }
 
@@ -310,16 +333,16 @@ function diffBlur(diffs, ctx, dv, av, prop = 'blur', label = '模糊') {
   const d = parseBlur(dv), a = parseBlur(av)
 
   if (!d || !a) {
-    diffs.push(makeDiff(ctx, prop, dv, av, 'warning', `${label}格式异常`))
+    diffs.push(makeDiff(ctx, prop, dv, av, 'warning', `${label}不匹配`))
     return
   }
   if (d.type !== a.type) {
-    diffs.push(makeDiff(ctx, prop, dv, av, 'warning', `${label}类型不匹配`))
+    diffs.push(makeDiff(ctx, prop, dv, av, 'warning', `${label}不匹配`))
     return
   }
   if (d.value !== a.value) {
     diffs.push(makeDiff(ctx, prop, dv, av, 'warning',
-      `${label}偏差 ${(d.value - a.value).toFixed(1)}`))
+      `${label}不匹配`))
   }
 }
 
@@ -327,7 +350,7 @@ function diffShadow(diffs, ctx, dv, av) {
   if (!dv && !av) return
 
   if (dv && !av) {
-    diffs.push(makeDiff(ctx, 'shadow', dv, '—', 'warning', '投影：实现缺失'))
+    diffs.push(makeDiff(ctx, 'shadow', dv, '—', 'warning', '投影不匹配'))
     return
   }
 
@@ -344,7 +367,7 @@ function diffShadow(diffs, ctx, dv, av) {
   const d = parseShadow(dv), a = parseShadow(av)
 
   if (!d || !a) {
-    diffs.push(makeDiff(ctx, 'shadow', dv, av, 'warning', '投影格式异常'))
+    diffs.push(makeDiff(ctx, 'shadow', dv, av, 'warning', '投影不匹配'))
     return
   }
   const issues = []
@@ -352,7 +375,7 @@ function diffShadow(diffs, ctx, dv, av) {
   if (d.radius !== a.radius) issues.push(`radius偏差 ${(d.radius - a.radius).toFixed(1)}`)
   if (d.offsetX !== a.offsetX || d.offsetY !== a.offsetY) issues.push('偏移偏差')
   if (issues.length > 0) {
-    diffs.push(makeDiff(ctx, 'shadow', dv, av, 'warning', `投影不匹配：${issues.join('，')}`))
+    diffs.push(makeDiff(ctx, 'shadow', dv, av, 'warning', '投影不匹配'))
   }
 }
 
@@ -364,11 +387,11 @@ function diffBorder(diffs, ctx, dv, av) {
   if (dw == null && aw == null) {
     // 两边都没有描边宽度，按规则忽略。
   } else if (dw == null || aw == null) {
-    diffs.push(makeDiff(ctx, 'borderWidth', formatBorderWidth(dv), formatBorderWidth(av), 'warning', '描边宽度：一侧缺失'))
+    diffs.push(makeDiff(ctx, 'borderWidth', formatBorderWidth(dv), formatBorderWidth(av), 'warning', '描边宽度不匹配'))
   } else if (widthDelta > 0) {
     diffs.push(makeDiff(ctx, 'borderWidth', `${dw}`, `${aw}`,
       widthDelta > 2 ? 'error' : 'warning',
-      `描边宽度偏差 ${(dw - aw).toFixed(1)}`))
+      '描边宽度不匹配'))
   }
   if (dv?.color != null) diffColor(diffs, ctx, 'borderColor', dv?.color, av?.color, '描边颜色')
 }
@@ -405,10 +428,7 @@ function diffGradient(diffs, ctx, dGrad, aGrad, dv, av) {
 
   // 只有一侧是渐变
   if (!dGrad || !aGrad) {
-    const desc = dGrad
-      ? '填充：设计侧为渐变色，开发侧为纯色'
-      : '填充：设计侧为纯色，开发侧为渐变色'
-    diffs.push(makeDiff(ctx, 'backgroundColor', dv || '—', av || '—', 'warning', desc))
+    diffs.push(makeDiff(ctx, 'backgroundColor', dv || '—', av || '—', 'warning', '渐变不匹配'))
     return
   }
 
@@ -445,7 +465,7 @@ function diffGradient(diffs, ctx, dGrad, aGrad, dv, av) {
       dv,
       av,
       'warning',
-      `渐变不匹配: ${issues.join('; ')}`
+      '渐变不匹配'
     ))
   }
 }
@@ -491,7 +511,7 @@ function diffBackgroundColor(diffs, ctx, designNode, arkuiNode, dv, av) {
       `${d} (${toDisplayColor(d)})`,
       `${a} (${toDisplayColor(a)})`,
       null,
-      `填充不匹配 ΔE≈${delta.toFixed(0)}`
+      '填充不匹配'
     ))
   }
 }
@@ -500,7 +520,7 @@ function diffItemSpacing(diffs, ctx, dv, av) {
   if (dv === null || dv === undefined) return
   if (av === null || av === undefined) {
     if (dv > 0) {
-      diffs.push(makeDiff(ctx, 'itemSpacing', `${dv}`, '—', 'warning', '元素间距：实现缺失'))
+      diffs.push(makeDiff(ctx, 'itemSpacing', `${dv}`, '—', 'warning', '元素间距不匹配'))
     }
     return
   }
@@ -508,7 +528,7 @@ function diffItemSpacing(diffs, ctx, dv, av) {
   if (delta > 1.0) {
     diffs.push(makeDiff(ctx, 'itemSpacing', `${dv}`, `${av}`,
       delta > 4 ? 'error' : 'warning',
-      `元素间距偏差 ${(dv - av).toFixed(1)}`))
+      '元素间距不匹配'))
   }
 }
 
@@ -519,7 +539,7 @@ function diffFontScale(diffs, ctx, fontSize, actualFontSize) {
     diffs.push(makeDiff(ctx, 'fontSize.scale',
       `${fontSize}`, `${actualFontSize.toFixed(1)}`,
       Math.abs(ratio - 1.0) > 0.25 ? 'error' : 'warning',
-      `系统字体缩放比 ${(ratio * 100).toFixed(0)}%，需设置 maxFontScale`))
+      '字体缩放不匹配'))
   }
 }
 
