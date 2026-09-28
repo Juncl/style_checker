@@ -41,7 +41,7 @@ export function createMcpServer() {
       '  本工具需要两份数据，缺一不可：',
       '',
       '  ① 开发侧数据（提供其一即可）：',
-      '     · 本地文件路径（arkui.json 或 web.json，附截图 png/jpg）',
+      '     · 本地文件路径（arkui.json / arkui.dump 或 web.json，附截图 png/jpg/jpeg）',
       '     · 网页 URL 或本地 HTML 文件路径 → 调 collect_web 自动采集（Web 平台）',
       '     · 说明已经连上鸿蒙设备 → 调 collect_arkui 自动采集（仅 Windows，需连接设备）',
       '  ② 设计侧数据（提供其一即可）：',
@@ -71,7 +71,7 @@ export function createMcpServer() {
       '',
       '【参数说明】',
       '- designJsonPath: 设计稿 JSON 文件路径（本地路径，或 collect_design 返回的 designJsonPath）',
-      '- devJsonPath: 开发侧 JSON 文件路径（本地路径，或 collect_web 返回的 devJsonPath）',
+      '- devJsonPath: 开发侧数据文件路径（arkui.json / arkui.dump / web.json，本地路径或采集工具返回的路径；arkui.dump 为 ArkUI Inspector 的 dump 文本导出，服务端自动识别）',
       '- platform: 平台类型，hmPhone（鸿蒙手机，默认）/ hmWatch（鸿蒙手表）/ web（Web 网页）',
       '- designImagePath: 设计稿截图路径（可选，本地路径或 collect_design 返回的 designImagePath）',
       '- devImagePath: 开发侧截图路径（可选，本地路径或 collect_web 返回的 devImagePath）',
@@ -110,7 +110,7 @@ export function createMcpServer() {
         .describe('设计稿 JSON 文件路径'),
       devJsonPath: z
         .string()
-        .describe('开发侧 JSON 文件路径（arkui.json 或 web.json）'),
+        .describe('开发侧数据文件路径（arkui.json / arkui.dump / web.json）'),
       platform: z
         .enum(['hmPhone', 'hmWatch', 'web'])
         .default('hmPhone')
@@ -254,7 +254,7 @@ export function createMcpServer() {
       'ArkUI 采集只能在 Windows 电脑上执行（依赖 ArkUI Inspector 导出工具）。',
       '非 Windows 环境调用会直接失败，此时需提示用户：',
       '  · 在 Windows 环境运行，或',
-      '  · 用户手动导出 arkui.json / arkui.png 文件，提供本地路径直接调用 ui_style_check',
+      '  · 用户手动导出 arkui.json（或 ArkUI Inspector dump 文件）/ 截图文件，提供本地路径直接调用 ui_style_check',
       '',
       '【参数说明】',
       '- timeout: 采集超时时间（ms），默认 60000（60 秒）',
@@ -279,7 +279,7 @@ export function createMcpServer() {
       '  仍应继续执行 collect_design 完成设计侧采集，然后根据错误提示向用户提供恢复选项，',
       '  待用户补齐 arkui 侧数据后再调用 ui_style_check。',
       '- 等待文件超时时，可提示用户确认采集程序是否正常运行、是否已导出数据后重新调用 collect_arkui。',
-      '- 用户也可手动提供 arkui.json / arkui.png 文件路径，跳过 collect_arkui 直接调用 ui_style_check。',
+      '- 用户也可手动提供 arkui.json / arkui.dump / 截图文件路径，跳过 collect_arkui 直接调用 ui_style_check。',
     ].join('\n'),
     {
       timeout: z
