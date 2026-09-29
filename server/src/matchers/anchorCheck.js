@@ -111,10 +111,13 @@ const OPPOSITE = { up: 'down', down: 'up', left: 'right', right: 'left' }
  *      用 nodeAnchorRelation（交叠比例）而非 rectContains，是为了容忍
  *      「一侧恰好边缘压线」的 cross 情况，不被 contain/disjoint 的二元判定误卡。
  *
- *   ② 方向不得反向矛盾（dirSet）
- *      对每个参照锚点 s，若 an 与 s.arkui 呈脱离方向（非 null / contain），
+ *   ② 方向不得反向矛盾（dirSet）+ 同行捆绑
+ *      反向矛盾：对每个参照锚点 s，若 an 与 s.arkui 呈脱离方向（非 null / contain），
  *      则 dn 与 s.design 不得呈正相反的方向（如 an 在锚点左边，dn 不得在锚点右边）。
  *      放行：同向、斜向、包含关系——这些布局微差属正常，不应误杀。
+ *      同行捆绑（双侧均为文本候选时生效）：an 与 s.arkui 的同行关系（y 投影重叠）
+ *      必须与 dn 与 s.design 的同行关系一致——一侧同行、另一侧不同行即矛盾
+ *      （如 an 在锚点右侧同行，dn 却跑到锚点下方）。
  *
  * @param {Array} containSet  四态包含一致性参照锚点组（通常包含容器配对 + 文本锚点）
  * @param {Array} dirSet      方向一致性参照锚点组（通常只用 pass1 文本强锚点）
@@ -127,9 +130,12 @@ export function makeAnchorCheck(containSet, dirSet) {
       if (s.arkui.id === an.id || s.design.id === dn.id) continue
       if (nodeAnchorRelation(an.rect, s.arkui.rect, an.type, s.arkui.type) !== nodeAnchorRelation(dn.rect, s.design.rect, dn.type, s.design.type)) return false
     }
-    // 门②：方向不得反向矛盾
+    // 门②：方向不得反向矛盾 + 同行捆绑
+    const bothText = an.type === 'text' && dn.type === 'text'
     for (const s of dirSet) {
       if (s.arkui.id === an.id || s.design.id === dn.id) continue
+      // 同行捆绑：同 y 行关系（y 投影重叠）双侧必须一致，任一侧同行、另一侧不同行 → 矛盾
+      if (bothText && yOverlap(an.rect, s.arkui.rect) !== yOverlap(dn.rect, s.design.rect)) return false
       const ra = relation(an.rect, s.arkui.rect, an.type)
       if (ra === null || ra === 'contain') continue   // 相交或包含，放行
       const rd = relation(dn.rect, s.design.rect, dn.type)

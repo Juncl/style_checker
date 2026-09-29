@@ -287,7 +287,9 @@ export function matchByAnchorTopology(designNodes, arkuiNodes, anchors, usedArku
     const an = anById.get(e.anId)
     lockedArkui.add(an.id); lockedDesign.add(e.dn.id)
     result.push(makePair(e.dn, an, e.horizontal ? 'text-con-方向x' : 'text-con-方向y', {
-      confidence: 'high',
+      // 方向y（上下守门带）可信度低于方向x（左右最近邻），降级为中置信，
+      // 仅影响 selectOneToOnePairs 竞争优先级（Pass 3 产出不回灌锚点池）
+      confidence: e.horizontal ? 'high' : 'medium',
       topologyScore: MatchTools.round4(e.score),
       iou: computeIoU(e.dn.normRect, an.normRect),
     }))

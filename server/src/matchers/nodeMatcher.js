@@ -148,7 +148,6 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     pairs.push(pair)
     usedArkui.add(pair.arkui.id)
     matchedDesignIds.add(pair.design.id)
-    if (pair.confidence === 'high') (strongAnchors[pair.matchDetail.type] ??= []).push(pair)
   }
 
   const rowSlotPairs = matchAlignedTextRows(
@@ -203,14 +202,12 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
       pairs.push(pair)
       usedArkui.add(pair.arkui.id)
       matchedDesignIds.add(pair.design.id)
-      // 高置信产出回灌锚点池，供 Pass 3.5 消费
-      if (pair.confidence === 'high') (strongAnchors[pair.matchDetail.type] ??= []).push(pair)
     }
   }
 
   // ── Pass 3.5: 同行同类 list 顺序匹配 ─────────────────────────────────────
   // 在 Pass 3（拓扑匹配）之后运行，按序号顺序执行。
-  // 用强锚点（topologyAnchors）作为上/下邻居验证，按 x 升序对齐横向列表。
+  // 用文本强锚点（text-锚点/同行/角色/包含）作为上/下邻居验证，按 x 升序对齐横向列表。
   // confidence=medium，不锁节点，交由 selectOneToOnePairs 最终裁决。
   {
     const listPairs = matchByListIndex(designNodes, arkuiNodes, collectAnchors(['text-锚点', 'text-同行', 'text-角色', 'text-con-包含']), { canvasWidthVp, canvasHeightVp, canvasWidth, canvasHeight })
@@ -220,9 +217,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   }
 
   // ── Pass 4: 区域内文本节点全局最优匹配 ────────────────────────────────────
-  const pass4Anchors = collectAnchors().filter(p =>
-    p.matchDetail?.type !== 'text-con-方向x' && p.matchDetail?.type !== 'text-con-方向y'
-  )
+  const pass4Anchors = collectAnchors()
   const anchorCheck4 = makeAnchorCheck(pass4Anchors, collectAnchors(['text-锚点']))
   const regionTextPairs = matchRegionTextOptimal(
     designNodes,
@@ -239,7 +234,7 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
   }
 
   // ── Pass 5.3: 几何 IoU 匹配容器节点 ────────────────────────────────────────
-  const anchors53 = collectAnchors().filter(p => p.matchDetail?.type !== 'text-con-方向x' && p.matchDetail?.type !== 'text-con-方向y')
+  const anchors53 = collectAnchors()
   const anchorCheck53 = makeAnchorCheck(anchors53, anchors53)
   for (const dn of designNodes) {
     if (matchedDesignIds.has(dn.id)) continue
@@ -254,10 +249,9 @@ function matchNodesDesignFirst(designNodes, arkuiNodes, options = {}) {
     if (best && best.iou > threshold) {
       const p = makePair(dn, best.node, 'con-交叠', {
         iou: best.iou,
-        confidence: hasVisualDecoration(dn) ? 'high' : 'medium',
+        confidence: 'medium',
       })
       pairs.push(p)
-      if (p.confidence === 'high') (strongAnchors[p.matchDetail.type] ??= []).push(p)
     }
   }
 

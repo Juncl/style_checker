@@ -891,6 +891,13 @@ function extractArkuiStyle(type, attrs, resolution, vpRect) {
   const backdropBlur = parseFloat(attrs.backdropBlur)
   if (!isNaN(backdropBlur) && backdropBlur > 0) s.blur = `背景模糊 ${backdropBlur}px`
 
+  // 背景模糊的另一种实现：backgroundEffect（radius > 0 时视为背景模糊，优先级高于 backdropBlur）
+  const bgEffect = attrs.backgroundEffect
+  if (bgEffect && typeof bgEffect === 'object' && bgEffect.options) {
+    const beRadius = Number(bgEffect.options.radius)
+    if (!isNaN(beRadius) && beRadius > 0) s.blur = `背景模糊 ${beRadius}px`
+  }
+
   // 投影
   if (attrs.shadow && typeof attrs.shadow === 'object') {
     const sh      = attrs.shadow
