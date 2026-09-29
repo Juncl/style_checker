@@ -81,7 +81,7 @@ function extractWebStyle(node, isText) {
   const result = {}
 
   if (typeof node.opacity === 'number' && node.opacity !== 1) {
-    result.opacity = node.opacity
+    result.opacity = Math.round(node.opacity * 100) / 100
   }
 
   if (isText) {

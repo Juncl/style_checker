@@ -170,7 +170,7 @@ function extractDesignStyle(nodeType, style, layout, options = {}) {
   const result = {}
 
   if (style.opacity !== undefined) {
-    result.opacity = style.opacity
+    result.opacity = Math.round(style.opacity * 100) / 100
   }
 
   const isHiddenMask = style.mask === true && style.showMask === false

@@ -70,6 +70,10 @@ export function isEquivalentFont(designFont, arkuiFont) {
   for (const [, set] of FONT_ALIASES) {
     if (set.has(designFont) && set.has(arkuiFont)) return true
   }
+  // HarmonyOS 体系字体互为等价
+  const dl = designFont.toLowerCase()
+  const al = arkuiFont.toLowerCase()
+  if (dl.startsWith('harmony') && al.startsWith('harmony')) return true
   return false
 }
 

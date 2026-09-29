@@ -527,6 +527,14 @@ function collectTextSpans(children) {
   return { spans, skipChildren }
 }
 
+// Inspector 对"未设置 Span"的导出默认值（跨 9 case 55 次出现，见 docs/Span属性继承情况统计.md）
+// ArkUI 官方文档：Span 从 API version 10 起支持继承父 Text 的属性，未设置的属性渲染时继承父
+// Inspector 导出时对未设置属性填以下默认值，需逐属性判断后回退到父 Text
+const SPAN_DEFAULT_FONTWEIGHT = 'FontWeight.Normal'
+const SPAN_DEFAULT_FONTSIZE = 16           // parseVp("16.00fp") = 16
+const SPAN_DEFAULT_FONTCOLOR = '#FF000000'
+const SPAN_DEFAULT_FONTFAMILY = 'HarmonyOS Sans'
+
 /**
  * Text + 富文本域内的 Span → N 个独立文本节点（删父留子，step1 内完成）。
  *
@@ -556,7 +564,11 @@ function buildSpanNodes(parentUnified, spanChildren, resolution, canvasW, canvas
     const child = spanChildren[i]
     const attrs = child['$attrs'] || {}
     const content = attrs.content != null ? String(attrs.content) : ''
-    const fontSize = parseActualFontSize(attrs.actualFontSize, resolution) ?? parseVp(attrs.fontSize)
+    let fontSize = parseActualFontSize(attrs.actualFontSize, resolution) ?? parseVp(attrs.fontSize)
+    // Span fontSize = Inspector 默认值(16) 时，继承父 Text 的实际渲染字号
+    if (fontSize === SPAN_DEFAULT_FONTSIZE && parentUnified.style?.fontSize) {
+      fontSize = parentUnified.style.fontSize
+    }
     if (!content || !fontSize || fontSize <= 0) continue
 
     // Inspector 可能为 Span 导出独立 $rect：与父原始 rect 不同（差 ≥ 0.5）即为
@@ -679,10 +691,26 @@ function makeSpanTextNode(seg, rect, parentUnified, resolution, canvasW, canvasH
   const { attrs, content, fontSize } = seg
 
   const style = { width: rect.w, height: rect.h, fontSize }
-  const fw = normalizeArkuiFontWeight(attrs.fontWeight)
-  if (fw !== null) style.fontWeight = fw
-  if (attrs.fontColor) style.fontColor = normalizeArkuiColor(attrs.fontColor)
-  if (attrs.fontFamily) style.fontFamily = attrs.fontFamily
+
+  // fontWeight：= Inspector 默认值(FontWeight.Normal) 时继承父 Text
+  if (attrs.fontWeight === SPAN_DEFAULT_FONTWEIGHT && parentUnified.style?.fontWeight) {
+    style.fontWeight = parentUnified.style.fontWeight
+  } else {
+    const fw = normalizeArkuiFontWeight(attrs.fontWeight)
+    if (fw !== null) style.fontWeight = fw
+  }
+  // fontColor：= Inspector 默认值(#FF000000) 时继承父 Text
+  if (attrs.fontColor === SPAN_DEFAULT_FONTCOLOR && parentUnified.style?.fontColor) {
+    style.fontColor = parentUnified.style.fontColor
+  } else if (attrs.fontColor) {
+    style.fontColor = normalizeArkuiColor(attrs.fontColor)
+  }
+  // fontFamily：= Inspector 默认值(HarmonyOS Sans) 时继承父 Text
+  if (attrs.fontFamily === SPAN_DEFAULT_FONTFAMILY && parentUnified.style?.fontFamily) {
+    style.fontFamily = parentUnified.style.fontFamily
+  } else if (attrs.fontFamily) {
+    style.fontFamily = attrs.fontFamily
+  }
   const ls = parseVp(attrs.letterSpacing)
   if (ls !== null && ls !== 0) style.letterSpacing = ls
   const lh = parseVp(attrs.lineHeight)
@@ -779,9 +807,9 @@ function getArkuiTextContent(attrs) {
 function extractArkuiStyle(type, attrs, resolution, vpRect) {
   const s = {}
 
-  // 不透明度
+  // 不透明度（四舍五入保留2位）
   if (attrs.opacity !== undefined && attrs.opacity !== null) {
-    s.opacity = parseFloat(attrs.opacity)
+    s.opacity = Math.round(parseFloat(attrs.opacity) * 100) / 100
   }
 
   // 填充（非透明才记录，仅容器节点）

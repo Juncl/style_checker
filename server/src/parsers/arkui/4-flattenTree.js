@@ -108,7 +108,7 @@ function deduplicateSameRectContainers(nodes) {
         return (op !== undefined && op < 1) ? acc * op : acc
       }, 1)
       if (outerOpacity < 1) {
-        s.opacity = (s.opacity ?? 1) * outerOpacity
+        s.opacity = Math.round(((s.opacity ?? 1) * outerOpacity) * 100) / 100
       }
 
       main.style = s
