@@ -13,9 +13,20 @@ export const fetchVersionJson = async (jsonUrl: string): Promise<unknown> => {
 // uiplusToken：内网鉴权 token，外网 mock 模式下无效但保留字段
 const uiplusToken = localStorage.getItem("uiplusToken")
 
-// 兜底拦截：request.ts 已拦截 business/http 错误，此处捕获未预期的边界情况
-function wrapUnexpected(error: any) {
+// 检查响应体 success:false，抛业务错误
+function checkSuccess(body: any) {
+  if (body && body.success === false) {
+    throw Object.assign(new Error(body.errorMessage || '数据错误'), { _type: 'business' })
+  }
+}
+
+// catch 中统一包装错误：已标记的直接抛，axios 异常包装为 http，其他包装为 unknown
+function wrapApiError(error: any) {
   if (error?._type) throw error
+  const status = error?.response?.status
+  if (status || error?.isAxiosError) {
+    throw Object.assign(new Error(status ? `请求失败 (${status})` : (error?.message || '网络错误')), { _type: 'http' })
+  }
   console.log('error: ', error)
   throw Object.assign(new Error('数据错误'), { _type: 'unknown' })
 }
@@ -27,9 +38,10 @@ export const getConsistencyCheckDeliverables = async () => {
   try {
     const url = `${ADMIN_BASE_URL}/main/rest.root/reviewTool/consistencyCheck/getConsistencyCheckDeliverables`
     const ret = await Api.get(url, "json", { uiplusToken })
+    checkSuccess(ret)
     return ret.content
   } catch (error) {
-    wrapUnexpected(error)
+    wrapApiError(error)
   }
 }
 
@@ -40,9 +52,10 @@ export const getTeamList = async () => {
   try {
     const url = `${ADMIN_BASE_URL}/main/rest.root/workspace/team/getMyTeam`
     const ret = await Api.get(url, "json", { uiplusToken })
+    checkSuccess(ret)
     return ret.content
   } catch (error) {
-    wrapUnexpected(error)
+    wrapApiError(error)
   }
 }
 
@@ -53,9 +66,10 @@ export const getSonListByTeamId = async (teamId: number | string) => {
   try {
     const url = `${ADMIN_BASE_URL}/main/rest.root/workspace/team/getMySonTeam?id=${teamId}`
     const ret = await Api.get(url, "json", { uiplusToken })
+    checkSuccess(ret)
     return ret.content
   } catch (error) {
-    wrapUnexpected(error)
+    wrapApiError(error)
   }
 }
 
@@ -66,9 +80,10 @@ export const getPagesByDeliverableId = async (deliverableId: string) => {
   try {
     const url = `${ADMIN_BASE_URL}/main/rest.root/reviewTool/consistencyCheck/getPagesByDeliverableId?deliverableId=${deliverableId}`
     const ret = await Api.get(url, "json", { uiplusToken })
+    checkSuccess(ret)
     return ret.content
   } catch (error) {
-    wrapUnexpected(error)
+    wrapApiError(error)
   }
 }
 
@@ -80,9 +95,10 @@ export const addConsistencyCheckPage = async (params: Record<string, unknown>) =
   try {
     const url = `${ADMIN_BASE_URL}/main/rest.root/reviewTool/consistencyCheck/addConsistencyCheckPage`
     const ret = await Api.post(url, params, 60000, { uiplusToken })
+    checkSuccess(ret.data)
     return ret.data.content
   } catch (error) {
-    wrapUnexpected(error)
+    wrapApiError(error)
   }
 }
 
@@ -92,10 +108,11 @@ export const addConsistencyCheckPage = async (params: Record<string, unknown>) =
 export const updateConsistencyCheckPage = async (params: { pageId: number; name: string; deviceType: string }) => {
   try {
     const url = `${ADMIN_BASE_URL}/main/rest.root/reviewTool/consistencyCheck/updateConsistencyCheckPage`
-    await Api.post(url, params, 60000, { uiplusToken })
+    const ret = await Api.post(url, params, 60000, { uiplusToken })
+    checkSuccess(ret.data)
     return true
   } catch (error) {
-    wrapUnexpected(error)
+    wrapApiError(error)
   }
 }
 
@@ -105,10 +122,11 @@ export const updateConsistencyCheckPage = async (params: { pageId: number; name:
 export const updateConsistencyCheckProblem = async (params: Record<string, unknown>) => {
   try {
     const url = `${ADMIN_BASE_URL}/main/rest.root/reviewTool/consistencyCheck/updateConsistencyCheckProblem`
-    await Api.post(url, params, 60000, { uiplusToken })
+    const ret = await Api.post(url, params, 60000, { uiplusToken })
+    checkSuccess(ret.data)
     return true
   } catch (error) {
-    wrapUnexpected(error)
+    wrapApiError(error)
   }
 }
 
@@ -119,9 +137,10 @@ export const getResultsByPageId = async (pageId: number | string, pageNum: numbe
   try {
     const url = `${ADMIN_BASE_URL}/main/rest.root/reviewTool/consistencyCheck/getResultsByPageId?pageId=${pageId}&pageNum=${pageNum}&pageSize=${pageSize}`
     const ret = await Api.get(url, "json", { uiplusToken })
+    checkSuccess(ret)
     return ret.content
   } catch (error) {
-    wrapUnexpected(error)
+    wrapApiError(error)
   }
 }
 
@@ -133,8 +152,9 @@ export const addConsistencyCheckDeliverable = async (teamId: string, name: strin
   try {
     const url = `${ADMIN_BASE_URL}/main/rest.root/reviewTool/consistencyCheck/addConsistencyCheckDeliverable`
     const ret = await Api.post(url, new URLSearchParams({ teamId, name }), 60000, { uiplusToken })
+    checkSuccess(ret.data)
     return ret.data.content
   } catch (error) {
-    wrapUnexpected(error)
+    wrapApiError(error)
   }
 }
