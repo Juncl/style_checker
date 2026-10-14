@@ -780,7 +780,7 @@ async function onUxlintCheckList(e) {
     }
   } catch (err) {
     console.error('[uxlint] 处理失败', err)
-    ElMessage.error('uxlint 数据处理失败，请检查控制台')
+    ElMessage.error(err?._type ? (err?.message ?? '数据错误') : 'uxlint 数据处理失败，请检查控制台')
   } finally {
     loading.value = false
   }
@@ -805,7 +805,11 @@ onMounted(async () => {
   } catch (e) {
     loading.value = false
     console.error('初始化加载失败', e)
-    ElMessage.warning(e?.message ?? '加载失败，请重试')
+    if (e?._type) {
+      ElMessage.error(e?.message ?? '数据错误')
+    } else {
+      ElMessage.warning(e?.message ?? '加载失败，请重试')
+    }
     if (e.clearUrl) {
       removeUrlParams(['deliverableId', 'pageId'])
     }
@@ -843,6 +847,8 @@ onMounted(async () => {
 
   getConsistencyCheckDeliverables().then(list => {
     deliverables.value = (list ?? []).sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0))
+  }).catch(e => {
+    if (e?._type) ElMessage.error(e?.message ?? '数据错误')
   })
 })
 
@@ -1037,6 +1043,7 @@ async function submitRerunVersion() {
     reportCompareResult()
   } catch (e) {
     console.error('重新对比存档失败', e)
+    if (e?._type) ElMessage.error(e?.message ?? '数据错误')
   }
 }
 
@@ -1102,7 +1109,7 @@ async function onSave() {
     } catch { /* 打点失败不影响主流程 */ }
   } catch (e) {
     console.error('存储失败', e)
-    ElMessage.error('存储失败')
+    ElMessage.error(e?._type ? (e?.message ?? '数据错误') : '存储失败')
     }
   })
 }
@@ -1456,12 +1463,16 @@ async function loadHistoryVersion(rawVersion, deviceType) {
 async function onSelectDeliverable(d) {
   workingDeliverable.value = d
   closeHistoryKey.value++
-  const pageList = await getPagesByDeliverableId(String(d.id))
-  pages.value = Array.isArray(pageList)
-    ? pageList.slice().sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0))
-    : []
-  if (pages.value.length === 0) return
-  await onSelectPage(pages.value[0])
+  try {
+    const pageList = await getPagesByDeliverableId(String(d.id))
+    pages.value = Array.isArray(pageList)
+      ? pageList.slice().sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0))
+      : []
+    if (pages.value.length === 0) return
+    await onSelectPage(pages.value[0])
+  } catch (e) {
+    if (e?._type) ElMessage.error(e?.message ?? '数据错误')
+  }
 }
 
 // 统一的页面切换逻辑
@@ -1479,7 +1490,13 @@ async function onSelectPage(page) {
     savePlatform(deviceType)
     reportPlatformChange(deviceType)
   }
-  const versionResult = await getResultsByPageId(page.id, 1, 999)
+  let versionResult
+  try {
+    versionResult = await getResultsByPageId(page.id, 1, 999)
+  } catch (e) {
+    if (e?._type) ElMessage.error(e?.message ?? '数据错误')
+    return
+  }
   pageVersionList.value  = preprocessVersionList(versionResult?.list)
   const version = versionResult?.list?.[0]
   workingVersionId.value = version?.id ?? null
@@ -1600,6 +1617,7 @@ async function submitResult() {
     reportCompareResult()
   } catch (e) {
     console.error('提交结果失败', e)
+    if (e?._type) ElMessage.error(e?.message ?? '数据错误')
   }
 }
 

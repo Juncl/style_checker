@@ -164,7 +164,7 @@ async function onPageEditItem({ item, newName }) {
     emit('page-renamed', { pageId: item.id, name: newName })
     ElMessage.success('页面名称已更新')
   } catch (e) {
-    ElMessage.error(e.message || '更新失败')
+    ElMessage.error(e?._type ? (e?.message ?? '数据错误') : (e.message || '更新失败'))
   }
 }
 

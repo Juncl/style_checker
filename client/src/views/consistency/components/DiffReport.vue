@@ -440,7 +440,7 @@ async function toggleNotIssue(key) {
       activeMoreCardKey.value = null
       ElMessage.success(isMarked ? '已取消非问题' : '已标记为非问题')
     } catch (e) {
-      ElMessage.error('操作失败')
+      ElMessage.error(e?._type ? (e?.message ?? '数据错误') : '操作失败')
     }
   })
 }
