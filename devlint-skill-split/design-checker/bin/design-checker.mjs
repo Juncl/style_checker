@@ -430,12 +430,15 @@ async function main() {
     console.log(`HTML: ${r.htmlPath}`)
     console.log(`CSS（${r.cssFiles.length} 个，目录 ${r.cssDir}）:`)
     for (const f of r.cssFiles) console.log(`  ${f.file}  ← ${f.source}`)
+    console.log(`JS（${r.jsFiles.length} 个，目录 ${r.jsDir}，存档）:`)
+    for (const f of r.jsFiles.slice(0, 10)) console.log(`  ${f.file}  ← ${f.source}`)
+    if (r.jsFiles.length > 10) console.log(`  …等共 ${r.jsFiles.length} 个（完整清单见 manifest.json）`)
     console.log(`清单: ${r.manifestPath}`)
     if (!r.cssFiles.length) {
       console.log('⚠ 未采集到任何样式表（页面可能无 CSS 或样式加载失败），请先确认页面可正常访问')
     }
     if (r.failed.length) {
-      console.log(`⚠ ${r.failed.length} 个跨域样式表下载失败（该部分样式无法检查，详见 manifest.json 的 failed）:`)
+      console.log(`⚠ ${r.failed.length} 个外部资源下载失败（该部分无法检查/存档，详见 manifest.json 的 failed）:`)
       for (const f of r.failed) console.log(`  ${f.source}（${f.reason}）`)
     }
     pruneOldRuns()

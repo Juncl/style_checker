@@ -5,11 +5,12 @@
  * utils/tools.js 相关函数重写——skill 自有源码，不依赖 mcp 工程，build 不做拷贝。
  *
  * 【相对 mcp 版的精简】
- * - 去掉截图（Page.captureScreenshot）与 CDP 设备仿真（emulateDevice）——规范检查
- *   只取 HTML/CSS 文本，不需要图片；视口用 page.setViewport 控制
+ * - 去掉截图（Page.captureScreenshot）、CDP 设备仿真（emulateDevice）与视口/分辨率
+ *   设置——采集只需页面资源（HTML/CSS/JS 文件），与渲染尺寸无关
  * - 去掉设计侧 profile（getDesignProfileDir）等采集无关函数
  * - 对外仅导出 run()（collectWeb 经动态 import 惰性加载，本地文件检查模式不触发，
  *   不拉起 puppeteer-core 依赖）
+ * - 新增有头模式"采集中请勿关闭"提示条（injectCollectBanner，防用户误关窗口）
  *
  * 【保留的核心能力】（与 mcp 版逻辑等价）
  * - profile 三级回退：显式 userDataDir > 持久 profile（~/.octo-uxlint/chrome-profile，
@@ -224,13 +225,36 @@ const DEFAULT_LAUNCH_OPTIONS = {
   args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--ignore-certificate-errors'],
 }
 
-const DEFAULT_VIEWPORT = { width: 1920, height: 1080, deviceScaleFactor: 1 }
-
 /** 页面渲染等待时间(ms) */
 const DEFAULT_RENDER_WAIT = 8000
 
 /** 有头模式等待用户操作的最大时长（ms） */
 const HEADED_LOGIN_TIMEOUT = 180000
+
+/**
+ * 有头模式的页面提示条：顶部固定横幅"采集中请勿关闭"，防止用户误关浏览器窗口导致
+ * 采集失败。经 evaluateOnNewDocument 注册——每次导航（含登录跳转链的每一页）自动
+ * 重新注入。
+ * 🔴 产物纯净约定：横幅 id = '__devlint_collect_banner__'，collectFn 序列化
+ * outerHTML 前须按此 id 移除该元素（见 collectWeb.js 的 pageAssetsCollector）；
+ * 函数经序列化在页面执行，🔴 不可引用外部常量，id 字面量与此处保持一致
+ */
+function injectCollectBanner() {
+  const BANNER_ID = '__devlint_collect_banner__'
+  const insert = () => {
+    if (document.getElementById(BANNER_ID) || !document.body) return
+    const el = document.createElement('div')
+    el.id = BANNER_ID
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;box-sizing:border-box;padding:10px 16px;text-align:center;font-size:14px;font-weight:600;color:#fff;background:rgba(250,173,20,.92);pointer-events:none;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;'
+    el.textContent = '⏳ 正在采集中，请勿关闭此页面或浏览器窗口，采集完成后将自动关闭'
+    document.body.appendChild(el)
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', insert, { once: true })
+  } else {
+    insert()
+  }
+}
 
 /** 无 Chrome 时的统一报错（含 env 配置指引） */
 function requireChromePath() {
@@ -400,18 +424,32 @@ function isRedirected(originalUrl, finalUrl) {
   }
 }
 
-/** 检测当前页面是否被重定向到登录页（发生重定向即视为被拦截） */
+/** 判断当前页面是否需要用户手动操作（登录页 / 浏览器错误页 / 空白页）。
+ *  🔴 目的导向（区别于 mcp 的"URL 必须与目标一致"判定）：只要页面离开"需人工
+ *  介入"状态即视为完成——SSO 登录后无论回到目标页还是站点首页都能继续采集 */
+function needsManualAction(urlStr) {
+  if (!urlStr) return true
+  if (urlStr.startsWith('chrome-error')) return true
+  if (urlStr === 'about:blank') return true
+  return isLoginUrl(urlStr)
+}
+
+/** 检测当前页面是否被登录拦截。
+ *  🔴 目的导向收紧（区别于 mcp 的 DOM 采集）：重定向 ≠ 登录拦截——站点正常跳转
+ *  （补尾斜杠 / locale 前缀 / 302 到新 path）时最终页可直接采集，不降级有头；
+ *  只有"发生重定向且落点命中登录页特征"才视为被登录拦截 */
 async function detectLoginPage(page, originalUrl) {
   const finalUrl = page.url()
   const redirected = isRedirected(originalUrl, finalUrl)
+  const loginLike = redirected && isLoginUrl(finalUrl)
   console.error(`[detectLoginPage] originalUrl=${originalUrl}`)
   console.error(`[detectLoginPage] finalUrl=${finalUrl}`)
-  console.error(`[detectLoginPage] redirected=${redirected}`)
+  console.error(`[detectLoginPage] redirected=${redirected}, loginLike=${loginLike}`)
 
-  if (redirected) {
+  if (loginLike) {
     return {
       isLogin: true,
-      reason: `页面被重定向：${originalUrl} → ${finalUrl}`,
+      reason: `页面被重定向到登录页：${originalUrl} → ${finalUrl}`,
       finalUrl,
     }
   }
@@ -423,14 +461,14 @@ async function detectLoginPage(page, originalUrl) {
  * 有头模式采集（降级方案）：专用持久 profile 启动有头 Chrome，用户在弹出窗口中
  * 手动操作（登录、跳过证书拦截等），检测到到达目标页面后自动采集。
  * 登录态由 Chrome 原生写入持久 profile，后续无头采集自动复用。
+ * 页面顶部自动注入"采集中请勿关闭"提示条（injectCollectBanner），防用户误关窗口。
  * @param {string} url - 目标页面地址
- * @param {Object} options - 采集选项（collectFn / viewport / waitUntil / timeout / waitForRender）
+ * @param {Object} options - 采集选项（collectFn / waitUntil / timeout / waitForRender）
  * @returns {Promise<{ domData: Object|null }>}
  */
 async function runHeadedWithProfile(url, options = {}) {
   const {
     collectFn,
-    viewport,
     waitUntil,
     timeout,
     waitForRender = DEFAULT_RENDER_WAIT,
@@ -452,6 +490,8 @@ async function runHeadedWithProfile(url, options = {}) {
     const page = await browser.newPage()
     // 有头模式同样注入快照（若上次留有有效登录态，弹窗里直接是已登录状态）
     await injectAuthSnapshot(browser, url)
+    // 提示条：每次导航自动注入"采集中请勿关闭"横幅（🔴 collectFn 采集前按约定 id 移除）
+    await page.evaluateOnNewDocument(injectCollectBanner)
 
     // 导航失败不抛错（如证书拦截、超时等），让用户在窗口中手动操作
     try {
@@ -480,18 +520,19 @@ async function runHeadedWithProfile(url, options = {}) {
     }
     console.error(`[有头-URL稳定后] page.url()=${page.url()} 等待耗时=${Date.now() - waitStart}ms`)
 
-    // 当前不在目标页面（被拦截到登录页/证书页/其他）→ 等待用户手动操作
-    if (isRedirected(url, page.url())) {
-      console.error(`[有头-等待用户操作] 当前URL=${page.url()} 目标URL=${url}`)
+    // 页面仍处于需人工介入状态（登录页/证书错误页/空白页）→ 等待用户处理；
+    // 完成 = 页面离开该状态（登录后无论回到目标页还是站点首页都算，见 needsManualAction）
+    if (needsManualAction(page.url())) {
+      console.error(`[有头-等待用户操作] 当前URL=${page.url()}（登录/错误页），等待用户处理...`)
       const start = Date.now()
       while (Date.now() - start < HEADED_LOGIN_TIMEOUT) {
         await new Promise(r => setTimeout(r, 2000))
-        // 连续 3 次（每次间隔 2 秒）URL 都和目标一致，才算用户操作完成
-        if (!isRedirected(url, page.url())) {
+        // 连续 3 次（每次间隔 2 秒）确认页面已离开需人工介入状态
+        if (!needsManualAction(page.url())) {
           await new Promise(r => setTimeout(r, 2000))
-          if (!isRedirected(url, page.url())) {
+          if (!needsManualAction(page.url())) {
             await new Promise(r => setTimeout(r, 2000))
-            if (!isRedirected(url, page.url())) {
+            if (!needsManualAction(page.url())) {
               break
             }
           }
@@ -510,10 +551,6 @@ async function runHeadedWithProfile(url, options = {}) {
       await new Promise(r => setTimeout(r, waitForRender))
     }
 
-    // 设置采集视口，缓冲 3 秒让页面按新尺寸重新布局
-    const vp = { ...DEFAULT_VIEWPORT, ...viewport }
-    await page.setViewport({ width: vp.width, height: vp.height, deviceScaleFactor: vp.deviceScaleFactor || 1 })
-    await new Promise(r => setTimeout(r, 3000))
     const domData = collectFn ? await page.evaluate(collectFn) : null
 
     // 有头登录成功采集完成 → 导出快照（会话 cookie 转正），下次无头免登
@@ -539,7 +576,6 @@ async function runHeadedWithProfile(url, options = {}) {
  * @param {string} url - 目标页面地址
  * @param {Object} options
  *   - collectFn: 在页面上下文执行的采集函数（🔴 自包含，不可引用闭包变量），签名: () => Object
- *   - viewport: { width, height, deviceScaleFactor } 视口尺寸，默认 1920×1080
  *   - waitUntil: 页面加载策略，默认 domcontentloaded
  *   - timeout: 页面导航超时，默认 60000
  *   - waitForRender: 渲染等待时间(ms)，默认 8000
@@ -550,7 +586,6 @@ async function runHeadedWithProfile(url, options = {}) {
 export async function run(url, options = {}) {
   const {
     collectFn,
-    viewport,
     waitUntil,
     timeout,
     waitForRender = DEFAULT_RENDER_WAIT,
@@ -570,8 +605,6 @@ export async function run(url, options = {}) {
     const page = await browser.newPage()
     // 导航前注入登录态快照（会话 cookie 站点免重登的关键）
     await injectAuthSnapshot(browser, url)
-    const vp = { ...DEFAULT_VIEWPORT, ...viewport }
-    await page.setViewport({ width: vp.width, height: vp.height, deviceScaleFactor: vp.deviceScaleFactor || 1 })
     await page.goto(url, {
       waitUntil: waitUntil || 'domcontentloaded',
       timeout: timeout || 60000,

@@ -26,7 +26,8 @@
 检查目标为网页 URL 时，先跑 `--collect-web <url>` 采集落盘，检查范围 = 工作目录下两处：
 
 - `page.html`：JS 执行后的 DOM 快照——class、内联 style、`<style>` 块齐全，`element` 定位以它为准（无行号锚点时用 class / 结构选择器）
-- `css/*.css`：全套样式表已落盘——`<link>` 表按原文件名（重名追加序号）、内联 / JS 注入块为 `inline-style-N.css`，每个文件头部 `/* ===== 来源: ... ===== */` 标明出处；`manifest.json` 可反查 URL 与文件映射
+- `css/*.css`：全套样式表已落盘——外部表按 URL 原文件名下载原始文件（清单取自 `document.styleSheets`，覆盖 `<link>` 引入与 `@import` 链；重名追加序号）、内联 / JS 注入块为 `inline-style-N.css`，每个文件头部 `/* ===== 来源: ... ===== */` 标明出处；`manifest.json` 可反查 URL 与文件映射
+- `js/*.js`：外部脚本按原文件名下载、内联脚本 `inline-script-N.js`——仅作源码存档，规范检查不涉及 JS 逻辑，无需 Read
 
 与本地模式的差异（其余方法完全一致）：
 
