@@ -17,9 +17,10 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url))
 const DIST = join(ROOT, 'dist')
 const SKILLS = ['ui-param-diff', 'ui-pixel-diff', 'design-checker']
 
-// design-checker 为纯 md + 单脚本结构（无 bin/lib、无子 build.js），
-// 版本号由 design-checker/package.json 提供（打包时排除该文件），
-// skill 目录本身就是发布结构，直接整目录拷贝 + zip。
+// design-checker 为"指令文档 + CLI 调度"结构（bin/ + lib/ + specFiles/，无子 build.js），
+// 版本号由 design-checker/package.json 提供，skill 目录本身就是发布结构，直接整目录拷贝 + zip。
+// 网页采集通道（lib/puppeteer.js）为 skill 自有源码（参考 devlint-mcp 重写的精简版），
+// 不依赖 mcp 工程，build 无需任何引擎拷贝。
 
 function makeZip(prodName) {
   if (os.platform() === 'win32') {
@@ -41,10 +42,18 @@ function buildDesignChecker() {
   console.log(`  打包 ${prodName}`)
   rmSync(prodDir, { recursive: true, force: true })
   mkdirSync(prodDir, { recursive: true })
+  // package.json 随包分发（声明 puppeteer-core 依赖，网页模式 npm install 的锚点）；
+  // report-data/ 为运行时递交数据目录（残留的临时文件），不进产物
   cpSync(skillDir, prodDir, {
     recursive: true,
-    filter: (s) => !s.includes('.DS_Store') && s !== pkgFile,
+    filter: (s) => {
+      if (s.includes('.DS_Store')) return false
+      const rel = path.relative(skillDir, s)
+      if (rel && rel.split(path.sep)[0] === 'report-data') return false
+      return true
+    },
   })
+
   makeZip(prodName)
 }
 

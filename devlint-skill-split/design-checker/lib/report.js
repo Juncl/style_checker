@@ -279,23 +279,34 @@ _生成时间：${readableTimestamp()}_
  * 检查模式统一入口（stdin / 文件递交同构）：
  * 建 <领域key>-<时间戳>/ 工作目录 → 落盘 check JSON → 生成 md 报告（--out-dir 用户目录 > 工作目录）。
  * AI 不写任何产物文件，报告命名固定 check-<时间戳>，与递交文件名无关。
+ *
+ * --work-dir（网页模式）：--collect-web stdout 返回的「工作目录」原样透传 → 报告与
+ * 采集文件同目录；传入但目录不存在 → 报错（对齐修复模式的严格校验）。未传 → 默认新建。
  */
-export async function runCheck(data, { outDir }) {
+export async function runCheck(data, { outDir, workDir } = {}) {
   const issues = data.issues || []
 
   const ts = timestamp()
-  const workDir = join(config.REPORT_ROOT, `${safeDomain(data.specDomain)}-${ts}`)
-  mkdirSync(workDir, { recursive: true })
+  let dir
+  if (workDir) {
+    dir = resolve(workDir)
+    if (!existsSync(dir)) {
+      throw new Error(`--work-dir 目录不存在: ${workDir}（网页模式应将 --collect-web stdout 返回的「工作目录」原样透传）`)
+    }
+  } else {
+    dir = join(config.REPORT_ROOT, `${safeDomain(data.specDomain)}-${ts}`)
+  }
+  mkdirSync(dir, { recursive: true })
 
-  const jsonPath = join(workDir, `check-${ts}.json`)
+  const jsonPath = join(dir, `check-${ts}.json`)
   writeFileSync(jsonPath, JSON.stringify(data, null, 2), 'utf-8')
 
   const md = generateCheckReport(data)
-  const reportDir = outDir ? normalizeOutDir(outDir) : workDir
+  const reportDir = outDir ? normalizeOutDir(outDir) : dir
   mkdirSync(reportDir, { recursive: true })
   const reportPath = join(reportDir, `check-${ts}.md`)
   writeReportFile(reportPath, md)
-  return { reportPath, jsonPath, workDir, totalIssues: issues.length, sevCounts: countSeverity(issues) }
+  return { reportPath, jsonPath, workDir: dir, totalIssues: issues.length, sevCounts: countSeverity(issues) }
 }
 
 // ── 修复报告 ────────────────────────────────────────────

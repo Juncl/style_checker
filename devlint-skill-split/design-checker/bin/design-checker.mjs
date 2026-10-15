@@ -17,7 +17,8 @@
  *   design-checker --list-specs [--spec-server <url>]
  *   design-checker --sync-spec <领域key> [--spec-server <url>]
  *   design-checker --scan-spec <领域key>
- *   design-checker <数据文件路径> [--out-dir <绝对目录>]                   （检查递交：AI 先 Write 数据文件）
+ *   design-checker --collect-web <url>                                       （网页模式采集）
+ *   design-checker <数据文件路径> [--work-dir <采集工作目录>] [--out-dir <绝对目录>]   （检查递交：AI 先 Write 数据文件）
  *   design-checker --fix --work-dir <检查工作目录> <数据文件路径> [...]      （修复递交）
  *   （数据文件 = <skill目录>/report-data/report-data-<时间戳>.json；递交成功后自动删除；
  *    stdin heredoc 为兼容旧通道保留；报告命名固定 check-/fix-<时间戳>，与递交文件名无关）
@@ -34,6 +35,7 @@ import {
   runCheck, runFix, readStdin, parseJson, decodeTextBuffer, safeDomain, pruneOldRuns,
   normalizeOutDir, validateCheckData, validateFixData,
 } from '../lib/report.js'
+import { collectWeb } from '../lib/collectWeb.js'
 import { reportInteraction } from '../lib/track.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -283,9 +285,17 @@ function usage() {
   # 规范粗筛（纯只读；规范文件 > 3 个时，检查第 1 遍先跑此命令替代逐字通读）
   node ${join(__dirname, 'design-checker.mjs')} --scan-spec <领域key>
 
+  # 网页模式采集（检查对象是网页 URL 时先跑；仅检查，无修复）
+  #   puppeteer 拉取页面 JS 执行后 HTML + 全套 CSS 落盘（跨域表 HTTP 兜底下载），
+  #   stdout 返回工作目录 + page.html + css 文件清单 + manifest.json 路径
+  #   依赖 puppeteer-core + 本机 Chrome（未安装时 stderr 有安装指引，装好后重试）
+  node ${join(__dirname, 'design-checker.mjs')} --collect-web <url>
+
   # 检查递交（主通道：先 Write 数据文件，再传路径执行）
-  #   数据文件：<skill目录>/report-data/report-data-<时间戳 YYYYMMDDHHmmss>.json（会话唯一）
-  node ${join(__dirname, 'design-checker.mjs')} <数据文件路径> [--out-dir <绝对目录>]
+  #   数据文件：<skill目录>/report-data/report-data-<当前时间 YYYYMMDDHHmmss>.json（会话唯一）
+  #   --work-dir（网页模式）：--collect-web stdout 返回的「工作目录」原样透传，
+  #     报告与采集文件（page.html + css/）落同一目录；本地文件模式不传
+  node ${join(__dirname, 'design-checker.mjs')} <数据文件路径> [--work-dir <采集工作目录>] [--out-dir <绝对目录>]
   { "summary": "...", "sourceFile": "...", "specDomain": "<领域key>", "issues": [...] }
   → 脚本校验 → 生成 check-<时间戳>.md 报告 + JSON 存档 → 删除数据文件
   → stdout：报告路径 + JSON 存档路径 + 工作目录 + 问题统计
@@ -308,7 +318,10 @@ function usage() {
 参数:
   --out-dir <目录>    报告保存目录（🔴 仅用户指定过时由 AI 传入；必须是绝对目录；
                       ~/ 、~\\\\ 前缀由脚本兜底展开；目录不存在自动创建）
-  --work-dir <目录>   修复模式：检查工作目录（检查 stdout 已返回，原样透传）
+  --work-dir <目录>   工作目录原样透传：修复模式 = 检查 stdout 返回的「工作目录」；
+                      检查递交（网页模式）= --collect-web stdout 返回的「工作目录」
+  --collect-web <url> 网页模式采集：puppeteer 拉取页面 HTML + 全套 CSS 落盘
+                      （stdout 返回工作目录与文件清单；依赖 puppeteer-core + 本机 Chrome）
   --scan-spec <key>   规范规则粗筛：扫描 specFiles/<key>/ 输出疑似规则行清单（纯只读，用后即退）
   --list-specs        列出全部可用规范领域（服务端优先，本地兜底；纯只读）
   --sync-spec <key>   规范检查&更新（对照服务端 version，一致零写入；服务不可达用本地自带）
@@ -333,6 +346,7 @@ async function main() {
   let syncDomain = null
   let specServer = null
   let listSpecsMode = false
+  let collectWebUrl = null
   let isFix = false
   const rest = []
   for (let i = 0; i < argv.length; i++) {
@@ -368,6 +382,12 @@ async function main() {
       }
     } else if (argv[i] === '--list-specs') {
       listSpecsMode = true
+    } else if (argv[i] === '--collect-web') {
+      collectWebUrl = argv[++i]
+      if (!collectWebUrl || collectWebUrl.startsWith('-')) {
+        console.error('✗ --collect-web 需要跟一个网址参数（http:// 或 https:// 开头）')
+        process.exit(1)
+      }
     } else if (argv[i] === '--fix') {
       isFix = true
     } else {
@@ -395,6 +415,30 @@ async function main() {
   }
   if (scanDomain) {
     runScanSpec(scanDomain)
+    process.exit(0)
+  }
+
+  // 网页模式采集：puppeteer 拉取页面 HTML + 全套 CSS 落盘（工作目录与报告同一固定根，
+  // stdout 返回「工作目录」供检查递交 --work-dir 原样透传）。建目录前顺手清理过期产物
+  if (collectWebUrl) {
+    try {
+      reportInteraction({ account: '', name: 'devlint_skill_specCheckCollectWeb', extend: {} })
+    } catch {}
+    const r = await collectWeb(collectWebUrl)
+    console.log(`✓ 网页采集完成: ${collectWebUrl}`)
+    console.log(`工作目录: ${r.workDir}`)
+    console.log(`HTML: ${r.htmlPath}`)
+    console.log(`CSS（${r.cssFiles.length} 个，目录 ${r.cssDir}）:`)
+    for (const f of r.cssFiles) console.log(`  ${f.file}  ← ${f.source}`)
+    console.log(`清单: ${r.manifestPath}`)
+    if (!r.cssFiles.length) {
+      console.log('⚠ 未采集到任何样式表（页面可能无 CSS 或样式加载失败），请先确认页面可正常访问')
+    }
+    if (r.failed.length) {
+      console.log(`⚠ ${r.failed.length} 个跨域样式表下载失败（该部分样式无法检查，详见 manifest.json 的 failed）:`)
+      for (const f of r.failed) console.log(`  ${f.source}（${f.reason}）`)
+    }
+    pruneOldRuns()
     process.exit(0)
   }
 
@@ -470,7 +514,7 @@ async function main() {
           extend: {},
         })
       } catch {}
-      const r = await runCheck(data, { outDir })
+      const r = await runCheck(data, { outDir, workDir })
       console.log(`✓ 报告已生成: ${r.reportPath}`)
       console.log(`✓ 检查数据已存档: ${r.jsonPath}`)
       console.log(`工作目录: ${r.workDir}`)
