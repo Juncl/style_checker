@@ -23,17 +23,25 @@
 
 ### 网页采集产物（网页模式，--collect-web 落盘）
 
-检查目标为网页 URL 时，先跑 `--collect-web <url>` 采集落盘，检查范围 = 工作目录下两处：
+检查目标为网页 URL 时，先跑 `--collect-web <url>` 采集落盘，工作目录下三类数据源：
 
-- `page.html`：JS 执行后的 DOM 快照——class、内联 style、`<style>` 块齐全，`element` 定位以它为准（无行号锚点时用 class / 结构选择器）
-- `css/*.css`：全套样式表已落盘——外部表按 URL 原文件名下载原始文件（清单取自 `document.styleSheets`，覆盖 `<link>` 引入与 `@import` 链；重名追加序号）、内联 / JS 注入块为 `inline-style-N.css`，每个文件头部 `/* ===== 来源: ... ===== */` 标明出处；`manifest.json` 可反查 URL 与文件映射
-- `js/*.js`：外部脚本按原文件名下载、内联脚本 `inline-script-N.js`——仅作源码存档，规范检查不涉及 JS 逻辑，无需 Read
+- **`computed-styles.jsonl`（检查主数据源）**：一行一个可见元素的最终渲染值（JSON Lines，元素多时按行分批 Read）。字段：
+  - `path`：选择器链，如 `body > div#app > li.item[3]`——**同级同 tag 多于 1 个时带 `[n]` 序号**（按 DOM 位置编号，含隐藏元素占位），支撑列表项/同类一组识别；也是 `element` 定位的唯一口径
+  - `tag` / `id` / `class` / `text`（直系文本，识别元素语义）/ `inlineStyle`（内联 style 原文）
+  - `rect`：`{x, y, w, h}` 文档绝对坐标——支撑分区逐块检查（按 y 从上到下）与宽高类规范比对
+  - `computed`：getComputedStyle 真实值（字号/字重/字色/背景/圆角/边框/padding/margin/宽高/行高/阴影/透明度等）
+- `page.html`：JS 执行后的 DOM 快照——结构 + 内联 style + `<style>` 块齐全，辅助 `element` 定位
+- `css/*.css`：全套样式表——外部表按 URL 原文件名下载原始文件（清单取自 `document.styleSheets`，覆盖 `<link>` 引入与 `@import` 链）、内联 / JS 注入块为 `inline-style-N.css`，文件头部 `/* ===== 来源: ... ===== */` 标明出处——**发现违规后回查规则出处用**（定位"改哪里"）
+- `js/*.js`：外部脚本 + 内联脚本——仅作源码存档，规范检查不涉及 JS 逻辑，无需 Read
+- `manifest.json` 的 `hiddenContainers`：隐藏的顶层容器（弹窗/浮层默认 `display:none`）——对应样式标 warning"隐藏态样式无法确认"
 
-与本地模式的差异（其余方法完全一致）：
+**网页模式检查法**（与本地模式的差异核心：数据源从"源码推演"变为"真实值直接比对"）：
 
-- **无需追链外部 CSS**：CDN / 跨域表已全部落盘（Node 侧 HTTP 兜底下载），不再标"外部样式无法确认"；仅 `manifest.json` 的 `failed` 里下载失败的表对应样式标 warning（"样式表下载失败，无法确认"）
-- CSS-in-JS 注入的样式已随 `inline-style-N.css` 落盘，可正常深查（不受本地模式"JS 注入不做深查"限制）
-- `issues[].file` 写采集目录下文件的**绝对路径**（用户可打开定位）；`sourceFile` 写原网页 URL
+1. **逐元素检查（分区逐块）**：以 `computed-styles.jsonl` 为主——按 `rect.y` 从上到下扫（天然实现分区顺序：顶部导航 → 标题区 → 搜索/Tab → 内容区 → 列表项 → 底部操作栏），按 `class`/`text`/`tag` 识别元素类型，将 `computed` 值与 `--scan-spec` 候选规则直接比对，**无需推演 CSS 级联/继承/选择器匹配**。违规 → 记 issue（`current` 取 computed 值，`element` 用 `class` 或 `path`）
+2. **定位规则出处**：发现违规后，按该元素 class 回 `css/*.css`（或 `page.html` 内联 style / `inline-style-N.css`）找到产生该值的规则，`file` 写该文件绝对路径（用户可打开定位改哪里）；找不到出处（值来自框架默认/UA 样式）→ `file` 写 page.html、`suggestion` 注明"样式由框架默认样式产生，需在 css 中显式覆盖"
+3. **交叉验证一致性**：按 `class` 聚合同类元素（同 class 前缀 / 同 tag+class 组合 / 同级同 tag 序号连续的列表项），直接比对 `computed` 值是否统一——计算样式让一致性检查完全可靠
+
+其余口径：`sourceFile` 写原网页 URL；`issues[].file` 一律写采集目录下文件的**绝对路径**；CDN / 跨域表已全部落盘不标"外部样式无法确认"（仅 `manifest.json` 的 `failed` 里下载失败的表对应样式标 warning）；CSS-in-JS 注入样式已随计算样式与 `inline-style-N.css` 落盘，可正常深查。
 
 ## 检查方法：两遍法
 

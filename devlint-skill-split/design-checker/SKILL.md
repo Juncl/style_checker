@@ -53,7 +53,7 @@ description: 基于设计规范文档的前端工程 UI 规范检查与修复能
   │     ├── 【网页模式】（只检查，🔴 无修复）
   │     │    a. --collect-web <url> 采集落盘（🔴 仅此环节可采集：主线步骤 1/2 已完成，
   │     │       且只采集用户要检查的那个 URL；禁止用其他工具采集）
-  │     │       → stdout 返回「工作目录」+ page.html + css/js 文件清单
+  │     │       → stdout 返回「工作目录」+ page.html + 计算样式清单 + css/js 文件清单
   │     │       → 有"跨域样式表下载失败"提示时读 manifest.json 的 failed 确认影响面
   │     │       （登录处理为通道自动闭环：无头检测到登录页/导航失败 → 自动弹出有头
   │     │         Chrome 窗口（同一持久 profile，页面顶部有"采集中请勿关闭"提示条），
@@ -61,8 +61,11 @@ description: 基于设计规范文档的前端工程 UI 规范检查与修复能
   │     │         登录一次即沉淀到本地，后续采集免登。
   │     │         "等待用户操作超时"报错 → 让用户重新发起检查。
   │     │         ⚠ bash 调用超时设 ≥ 5 分钟，避免有头登录等待被掐断）
-  │     │    b. Read 工作目录下 page.html + css/*.css 为检查范围（js/ 仅作源码存档，
-  │     │       规范检查不涉及 JS 逻辑，不必 Read）
+  │     │    b. Read 工作目录下三处数据源：
+  │     │       · computed-styles.jsonl（逐元素最终渲染值，检查主数据源，分批 Read）
+  │     │       · page.html（结构 + 内联 style，element 定位辅助）
+  │     │       · css/*.css（发现违规后回查规则出处）
+  │     │       （js/ 仅作源码存档，规范检查不涉及 JS 逻辑，不必 Read）
   │     │       （方法论见 check-method.md「网页采集产物」节；CDN/跨域 CSS 已全部落盘，
   │     │         无需追链、不标"外部样式无法确认"，仅下载失败的表标 warning）
   │     │    c. Read check-method.md → 规范一律先 --scan-spec 粗筛拿候选行

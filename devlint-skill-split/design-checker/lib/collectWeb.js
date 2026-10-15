@@ -2,18 +2,23 @@
  * 网页模式采集模块（--collect-web）
  *
  * 【职责】
- * puppeteer 打开目标网页，拉取 JS 执行后的 HTML + 全套 CSS + JS 文件，按原文件形态
- * 落盘到报告固定根下的工作目录（web-<时间戳>/），作为网页模式的检查对象与存档。
- * 不做视口/分辨率设置——采集只需页面资源，与渲染尺寸无关。
+ * puppeteer 打开目标网页，拉取 JS 执行后的 HTML + 逐元素计算样式清单 + 全套 CSS/JS
+ * 原始文件，落盘到报告固定根下的工作目录（web-<时间戳>/），作为网页模式的检查对象
+ * 与存档。不做视口/分辨率设置——采集只需页面资源，与渲染尺寸无关。
  *
  * 【产物结构】
  * <REPORT_ROOT>/web-<时间戳>/
- *   page.html      ← JS 执行后的 DOM 快照（class、内联 style、<style>/<script> 块齐全）
- *   css/*.css      ← 外部表按 URL 原文件名下载原始文件（清单取自 document.styleSheets，
- *                     天然覆盖 <link> 引入与 @import 链；重名追加序号）、内联 <style> 块
- *                     inline-style-N.css；每个文件头部注释标明来源
- *   js/*.js        ← 外部脚本按 URL 原文件名下载、内联脚本 inline-script-N.js（存档用）
- *   manifest.json  ← url / finalUrl / title / 采集时间 / 文件清单 / 下载失败清单
+ *   page.html            ← JS 执行后的 DOM 快照（class、内联 style、<style>/<script> 块齐全）
+ *   computed-styles.jsonl ← 计算样式清单（一行一个可见元素：path[带同级序号]/class/text/
+ *                           inlineStyle/rect[文档坐标]/getComputedStyle 最终渲染值）——
+ *                           检查主数据源，直接比对真实值，无需推演 CSS 级联/继承/选择器
+ *                           匹配；元素上限 5000（超出截断）；隐藏的顶层容器（弹窗/浮层）
+ *                           记入 manifest.json 的 hiddenContainers
+ *   css/*.css            ← 外部表按 URL 原文件名下载原始文件（清单取自 document.styleSheets，
+ *                           天然覆盖 <link> 引入与 @import 链；重名追加序号）、内联 <style> 块
+ *                           inline-style-N.css——规则出处定位用；每个文件头部注释标明来源
+ *   js/*.js              ← 外部脚本按 URL 原文件名下载、内联脚本 inline-script-N.js（存档用）
+ *   manifest.json        ← url / finalUrl / title / 采集时间 / 文件清单 / 下载失败清单
  *
  * 【引擎与依赖】
  * puppeteer 通道为 skill 自有源码 lib/puppeteer.js（参考 devlint-mcp 的
@@ -29,7 +34,10 @@ import { timestamp, readableTimestamp } from './report.js'
 
 /**
  * 页面上下文采集函数（🔴 自包含——page.evaluate 序列化后在浏览器执行，不可引用闭包变量）：
- * JS 执行后的完整 HTML + 外部资源 URL 清单（CSS/JS，由 Node 侧统一下载原始文件）+ 内联块原文。
+ * 1. JS 执行后的完整 HTML（page.html）
+ * 2. 外部资源 URL 清单（CSS/JS，由 Node 侧统一下载原始文件）+ 内联块原文
+ * 3. 计算样式清单（computed-styles.jsonl）——遍历全部可见元素的最终渲染值，
+ *    检查时直接比对真实值，无需推演 CSS 级联/继承/选择器匹配
  */
 async function pageAssetsCollector() {
   // 移除有头模式注入的"采集中"提示条（若存在），避免污染 page.html 产物
@@ -80,12 +88,94 @@ async function pageAssetsCollector() {
     }
   }
 
+  // ── 计算样式清单：全部可见元素的最终渲染值（规范检查的核心数据源） ──
+  // · path 带同级序号（同级同 tag 多于 1 个时标 [n]，按 DOM 位置编号，含隐藏元素占位）
+  //   ——吸收树结构的"兄弟关系"维度，支撑列表项/同类一组识别
+  // · rect 用文档绝对坐标——吸收树结构缺失的"空间位置"维度，支撑分区逐块检查
+  // · display:none / visibility:hidden 的元素不进清单，其顶层容器记入 hiddenContainers
+  //   （弹窗/浮层默认隐藏，检查时对应样式标 warning）；子树不深入
+  // · 属性精选检查相关维度；元素上限 5000 防巨型页面产物爆炸（超出截断，stdout 提示）
+  const STYLE_PROPS = [
+    'display', 'fontSize', 'fontWeight', 'fontFamily', 'lineHeight', 'letterSpacing',
+    'color', 'textAlign', 'backgroundColor', 'backgroundImage',
+    'width', 'height', 'padding', 'margin',
+    'borderWidth', 'borderStyle', 'borderColor', 'borderRadius',
+    'boxShadow', 'opacity',
+  ]
+  const MAX_ELEMENTS = 5000
+  const MAX_HIDDEN_CONTAINERS = 500
+  let computedTruncated = false
+  const computedStyles = []
+  const hiddenContainers = []
+  const walk = (el, parentPath, siblingIndex) => {
+    if (computedStyles.length >= MAX_ELEMENTS) {
+      computedTruncated = true
+      return
+    }
+    const cs = getComputedStyle(el)
+    const tag = el.tagName.toLowerCase()
+    let seg = tag + (el.id ? '#' + el.id : '')
+    if (siblingIndex > 0) seg += `[${siblingIndex}]`
+    const path = parentPath ? `${parentPath} > ${seg}` : seg
+    const cls = el.getAttribute('class')
+
+    // 隐藏元素：仅记顶层容器（子树不深入），不进样式清单
+    if (cs.display === 'none' || cs.visibility === 'hidden') {
+      if (hiddenContainers.length < MAX_HIDDEN_CONTAINERS) {
+        const hidden = { path, tag }
+        if (el.id) hidden.id = el.id
+        if (cls && cls.trim()) hidden.class = cls.trim()
+        hiddenContainers.push(hidden)
+      }
+      return
+    }
+    const viewportRect = el.getBoundingClientRect()
+    if (el !== document.body && (viewportRect.width <= 0 || viewportRect.height <= 0)) return
+
+    const item = { path, tag }
+    if (el.id) item.id = el.id
+    if (cls && cls.trim()) item.class = cls.trim()
+    const directText = Array.from(el.childNodes)
+      .filter(n => n.nodeType === Node.TEXT_NODE)
+      .map(n => n.textContent.trim())
+      .filter(Boolean)
+      .join(' ')
+    if (directText) item.text = directText.slice(0, 50)
+    const inlineStyle = el.getAttribute('style')
+    if (inlineStyle && inlineStyle.trim()) item.inlineStyle = inlineStyle.trim()
+    item.rect = {
+      x: Math.round(viewportRect.x + window.scrollX),
+      y: Math.round(viewportRect.y + window.scrollY),
+      w: Math.round(viewportRect.width),
+      h: Math.round(viewportRect.height),
+    }
+    const computed = {}
+    for (const p of STYLE_PROPS) computed[p] = cs[p]
+    item.computed = computed
+    computedStyles.push(item)
+
+    // 递归子级：同级同 tag 多于 1 个时带序号（统计含隐藏元素，序号即 DOM 位置）
+    const children = Array.from(el.children)
+    const tagTotal = {}
+    for (const c of children) tagTotal[c.tagName] = (tagTotal[c.tagName] || 0) + 1
+    const tagSeen = {}
+    for (const child of children) {
+      const t = child.tagName
+      tagSeen[t] = (tagSeen[t] || 0) + 1
+      walk(child, path, tagTotal[t] > 1 ? tagSeen[t] : 0)
+    }
+  }
+  walk(document.body, '', 0)
+
   return {
     html: '<!DOCTYPE html>\n' + document.documentElement.outerHTML,
     cssHrefs,
     inlineStyles,
     externalScripts,
     inlineScripts,
+    computedStyles,
+    computedTruncated,
+    hiddenContainers,
     finalUrl: location.href,
     title: document.title,
   }
@@ -144,7 +234,8 @@ async function fetchText(href, pageUrl) {
  * 网页模式采集入口（--collect-web）
  *
  * @param {string} url - 目标网页地址（http/https 完整 URL）
- * @returns {Promise<{workDir, htmlPath, cssDir, jsDir, manifestPath, cssFiles, jsFiles, failed}>}
+ * @returns {Promise<{workDir, htmlPath, computedStylesPath, cssDir, jsDir, manifestPath,
+ *                    elementCount, computedTruncated, cssFiles, jsFiles, failed}>}
  *   采集落盘到 <REPORT_ROOT>/web-<时间戳>/（与报告同一固定根，7 天自动过期）；
  *   外部资源下载失败不中断整体采集，记入 failed 由调用方提示
  */
@@ -169,6 +260,14 @@ export async function collectWeb(url) {
 
   const htmlPath = join(workDir, 'page.html')
   writeFileSync(htmlPath, domData.html, 'utf-8')
+
+  // 计算样式清单：JSON Lines（一行一个元素，便于 AI 分批 Read）
+  const computedStylesPath = join(workDir, 'computed-styles.jsonl')
+  writeFileSync(
+    computedStylesPath,
+    domData.computedStyles.map(e => JSON.stringify(e)).join('\n') + '\n',
+    'utf-8',
+  )
 
   const cssFiles = []
   const jsFiles = []
@@ -221,11 +320,23 @@ export async function collectWeb(url) {
     finalUrl: domData.finalUrl,
     title: domData.title,
     collectedAt: readableTimestamp(),
-    files: { html: 'page.html', css: cssFiles, js: jsFiles },
+    files: {
+      html: 'page.html',
+      computedStyles: { file: 'computed-styles.jsonl', elementCount: domData.computedStyles.length, truncated: domData.computedTruncated },
+      css: cssFiles,
+      js: jsFiles,
+    },
+    // 隐藏的顶层容器（弹窗/浮层等 display:none / visibility:hidden）——检查时对应样式标 warning
+    hiddenContainers: domData.hiddenContainers,
     failed,
   }
   const manifestPath = join(workDir, 'manifest.json')
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8')
 
-  return { workDir, htmlPath, cssDir, jsDir, manifestPath, cssFiles, jsFiles, failed }
+  return {
+    workDir, htmlPath, computedStylesPath, cssDir, jsDir, manifestPath,
+    elementCount: domData.computedStyles.length,
+    computedTruncated: domData.computedTruncated,
+    cssFiles, jsFiles, failed,
+  }
 }

@@ -428,7 +428,8 @@ async function main() {
     console.log(`✓ 网页采集完成: ${collectWebUrl}`)
     console.log(`工作目录: ${r.workDir}`)
     console.log(`HTML: ${r.htmlPath}`)
-    console.log(`CSS（${r.cssFiles.length} 个，目录 ${r.cssDir}）:`)
+    console.log(`计算样式: ${r.computedStylesPath}（${r.elementCount} 个元素${r.computedTruncated ? '，超 5000 已截断' : ''}）`)
+    console.log(`CSS（${r.cssFiles.length} 个，目录 ${r.cssDir}，规则出处定位用）:`)
     for (const f of r.cssFiles) console.log(`  ${f.file}  ← ${f.source}`)
     console.log(`JS（${r.jsFiles.length} 个，目录 ${r.jsDir}，存档）:`)
     for (const f of r.jsFiles.slice(0, 10)) console.log(`  ${f.file}  ← ${f.source}`)
@@ -436,6 +437,9 @@ async function main() {
     console.log(`清单: ${r.manifestPath}`)
     if (!r.cssFiles.length) {
       console.log('⚠ 未采集到任何样式表（页面可能无 CSS 或样式加载失败），请先确认页面可正常访问')
+    }
+    if (!r.elementCount) {
+      console.log('⚠ 计算样式清单为空（未采集到任何可见元素），页面可能渲染失败，请先在浏览器确认页面可正常访问')
     }
     if (r.failed.length) {
       console.log(`⚠ ${r.failed.length} 个外部资源下载失败（该部分无法检查/存档，详见 manifest.json 的 failed）:`)
