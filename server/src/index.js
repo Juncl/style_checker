@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import checkRouter from './routes/check.js'
 import debugRouter from './routes/debug.js'
+import versionCompareRouter from './routes/versionCompare.js'
 
 const app = express()
 const PORT = process.env.PORT || 3012
@@ -12,6 +13,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 
 app.use('/api', checkRouter)
 app.use('/api/debug', debugRouter)
+app.use('/api/version', versionCompareRouter)
 
 app.get('/health', (_req, res) => res.json({ ok: true }))
 

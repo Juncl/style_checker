@@ -1,0 +1,10 @@
+{
+  "name": "arkui-version-diff",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "ArkUI Version Diff Skill — 鸿蒙 ArkUI 版本间 UI 对比的命令行工具（自包含，零 npm 依赖）",
+  "bin": {
+    "arkui-version-diff": "bin/arkui-version-diff.js"
+  },
+  "private": true
+}

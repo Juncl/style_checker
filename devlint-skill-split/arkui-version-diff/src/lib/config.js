@@ -1,0 +1,27 @@
+/**
+ * octo-uxlint-mcp 配置文件
+ */
+
+const CHECK_ENV = 'outer';
+// const CHECK_ENV = 'inner_beta';
+// const CHECK_ENV = 'inner_pro';
+
+const CHECK_URL = {
+  outer: 'http://localhost:3012/api',
+  inner_beta: 'https://octo-beta.hdesign.huawei.com/devlint/api', // UI一致性检查的接口
+  inner_pro: 'https://octo.hdesign.huawei.com/devlint/api'
+}
+const TRACK_URL = {
+  outer: 'http://localhost:3001/report/interaction',  // 打点服务
+  inner_beta: 'https://beta.ucd.huawei.com/record/logger/interaction',
+  inner_pro: 'https://ucd.huawei.com/record/logger/interaction'
+}
+
+export const config = {
+  CHECK_SERVER_URL: CHECK_URL[CHECK_ENV],
+  TRACK_URL: TRACK_URL[CHECK_ENV],
+  DIR_NAME: '.octo-uxlint',
+  // MCP 和 skill 的使用指南链接
+  MCP_GUIDE_URL: 'https://wiki.huawei.com/wiki/WIKI2026082612457583',
+  SKILL_GUIDE_URL: 'https://wiki.huawei.com/wiki/WIKI2026082612468609',
+}

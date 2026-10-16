@@ -15,7 +15,7 @@ import { fileURLToPath } from 'url'
 const { join } = path
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
 const DIST = join(ROOT, 'dist')
-const SKILLS = ['ui-param-diff', 'ui-pixel-diff', 'design-checker']
+const SKILLS = ['ui-param-diff', 'ui-pixel-diff', 'design-checker', 'arkui-version-diff']
 
 // design-checker 为"指令文档 + CLI 调度"结构（bin/ + lib/ + specFiles/，无子 build.js），
 // 版本号由 design-checker/package.json 提供，skill 目录本身就是发布结构，直接整目录拷贝 + zip。
@@ -59,7 +59,7 @@ function buildDesignChecker() {
 
 console.log('════════════════════════════════════════')
 console.log('  DevLint Skill Split 统一打包')
-console.log('  一次打出 3 个 skill 包')
+console.log(`  一次打出 ${SKILLS.length} 个 skill 包`)
 console.log('════════════════════════════════════════\n')
 
 for (const name of SKILLS) {
