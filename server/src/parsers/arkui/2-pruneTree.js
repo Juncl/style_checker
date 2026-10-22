@@ -16,6 +16,11 @@
  *       极小节点（w/h ≤ 4vp）/ 全屏包裹层（normRect.w/h ≥ 0.999）
  *
  * 注意：root 节点本身永远不会被 unwrap（它作为树根容器存在）。
+ *
+ * unwrap 带 zIndex 继承：消解 TitleBar 等结构壳时，把壳的显式非零 zIndex
+ * （如 TitleBar 的 zIndex=2）以 _inheritedZIndex 传递给提升的子孙，供 step3
+ * 遮挡剪枝（traverseAndPrune）做浮层豁免——否则壳消解后浮层层级信息丢失，
+ * 伪兄弟会被内容根子树的全屏节点误杀（vmall case：标题栏"推荐"被 banner 误杀）。
  */
 
 import { filterSCBSystemLayer } from '../../utils/filterSCBSystemLayer.js'
@@ -38,6 +43,8 @@ export function pruneArkuiTree(root, canvasW, canvasH) {
   if (!root) return root
   hardPrune(root, canvasW, canvasH)
   root = filterSCBSystemLayer(root)
+  // TabBar 阴影转移须在 softPrune 之前：承载投影的透明装饰叶子会被 softPrune 删除
+  transferTabBarShadow(root)
   softPrune(root, canvasW, canvasH)
   return root
 }
@@ -111,11 +118,69 @@ function softPrune(node, canvasW, canvasH) {
     softPrune(node.children[i], canvasW, canvasH)
     const child = node.children[i]
     if (shouldUnwrap(child, canvasW, canvasH)) {
+      // zIndex 继承：壳（如 TitleBar 的 zIndex=2）消解时，把显式非零 zIndex
+      // 传递给提升的子孙，供 step3 遮挡剪枝做浮层豁免
+      const z = explicitZIndexOf(child)
+      if (z > 0) inheritZIndexDown(child.children, z)
       node.children.splice(i, 1, ...child.children)
       continue   // 不递增 i：新顶替上来的孙子可能也是 unwrap 候选
     }
     i++
   }
+}
+
+// 节点显式 zIndex（无值 / 0 视为默认层）
+function explicitZIndexOf(node) {
+  const z = node?._attrs?.zIndex
+  if (z === undefined || z === null || z === '') return 0
+  const n = parseFloat(z)
+  return Number.isNaN(n) ? 0 : n
+}
+
+// 递归给子孙挂 _inheritedZIndex（取 max：嵌套壳多次 unwrap 时保留最高层级）
+function inheritZIndexDown(children, z) {
+  for (const c of children || []) {
+    if ((c._inheritedZIndex ?? 0) < z) c._inheritedZIndex = z
+    inheritZIndexDown(c.children, z)
+  }
+}
+
+// TabBar 阴影转移：TabBar 的投影视觉常由一个与 TabBar 同 rect 的透明
+// layout 叶子（无子、无背景、仅带阴影的装饰层，vmall 26.8 首页 Stack[52]）
+// 承载。softPrune 会把该叶子当无子透明壳删除，阴影随之丢失——在删除前
+// 把阴影转移给 rect 近似全等且无自身阴影的 TabBar。全树预扫描，与层级无关。
+function transferTabBarShadow(root) {
+  const tabbars = []
+  ;(function collect(n) {
+    if (!n || typeof n !== 'object') return
+    if (String(n.name || '').toLowerCase() === 'tabbar' && !n.style?.shadow) tabbars.push(n)
+    ;(n.children || []).forEach(collect)
+  })(root)
+  if (!tabbars.length) return
+
+  ;(function scan(n) {
+    if (!n || typeof n !== 'object') return
+    const isShadowLeaf = (n.children || []).length === 0
+      && SELF_SKIP_LAYOUT_TYPES.has(String(n.name || '').toLowerCase())
+      && !!n.style?.shadow
+      && !n.style?.backgroundColor
+    if (isShadowLeaf) {
+      for (const tb of tabbars) {
+        if (isRectNearlyEqual(n.rect, tb.rect)) {
+          tb.style.shadow = n.style.shadow
+          break
+        }
+      }
+    }
+    ;(n.children || []).forEach(scan)
+  })(root)
+}
+
+// rect 近似全等（vp，容差 0.5：Inspector 导出精度抖动）
+function isRectNearlyEqual(a, b, tol = 0.5) {
+  return !!(a && b)
+    && Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) <= tol
+    && Math.abs(a.w - b.w) <= tol && Math.abs(a.h - b.h) <= tol
 }
 
 function shouldUnwrap(node, canvasW, canvasH) {

@@ -1,9 +1,9 @@
 /**
  * ArkUI 解析流水线编排：
  *   step1 buildArkuiTree      原始 $children 树 → UnifiedNode 树
- *   step2 pruneArkuiTree      硬剪枝 + 软剪枝
+ *   step2 pruneArkuiTree      硬剪枝 + 软剪枝（unwrap 时继承壳的显式 zIndex）
  *   step2.5 normalizeTree     消除"父子尺寸完全一致 + 无装饰"的冗余包装
- *   step3 annotateArkuiTree   像素 / OCR / 后项杀前项 标注 + 剔除
+ *   step3 annotateArkuiTree   后项杀前项（含 zIndex 浮层豁免）+ 像素 / OCR 标注 + 不可见 unwrap
  *   step4 flattenArkuiTree    树 → 扁平 UnifiedNode[]
  *
  * 入口：parseArkui(arkuiJson, { imageBuffer }) → 直接对接 match 阶段

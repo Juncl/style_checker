@@ -64,6 +64,24 @@ function deepCanOcclude(blocker, targetRect) {
   return false
 }
 
+// 节点有效 zIndex：显式值与 unwrap 继承值（_inheritedZIndex）取大（无值 / 0 视为默认层）
+function getNodeZIndex(node) {
+  const z = node?._attrs?.zIndex
+  const explicit = (z === undefined || z === null || z === '') ? 0
+    : (Number.isNaN(parseFloat(z)) ? 0 : parseFloat(z))
+  return Math.max(explicit, node?._inheritedZIndex ?? 0)
+}
+
+// blocker 子树的 zIndex 上限（深层子孙可能显式设置更高层级）
+function subtreeMaxZIndex(node) {
+  let max = getNodeZIndex(node)
+  for (const c of (node.children || [])) {
+    const m = subtreeMaxZIndex(c)
+    if (m > max) max = m
+  }
+  return max
+}
+
 function traverseAndPrune(node, type) {
   if (!node || !Array.isArray(node.children) || node.children.length === 0) return
   for (const child of node.children) {
@@ -71,12 +89,16 @@ function traverseAndPrune(node, type) {
   }
   node.children = node.children.filter((current, index, arr) => {
     if (!current?.rect || current.rect.w <= 0 || current.rect.h <= 0) return true
+    const currentZ = getNodeZIndex(current)
     if (type === 'forward') {
       for (let i = 0; i < index; i++) {
+        // zIndex 豁免：blocker 层级低于 current 时不可能遮挡
+        if (currentZ > 0 && currentZ > subtreeMaxZIndex(arr[i])) continue
         if (deepCanOcclude(arr[i], current.rect)) return false
       }
     } else {
       for (let i = index + 1; i < arr.length; i++) {
+        if (currentZ > 0 && currentZ > subtreeMaxZIndex(arr[i])) continue
         if (deepCanOcclude(arr[i], current.rect)) return false
       }
     }
@@ -88,6 +110,12 @@ function traverseAndPrune(node, type) {
  * 按渲染顺序在每一层兄弟节点之间判断遮挡，直接剪枝，不挂标注。
  * type='reverse'（默认）: 后项杀前项（ArkUI）
  * type='forward': 前项杀后项（设计侧）
+ *
+ * zIndex 豁免：ArkUI/HDS 框架挂载浮层（TitleBar/ToolBar 等）时会设置显式非零
+ * zIndex（如 TitleBar=2），代表其浮在默认层（zIndex=0）之上。step2 软剪枝 unwrap
+ * 结构壳时已把该值以 _inheritedZIndex 传递给提升的子孙。若 target 的有效 zIndex
+ * （显式值与继承值取大）高于 blocker 子树的 zIndex 上限，则 blocker 不可能遮挡
+ * target，跳过判定——避免浮层被内容根子树的全屏节点误杀。
  */
 function pruneOccludedSiblings(root, type = 'reverse') {
   if (!root) return
@@ -139,7 +167,7 @@ export async function annotateArkuiTree(root, opts = {}) {
   if (!root) return { root, stats: emptyStats() }
   const { imageBuffer, canvasWidthVp, canvasHeightVp } = opts
 
-  // 1. 后项杀前项：先于像素/OCR，直接剪掉被遮挡节点
+  // 1. 后项杀前项：先于像素/OCR，直接剪掉被遮挡节点（含 zIndex 浮层豁免）
   pruneOccludedSiblings(root)
 
   // 2 & 3. 像素 + OCR 标注（基于剪枝后的树收 nodeList）

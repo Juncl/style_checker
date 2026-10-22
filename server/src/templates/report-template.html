@@ -827,7 +827,9 @@ body {
     if (isEmptyVal(val)) return '<span class="diff-cmp-none">无</span>';
     var text = String(val);
     var html = '';
-    if (isColorProp(prop)) {
+    // shadow 为结构化字符串（"外阴影 #33000000 12px X:0, Y:4"），保留完整文本，
+    // 仅提取内嵌 hex 追加色块（与 client DiffReport 的 displayValue 行为对齐）
+    if (isColorProp(prop) || prop === 'shadow') {
       var hex = extractHex(text);
       if (hex) {
         html += '<span class="color-dot" style="background:' + colorToCss(hex) + '" title="' + esc(hex) + '"></span>';
@@ -1314,6 +1316,8 @@ body {
   function formatColorVal(v) {
     if (!v) return '';
     var s = String(v);
+    // 渐变填充（linear-gradient/radial-gradient）：保留完整结构文本，不截断为单色
+    if (s.indexOf('gradient(') >= 0) return s;
     var hex = (s.match(/#[0-9A-Fa-f]{6,8}/) || [''])[0];
     if (!hex) return s;
     return hex;
@@ -1337,13 +1341,13 @@ body {
     if (!style) return rows;
     if (style.fontSize != null) rows.push({ label: '字号', val: style.fontSize });
     if (style.fontWeight != null) rows.push({ label: '字重', val: style.fontWeight });
-    if (style.fontColor) rows.push({ label: '颜色', val: formatColorVal(style.fontColor), color: style.fontColor });
+    if (style.fontColor) rows.push({ label: '颜色', val: formatColorVal(style.fontColor), color: extractHex(style.fontColor) });
     if (style.fontFamily) rows.push({ label: '字体', val: style.fontFamily });
-    if (style.backgroundColor) rows.push({ label: '填充', val: formatColorVal(style.backgroundColor), color: style.backgroundColor });
+    if (style.backgroundColor) rows.push({ label: '填充', val: formatColorVal(style.backgroundColor), color: extractHex(style.backgroundColor) });
     if (style.borderRadius) rows.push({ label: '圆角', val: formatBorderRadius(style.borderRadius) });
     if (style.border && style.border.width != null) rows.push({ label: '描边宽度', val: style.border.width });
-    if (style.border && style.border.color) rows.push({ label: '描边颜色', val: formatColorVal(style.border.color), color: style.border.color });
-    if (style.shadow) rows.push({ label: '阴影', val: formatColorVal(style.shadow), color: style.shadow });
+    if (style.border && style.border.color) rows.push({ label: '描边颜色', val: formatColorVal(style.border.color), color: extractHex(style.border.color) });
+    if (style.shadow) rows.push({ label: '阴影', val: String(style.shadow), color: extractHex(style.shadow) });
     if (style.blur != null) rows.push({ label: '模糊', val: style.blur });
     if (style.opacity != null && style.opacity !== 1) rows.push({ label: '不透明度', val: style.opacity });
     if (style.textAlign) rows.push({ label: '对齐', val: style.textAlign });
