@@ -190,7 +190,7 @@ VLM 从截图中无法读取设计工具内的精确像素值（截图已压缩/
 - 宁可写"明显偏蓝""比正文大约大一级"，也不写看似精确实则编造的假数字。
 
 ═══════════════════════════════════════
-【★ 输出格式：简短总结 + 差异 JSON（用于生成 Markdown 报告）】
+【★ 输出格式：简短总结 + 差异 JSON（用于生成报告）】
 
 你的输出分两部分：
 
@@ -202,7 +202,7 @@ VLM 从截图中无法读取设计工具内的精确像素值（截图已压缩/
 
 ---
 
-**第 2 部分：差异点 JSON**（用于生成 Markdown 差异报告，程序会解析此 JSON）
+**第 2 部分：差异点 JSON**（用于生成报告，程序会解析此 JSON）
 
 在 Markdown 中输出一个 JSON 代码块，结构如下（字段名固定，不可增减）：
 
@@ -214,51 +214,57 @@ VLM 从截图中无法读取设计工具内的精确像素值（截图已压缩/
   "diffs": [
     {
       "severity": "error",
-      "element": "标题『会员中心』",
-      "property": "字号",
+      "textContent": "会员中心",
+      "arkuiName": "Text",
+      "property": "fontSize",
       "designValue": "约 18px",
       "arkuiValue": "约 14px",
-      "suggestion": "改为约 18px"
+      "confidence": "high"
     },
     {
       "severity": "warning",
-      "element": "卡片『内容块』",
-      "property": "圆角",
+      "textContent": "内容块",
+      "arkuiName": "Column",
+      "property": "borderRadius",
       "designValue": "约 8px",
       "arkuiValue": "约 0px",
-      "suggestion": "圆角改为约 8px"
+      "confidence": "medium"
     },
     {
       "severity": "maybe_high",
-      "element": "按钮『登录』",
-      "property": "填充",
+      "textContent": "登录",
+      "arkuiName": "Button",
+      "property": "backgroundColor",
       "designValue": "约 #0067D1",
       "arkuiValue": "约 #1A73E8",
-      "suggestion": "确认底色是否应为约 #0067D1"
+      "confidence": "low"
     },
     {
       "severity": "maybe_low",
-      "element": "图标『设置』",
-      "property": "尺寸",
+      "textContent": "",
+      "arkuiName": "Image",
+      "property": "size",
       "designValue": "约 20px",
       "arkuiValue": "约 18px",
-      "suggestion": "确认图标尺寸是否偏小"
+      "confidence": "low"
     },
     {
       "severity": "missing",
-      "element": "图标『搜索』",
-      "property": "缺失",
+      "textContent": "",
+      "arkuiName": "",
+      "property": "missing",
       "designValue": "设计稿右上角有搜索图标",
       "arkuiValue": "—",
-      "suggestion": "补上搜索图标"
+      "confidence": "high"
     },
     {
       "severity": "extra",
-      "element": "横幅『广告』",
-      "property": "多余",
+      "textContent": "",
+      "arkuiName": "Image",
+      "property": "extra",
       "designValue": "—",
       "arkuiValue": "实现多了一块广告横幅",
-      "suggestion": "去掉广告横幅"
+      "confidence": "high"
     }
   ]
 }
@@ -269,12 +275,13 @@ VLM 从截图中无法读取设计工具内的精确像素值（截图已压缩/
 1. 先输出简短文字总结，再输出 JSON 代码块，两部分都要有。
 2. JSON 必须放在 \`\`\`json 代码块中，字段名固定，不可增减或改名。
 3. \`severity\` 只能是：\`error\`（明显差异）、\`warning\`（轻微差异）、\`maybe_high\`（可能·大）、\`maybe_low\`（可能·小）、\`missing\`（缺失）、\`extra\`（多余）。
-4. \`property\` 只能是：字号、字重、字色、填充、圆角、描边颜色、描边宽度、不透明度、模糊、阴影、内边距、间距、尺寸、位置、渐变方向、边框样式、文字溢出、图片裁切、层级、缺失、多余。
-5. 同一元素多属性差异**分别成条**（property 不同即独立一条），不要合并。
-6. 数值按【数值估读策略】填写，不确定的加"约"前缀，禁止编造看似精确的假数字。
-7. \`suggestion\` 只给目标值或动作（如"改为约 18px""加约 12px 上间距"），不写分析原因。
-8. \`element\` 中元素文字用『』括起，方便定位。无文字的元素用描述性名称（如 卡片『内容块』、图标『搜索』）。
-9. 动态数据差异（文字内容、图片内容、列表条数不同）一律不报。
-10. 填充/圆角/描边的豁免规则仍然生效（见上方对应章节）。
-11. 拿不准算不算差异时，按可能性大小报 \`maybe_high\`（可能·大）或 \`maybe_low\`（可能·小），不要漏报。
-12. 无差异时，diffs 为空数组 \`[]\`，文字总结写"视觉上未发现明显还原偏差，还原度良好"。`
+4. \`property\` 只能是以下英文键名之一：\`fontSize\`（字号）、\`fontWeight\`（字重）、\`fontColor\`（字色）、\`backgroundColor\`（填充）、\`borderRadius\`（圆角）、\`borderColor\`（描边颜色）、\`borderWidth\`（描边宽度）、\`opacity\`（不透明度）、\`backdropBlur\`（模糊）、\`shadow\`（阴影）、\`padding\`（内边距）、\`itemSpacing\`（间距）、\`size\`（尺寸）、\`position\`（位置）、\`missing\`（缺失）、\`extra\`（多余）、\`other\`（其他）。
+5. \`textContent\`：文本节点填文字内容（如"会员中心"），非文本节点填描述性名称（如"内容块""搜索图标"），缺失/多余节点可填空字符串。
+6. \`arkuiName\`：开发侧组件类型（如 Text、Button、Image、Column、Row 等），无法判断时填空字符串。
+7. \`confidence\`：匹配置信度，\`high\`（高置信，内容相同位置吻合）、\`medium\`（中置信，位置拓扑匹配）、\`low\`（低置信，兜底猜测）。
+8. 同一元素多属性差异**分别成条**（property 不同即独立一条），不要合并。
+9. 数值按【数值估读策略】填写，不确定的加"约"前缀，禁止编造看似精确的假数字。
+10. 动态数据差异（文字内容、图片内容、列表条数不同）一律不报。
+11. 填充/圆角/描边的豁免规则仍然生效（见上方对应章节）。
+12. 拿不准算不算差异时，按可能性大小报 \`maybe_high\`（可能·大）或 \`maybe_low\`（可能·小），不要漏报。
+13. 无差异时，diffs 为空数组 \`[]\`，文字总结写"视觉上未发现明显还原偏差，还原度良好"。`

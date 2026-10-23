@@ -1,181 +1,150 @@
 ---
 name: ui-pixel-diff
-description: UI图图对比能力。支持对比两张截图（设计稿与开发实现），输出差异清单 Markdown 报告。当用户提到图图对比、视觉检查、对比图片等场景时加载本 skill。
+description: UI图图对比能力。支持对比两张截图（设计稿与开发实现），输出差异清单报告（Markdown 或 Markdown+HTML）。当用户提到图图对比、视觉检查、对比图片等场景时加载本 skill。
 ---
 
 ## 🔴 硬性规则：禁止修改 skill 源码
 
-**skill 的所有文件（`bin/`、`src/`、`lib/`、`SKILL.md`、`install.js`、`package.json` 等）均为只读，绝对不允许修改。**
-
-- ❌ 禁止：tool 失败时尝试"修复"skill 源码（改 `bin/ui-pixel-diff.js`、改 `src/lib/` 或 `lib/` 下任何文件）
-- ❌ 禁止：新增/删除/重命名 skill 目录下的文件
-- ❌ 禁止：编辑 `SKILL.md` 内容
-- ❌ 禁止：修改 `package.json` 依赖或版本号
-
-**tool 失败时的正确处理**：
-1. 读取 stderr 错误信息，分析失败原因
-2. 向用户说明原因并提供恢复选项
-3. 如确认是 skill 本身的 bug，告知用户联系维护者，**不要自己动手改源码**
-
-> ⚠️ 之前出现过 tool 失败后 agent 陷入死循环、擅自修改 skill 源码导致环境损坏的事故。任何失败都只能通过重新调用、调整参数或向用户求助来解决，绝不修改源码。
-
----
-
-## 能力总览
-
-本 skill 通过 `ui-pixel-diff` 命令行工具提供 1 个能力，使用 bash 工具调用：
-
-| 命令 | 用途 | 输出 |
-|------|------|------|
-| `ai-img-check` | 视觉检查，取 prompt → 看对话图 → 输出差异 JSON → 整理成 Markdown 报告 | reportPath + totalDiffs + overallLevel + score |
+**skill 的所有文件（`bin/`、`src/`、`lib/`、`SKILL.md`、`package.json` 等）均为只读。** tool 失败时绝不修改源码，只能重新调用、调整参数或向用户求助。
 
 ---
 
 ## 命令调用方式
 
-本 skill 的可执行入口位于 skill 目录下的 `bin/ui-pixel-diff.js`。
+入口位于 skill 目录下 `bin/ui-pixel-diff.js`。
 
-**调用方式**（按优先级尝试）：
+1. 已注册到 PATH：`ui-pixel-diff <command> [options]`
+2. 未注册：`node <skill目录>/bin/ui-pixel-diff.js <command> [options]`
 
-1. 如果 `ui-pixel-diff` 已注册到 PATH：
-   ```bash
-   ui-pixel-diff <command> [options]
-   ```
+首次使用前如依赖未安装，需在 skill 目录执行 `npm install --omit=dev`。
 
-2. 如果 `command not found`，使用 node 直接执行 skill 目录下的入口：
-   ```bash
-   node <skill目录>/bin/ui-pixel-diff.js <command> [options]
-   ```
-
-**首次使用前**，如果依赖未安装，需先在 skill 目录执行 `npm install --omit=dev`。
+通用参数 `--cwd <项目目录>` 可选，默认当前工作目录，无需向用户询问。
 
 ---
 
-## 主线：视觉检查
+## 主线流程
 
-### 🔵 用户未提供截图时的引导
+### 用户未提供截图时的引导
 
-当用户只说"帮我做图图对比/视觉检查"但**没有在对话中传入任何截图**时，**不要直接执行任何命令**，先向用户说明需要提供：
+用户没传截图也没给文件路径时，**不要执行任何命令**，提示用户提供以下任一形式：
 
-**两张截图**（缺一不可）：
-- 设计稿截图（`png/jpg`）
-- 开发实现截图（`png/jpg`）
+- **方式一**：对话中上传两张截图（设计稿 + 开发实现，png/jpg）
+- **方式二**：提供两张图片的本地文件路径
 
-并提醒用户：上传后需指明哪张是设计稿、哪张是开发实现（对应下方步骤 0 的图片角色确认）。等用户上传了两张截图并确认图片角色后，再进入下方三步操作。
+无论哪种方式，用户都需指明哪张是设计稿、哪张是开发实现。确认后进入三步操作：
 
----
+- 对话上传截图 → **上下文模式**（只生成 MD）
+- 提供文件路径 → **文件路径模式**（生成 MD + HTML）
 
-用户已把**设计稿截图**和**开发侧截图**两张图片传入对话，agent 直接看图做视觉比对。无需采集节点树 JSON。
+### 三步操作
 
-三步操作：
+**步骤 0：确认图片角色（必须最先做）**
 
-0. **确认图片角色（必须最先做）**：检查用户在对话中是否已明确指出哪张是设计稿、哪张是开发实现。
-   - 用户已明确指出（如"第一张是设计稿，第二张是开发"）→ 直接进入步骤 1
-   - 用户**没有明确指出** → **必须问清楚**："请确认哪张是设计稿、哪张是开发实现？"，拿到明确答复后才能继续。**禁止猜测图片角色**
-1. `ai-img-check --mode prompt` → 取回 system prompt（stdout 直接输出 prompt 全文，agent 当 system prompt 用）
-2. 看对话中的两张截图 + prompt → 输出简短总结 + 差异 JSON→ 把 JSON 写入文件 → 调 `ai-img-check --mode build --diff-file <json>` 整理成 Markdown 差异报告 → 告诉用户打开 md 报告查看
+用户已明确指出哪张是设计稿、哪张是开发实现 → 进入步骤 1。否则**必须问清楚，禁止猜测**。用户提供文件路径时记录路径，步骤 2 使用。
+
+**步骤 1：取 prompt**
+
+```bash
+ui-pixel-diff ai-img-check [--cwd <目录>] --mode prompt
+```
+
+stdout 输出 system prompt 全文，agent 当作 system prompt 使用。不依赖 server 运行。
+
+**步骤 2：看图 → 输出差异 JSON → 生成报告**
+
+agent 看图 + prompt → 输出简短总结 + 差异 JSON → 写入文件（如 diff.json）→ 调 build：
+
+- **上下文模式**：`--mode build --diff-file <diff.json>` → 生成 `.md`
+- **文件路径模式**：`--mode build --diff-file <diff.json> --design-image <设计稿路径> --dev-image <开发实现路径>` → 生成 `.md` + `.html`
+
+### 流程图
 
 ```
 用户意图：图图对比 / 视觉检查 / 对比图片
   │
-  └── 用户已在对话中传入两张截图
-      ├── 步骤 0: 用户是否已明确指出哪张是设计稿、哪张是开发实现？
-      │   ├── 是 → 直接进入步骤 1
-      │   └── 否 → 必须问清楚，拿到明确答复后才能继续（禁止猜测）
-      ├── 步骤 1: ai-img-check --mode prompt                              取 prompt
-      ├── 步骤 2: 看对话中的两张图 + prompt → 输出简短总结 + 差异 JSON → 写入文件（如 diff.json）
-      ├── ai-img-check --mode build --diff-file diff.json
-      │   → stdout: ✓ 报告已生成: <path>
-      └── 告诉用户打开 md 报告查看完整差异清单
+  ├── 对话中传入两张截图（上下文模式）
+  │   ├── 0: 确认图片角色（未明确→必须问，禁止猜测）
+  │   ├── 1: ai-img-check --mode prompt
+  │   ├── 2: 看图 + prompt → 差异 JSON → 写 diff.json
+  │   ├── ai-img-check --mode build --diff-file diff.json
+  │   │   → ✓ 报告已生成: <path>.md
+  │   └── 告诉用户打开 md 报告
+  │
+  └── 提供两张图片本地路径（文件路径模式）
+      ├── 0: 确认图片角色 + 记录路径
+      ├── 1: ai-img-check --mode prompt
+      ├── 2: 看图 + prompt → 差异 JSON → 写 diff.json
+      ├── ai-img-check --mode build --diff-file diff.json --design-image <设计稿> --dev-image <开发>
+      │   → ✓ Markdown 报告已生成: <path>.md
+      │     ✓ HTML 报告已生成: <path>.html
+      └── 告诉用户打开 html 查看截图对比，md 供后续修改代码查阅
 ```
-
-全程不调 server `/img/checker`，不占 server VLM 额度。报告是纯文本 Markdown，不嵌入图片、不转 base64、没有占位符。
 
 ---
 
-## 命令详细参数
+## 报告格式
 
-> **通用参数**：所有命令都支持 `--cwd <项目目录>`（可选），用于指定报告的保存位置。**默认使用当前工作目录，无需向用户询问**。仅在用户明确要求保存到其他目录时才需要传入。
+### 上下文模式 → Markdown 报告
 
-### ai-img-check
+- 按开发侧节点分组，表格列：属性 | 描述 | 设计值 | 开发值 | 修改建议（与 devlint-mcp MD 格式一致）
+- 落盘到 `.devlint/ai_img_check_<时间戳>.md`
+- 不调 server，不占 VLM 额度
 
-三步操作：确认图片角色 → 取 prompt → 看图输出差异 JSON → 整理成 Markdown 报告。
+### 文件路径模式 → Markdown + HTML 报告
 
-#### 第 0 步：确认图片角色
+- **MD 报告**：同上下文模式格式
+- **HTML 报告**：skill 将 AI 的 diff JSON 转换为 server 兼容 result 格式，调用 server `/report/html` 接口生成，与 devlint-mcp HTML 报告使用同一接口和模板（截图对比 + 差异清单 + 分组筛选）
+- HTML 生成失败（server 不可达等）不中断，MD 报告仍可用
+- 也可只传一张图，报告只展示传入的那张
+- 落盘到 `.devlint/ai_img_check_<时间戳>.md` 和 `.html`
 
-- 检查用户在对话中是否已明确指出哪张是设计稿、哪张是开发实现
-- 用户已明确指出 → 直接进入第 1 步
-- 用户**没有明确指出** → **必须问清楚**："请确认哪张是设计稿、哪张是开发实现？"，拿到明确答复后才能继续。**禁止猜测图片角色**
+### diff JSON 字段
 
-#### 第 1 步：取 prompt（`--mode prompt`）
+AI 输出的 diffs 数组字段（英文键名）：
 
-```bash
-ui-pixel-diff ai-img-check [--cwd <项目目录>] --mode prompt
-```
+| 字段 | 说明 |
+|---|---|
+| `severity` | `error` / `warning` / `maybe_high` / `maybe_low` / `missing` / `extra` |
+| `textContent` | 文本节点填文字内容，非文本节点填描述性名称 |
+| `arkuiName` | 开发侧组件类型（Text/Button/Image/Column 等），无法判断时填空字符串 |
+| `property` | 英文键名：`fontSize` / `fontWeight` / `fontColor` / `backgroundColor` / `borderRadius` / `borderColor` / `borderWidth` / `opacity` / `backdropBlur` / `shadow` / `padding` / `itemSpacing` / `size` / `position` / `missing` / `extra` / `other` |
+| `designValue` | 设计稿的值 |
+| `arkuiValue` | 开发侧的值 |
+| `confidence` | `high` / `medium` / `low` |
 
-- 前提：用户已确认图片角色（第 0 步完成）
-- 返回 system prompt（针对对话场景优化，不依赖 server 运行）
-- 图片已在对话上下文中，agent 直接看图，无需额外传参
-- stdout 直接输出 prompt 全文（纯文本，非 JSON），agent 当作 system prompt 使用
-- **下一步**：看对话中的两张截图 + prompt，输出简短总结 + 差异 JSON，把 JSON 写入文件后调第 2 步
+skill 内部自动补充 server 兼容字段：`description`（从 property 派生中文标签）、`designNodeId` / `arkuiNodeId`（留空）。
 
-#### 第 2 步：生成 Markdown 报告（`--mode build`）
+### stdout 输出
 
-```bash
-ui-pixel-diff ai-img-check [--cwd <项目目录>] --mode build --diff-file <diff.json>
-```
-
-- `--diff-file`：agent 输出的差异 JSON 文件（纯 JSON 或含 json 代码块的 Markdown 均可）
-- 整理 diff JSON 为一份 Markdown 差异报告（还原度评分 + 总结 + 差异清单表格，按明显/轻微/缺失/多余排序），落盘到 `.devlint/`
-- 报告是纯文本 Markdown，**不嵌入图片、不转 base64、没有图片占位符/填图步骤**，打开即看
-- stdout 输出纯文本（报告路径 + 还原度摘要），不再输出 JSON
-- agent 从 stdout 第一行 `✓ 报告已生成: <path>` 提取报告路径
-- stdout 第二行为还原度摘要：`还原度: <等级>（<分数> / 100），共 <N> 处差异`
+- 上下文模式：`✓ 报告已生成: <path>` + `还原度: <等级>（<分数> / 100），共 <N> 处差异`
+- 文件路径模式：`✓ Markdown 报告已生成: <path>` + `✓ HTML 报告已生成: <path>` + 还原度摘要
 
 ---
 
-## 🔴 硬性规则：tool 失败处理策略
+## 结果呈现规则
 
-**任何 tool 调用失败时，必须遵守以下原则，禁止自行修复或绕过：**
-
-### 总原则
-
-1. **失败即止步**：tool 返回错误（非零退出码 / stderr 有 `✗` / `isError: true`）时，**立即停止当前串联流程**，不要假装成功继续往下走
-2. **重试上限 2 次**：同一 tool 同一参数最多重试 2 次（含首次共 3 次调用）。超过后**停止重试**，向用户报告失败
-3. **禁止改源码**：失败原因不在 skill 源码，**绝不修改 `bin/`、`src/`、`lib/` 下任何文件**（参见顶部硬性规则）
-4. **禁止静默吞错**：不要忽略 stderr 错误信息继续执行，必须将错误原因如实告知用户
-5. **向用户求助**：重试耗尽或无法自动恢复时，**停下来让用户决定下一步**，不要自行猜测原因反复尝试
-
-### 各 tool 失败处理
-
-| tool | 失败场景 | 处理方式 |
-|---|---|---|
-| `ai-img-check` | prompt 取回失败 / build 时 diff JSON 解析失败 | 向用户提供：① 确认 diff JSON 格式正确 ② 重试一次 |
-
-### 严格禁止的失败处理方式
-
-- ❌ 失败后修改 skill 源码（改 `bin/ui-pixel-diff.js`、改 `src/lib/` 或 `lib/` 下文件）
-- ❌ 失败后修改 `SKILL.md` 或 `package.json`
-- ❌ 失败后跳过该 tool，用空数据或假数据继续往下走
-- ❌ 失败后无限重试（同一参数调用超过 3 次）
-- ❌ 失败后不告知用户，自行更换参数反复尝试
-- ❌ 忽略 stderr 错误信息，假装成功
+1. 展示**整体还原度**：等级 + 评分 + 差异总数
+2. 告诉用户**打开报告**：上下文模式给 md 路径；文件路径模式推荐 html（截图对比），md 供后续查阅
+3. 简要口述前几条重点差异
+4. 无差异时说 **"视觉检查未发现明显还原差异，还原度良好"**
 
 ---
 
-## ai-img-check 结果呈现规则
+## 🔴 tool 失败处理
 
-拿到 build 结果后，按以下格式展示给用户：
+1. **失败即止步**：非零退出码 / stderr 有 `✗` 时停止流程，不假装成功
+2. **重试上限 2 次**（含首次共 3 次），超过后向用户报告
+3. **禁止改源码**、禁止静默吞错、禁止用空数据继续
 
-1. 展示**整体还原度**：等级（高/中/低）+ 评分（0-100）+ 差异总数（从 stdout 第二行摘要获取）
-2. 告诉用户**打开生成的 Markdown 报告**（stdout 第一行的 reportPath）查看完整差异清单
-3. 简要口述前几条重点差异（从 agent 自己输出的简短总结中提取，不要复述全部）
-4. 如果没有差异（totalDiffs=0），直接说 **"视觉检查未发现明显还原差异，还原度良好"**
+| 失败场景 | 处理 |
+|---|---|
+| prompt 取回失败 / diff JSON 解析失败 | 确认 JSON 格式正确，重试一次 |
+| server `/report/html` 请求失败 | 确认 server 可达，重试一次 |
 
 ---
 
 ## 决策检查清单
 
-执行命令前逐项确认：
-
-- [ ] 用户是否已明确指出哪张是设计稿、哪张是开发实现？没明确指出 → 必须问清楚，禁止猜测。确认后再取 prompt → 看图输出差异 JSON → build 整理成 Markdown 报告 → 告诉用户打开。
+- [ ] 用户已明确指出哪张是设计稿、哪张是开发实现？未明确→必须问，禁止猜测
+- [ ] 用户提供了图片文件路径？有路径 → build 时传 `--design-image` / `--dev-image` 生成 MD+HTML；无路径 → 只生成 MD
+- [ ] 文件路径模式：确认 server 可达（HTML 依赖 server `/report/html` 接口；不可达时 MD 仍可用）

@@ -35,7 +35,7 @@ const SKILL = {
 }
 
 // ── 从 mcp/lib 拷贝的文件夹/文件清单 ────────────────────
-// config.js 单文件 + utils 文件夹（内网同文件夹内容可能不同，整体拷贝）
+// config.js 单文件 + utils 文件夹（整体拷贝）
 const MCP_DIRS = [
   'utils',
 ]

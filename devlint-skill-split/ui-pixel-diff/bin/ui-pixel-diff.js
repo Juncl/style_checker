@@ -6,10 +6,11 @@
  * 不启动常驻进程，agent 通过 bash 工具调用。
  *
  * 用法：
- *   ui-pixel-diff ai-img-check --mode prompt | --mode build --diff-file <json>
+ *   ui-pixel-diff ai-img-check --mode prompt | --mode build --diff-file <json> [--design-image <path> --dev-image <path>]
  *
  * 结果以纯文本输出到 stdout，错误信息到 stderr 并以非零退出码退出。
- * --mode build 的产物是一份 Markdown 差异报告（.md），不生成 HTML、不接触图片。
+ * --mode build 不传图片路径时生成 Markdown 报告（.md）；
+ * 传图片路径时生成 HTML 报告（.html，含内联对比图）。
  */
 
 // ── 引擎函数（src/lib，mcp 共享）─────────────────────────
@@ -21,6 +22,7 @@ import { reportInteraction } from '../src/lib/utils/track.js'
 
 import { getImgCheckPrompt } from '../lib/vlmCheck.js'
 import { buildMdReport } from '../lib/mdBuilder.js'
+import { buildHtmlReport } from '../lib/htmlBuilder.js'
 
 // ── 辅助 ────────────────────────────────────────────────
 
@@ -54,7 +56,8 @@ function parseArgs(argv) {
  *
  * 两步操作：
  *   --mode prompt   取 system prompt，agent 看对话中的图输出差异 JSON（lib/vlmCheck.js）
- *   --mode build    用 agent 输出的 diff JSON 整理成 Markdown 差异报告（lib/mdBuilder.js）
+ *   --mode build    用 agent 输出的 diff JSON 整理成报告（lib/mdBuilder.js 和/或 lib/htmlBuilder.js）
+ *                   无图片路径 → Markdown 报告；有图片路径 → Markdown + HTML 双报告
  */
 async function cmdAiImgCheck(args) {
   const mode = args.mode
@@ -66,11 +69,48 @@ async function cmdAiImgCheck(args) {
     return
   }
 
-  // 第 2 步：读 diff JSON → 整理成 Markdown 报告 → 落盘
+  // 第 2 步：读 diff JSON → 整理成报告 → 落盘
   if (mode === 'build') {
-    const result = await buildMdReport({
-      diffFile: args['diff-file'],
-    })
+    const hasImage = args['design-image'] || args['dev-image']
+
+    // 文件路径模式：先生成 MD，再生成 HTML（两份都输出）
+    if (hasImage) {
+      const mdResult = await buildMdReport({ diffFile: args['diff-file'] })
+      let htmlResult
+      try {
+        htmlResult = await buildHtmlReport({
+          diffFile: args['diff-file'],
+          designImage: args['design-image'],
+          devImage: args['dev-image'],
+        })
+      } catch (err) {
+        // HTML 生成失败（server 未运行等），MD 已生成，不中断
+        process.stderr.write(`⚠ HTML 报告生成失败: ${err.message}（Markdown 报告已生成）\n`)
+        process.stdout.write(`✓ 报告已生成: ${mdResult.reportPath}\n`)
+        process.stdout.write(`还原度: ${mdResult.overallLevel ?? '—'}（${mdResult.score ?? '—'} / 100），共 ${mdResult.totalDiffs} 处差异\n`)
+        return
+      }
+
+      try {
+        reportInteraction({
+          account: getUserInfo()?.account || '',
+          name: 'ui-pixel-diff-aiCheck',
+          extend: {
+            overallLevel: mdResult.overallLevel,
+            score: mdResult.score,
+            totalDiffs: mdResult.totalDiffs,
+          },
+        })
+      } catch {}
+
+      process.stdout.write(`✓ Markdown 报告已生成: ${mdResult.reportPath}\n`)
+      process.stdout.write(`✓ HTML 报告已生成: ${htmlResult.reportPath}\n`)
+      process.stdout.write(`还原度: ${mdResult.overallLevel ?? '—'}（${mdResult.score ?? '—'} / 100），共 ${mdResult.totalDiffs} 处差异\n`)
+      return
+    }
+
+    // 上下文模式：只生成 MD
+    const result = await buildMdReport({ diffFile: args['diff-file'] })
 
     try {
       reportInteraction({
@@ -107,7 +147,7 @@ async function main() {
 用法: ui-pixel-diff <command> [options]
 
 命令:
-  ai-img-check         视觉检查，取 prompt → 看对话图 → 输出差异 JSON → 整理成 Markdown 报告
+  ai-img-check         视觉检查，取 prompt → 看对话图 → 输出差异 JSON → 整理成报告（MD 或 MD+HTML）
 
 选项:
   --help, -h           显示帮助
