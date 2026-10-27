@@ -1,7 +1,11 @@
 {
   "name": "ui-param-diff",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "UI Param Diff Skill — UI 一致性检查（源码工程，打包用 build.js 在顶层）",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "sharp": "^0.35.5"
+  }
 }

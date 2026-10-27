@@ -21,17 +21,23 @@ const MCP_DIR = join(SPLIT_ROOT, '..', 'devlint-mcp')
 const DIST = join(SPLIT_ROOT, 'dist')
 
 const MCP_PKG = JSON.parse(readFileSync(join(MCP_DIR, 'package.json'), 'utf-8'))
-const MCP_VERSION = MCP_PKG.version
+const SELF_PKG = JSON.parse(readFileSync(join(SELF, 'package.json'), 'utf-8'))
 
 // ── skill 配置 ──────────────────────────────────────────
 
 const SKILL = {
   name: 'ui-param-diff',
-  version: MCP_VERSION,
+  version: SELF_PKG.version,
   binName: 'ui-param-diff',
   binFile: 'bin/ui-param-diff.js',
   description: 'UI Param Diff Skill — UI 一致性检查的命令行工具',
   trackPrefix: 'devlint_skill_',
+}
+
+// skill 专属依赖(mcp 没有,由 skill 自带;打包时注入 package.json)
+const SKILL_DEPS = {
+  exceljs: '^4.4.0',
+  sharp:   '^0.35.3',  // 与 server 同版本
 }
 
 // ── 从 mcp/lib 拷贝的文件夹/文件清单 ────────────────────
@@ -68,7 +74,7 @@ function copyDir(srcDir, dstDir, relPath) {
   mkdirSync(dst, { recursive: true })
   cpSync(src, dst, {
     recursive: true,
-    filter: (s) => !s.includes('node_modules'),
+    filter: (s) => !s.includes('node_modules') && !s.includes('.DS_Store'),
   })
 }
 
@@ -97,6 +103,38 @@ function copySrcLib(prodDir) {
   }
 }
 
+/**
+ * 拷贝 skill 自有 src/lib 覆盖到产物(图图对比/Excel/文案走查等 skill 专属模块)
+ *
+ * 与 mcp 共享目录(report/ 等)是叠加关系:skill 自有文件覆盖到同名路径,
+ * mcp 拷过来的同名文件会被覆盖(mergeDiffs.js 等是 skill 独有的,不冲突)。
+ * mcp 拷过来的 report.js 等保留不动(skill 不重写)。
+ */
+function copySkillOwnSrc(prodDir) {
+  const skillSrcLib = join(SELF, 'src', 'lib')
+  if (!existsSync(skillSrcLib)) return 0
+
+  const dstLib = join(prodDir, 'src', 'lib')
+  let count = 0
+
+  function walk(srcDir, relPath) {
+    for (const name of readdirSync(srcDir)) {
+      const srcFull = join(srcDir, name)
+      const rel = relPath ? `${relPath}/${name}` : name
+      if (statSync(srcFull).isDirectory()) {
+        walk(srcFull, rel)
+      } else {
+        const dstFull = join(dstLib, rel)
+        mkdirSync(path.dirname(dstFull), { recursive: true })
+        copyFileSync(srcFull, dstFull)
+        count++
+      }
+    }
+  }
+  walk(skillSrcLib, '')
+  return count
+}
+
 function copySrcScript(prodDir) {
   const srcScript = join(MCP_DIR, 'script')
   const dstScript = join(prodDir, 'src', 'script')
@@ -105,7 +143,7 @@ function copySrcScript(prodDir) {
     mkdirSync(dstScript, { recursive: true })
     cpSync(srcScript, dstScript, {
       recursive: true,
-      filter: (src) => !src.includes('node_modules'),
+      filter: (src) => !src.includes('node_modules') && !src.includes('.DS_Store'),
     })
   }
 }
@@ -138,7 +176,8 @@ function writeProdPkg(prodDir) {
     type: 'module',
     description: SKILL.description,
     bin: { [SKILL.binName]: SKILL.binFile },
-    dependencies: MCP_PKG.dependencies || {},
+    // 合并 mcp 依赖 + skill 专属依赖(exceljs/sharp)
+    dependencies: { ...(MCP_PKG.dependencies || {}), ...SKILL_DEPS },
   }
   writeFileSync(join(prodDir, 'package.json'), JSON.stringify(pkg, null, 2) + '\n')
 }
@@ -155,6 +194,26 @@ function makeZip(prodName) {
       cwd: DIST, stdio: 'inherit',
     })
   }
+}
+
+// 打 zip 前清理产物目录中的临时/系统文件(npm install 生成的 lock、macOS .DS_Store、运行时产物)
+function cleanupBeforeZip(prodDir) {
+  const junkNames = ['package-lock.json', '.DS_Store']
+  const junkDirs = ['.octo-uxlint', '.devlint']
+  for (const name of junkNames) {
+    const p = join(prodDir, name)
+    if (existsSync(p)) rmSync(p, { force: true })
+  }
+  // 递归删除 .DS_Store 和 .octo-uxlint/.devlint
+  function walk(dir) {
+    for (const name of readdirSync(dir)) {
+      const full = join(dir, name)
+      if (name === '.DS_Store') { rmSync(full, { force: true }); continue }
+      if (junkDirs.includes(name)) { rmSync(full, { recursive: true, force: true }); continue }
+      if (statSync(full).isDirectory() && name !== 'node_modules') walk(full)
+    }
+  }
+  walk(prodDir)
 }
 
 // ── 主流程 ──────────────────────────────────────────────
@@ -181,6 +240,11 @@ mkdirSync(prodDir, { recursive: true })
 console.log('  拷贝引擎...')
 copySrcLib(prodDir)
 copySrcScript(prodDir)
+
+// 拷贝 skill 自有 src(图图对比/Excel/文案走查等专属模块,覆盖叠加到 mcp 引擎之上)
+console.log('  拷贝 skill 专属模块...')
+const ownCount = copySkillOwnSrc(prodDir)
+if (ownCount > 0) console.log(`      ✓ skill 专属模块 ${ownCount} 文件已叠加`)
 
 // 拷贝 skill 专属文件
 console.log('  拷贝 skill 专属文件...')
@@ -212,6 +276,9 @@ for (const f of [SKILL.binFile, 'SKILL.md', 'README.md']) {
 
 // 生成 package.json
 writeProdPkg(prodDir)
+
+// 清理临时/系统文件后打 zip
+cleanupBeforeZip(prodDir)
 
 // 打 zip
 makeZip(prodName)

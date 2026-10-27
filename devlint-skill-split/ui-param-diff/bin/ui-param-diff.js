@@ -14,7 +14,7 @@
  * 输出统一为 JSON 到 stdout，错误信息到 stderr 并以非零退出码退出。
  */
 
-import { existsSync, writeFileSync } from 'fs'
+import { existsSync, writeFileSync, readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 
@@ -30,6 +30,12 @@ import { fileToBlob } from '../src/lib/utils/tools.js'
 import { resetSession, getUserInfo, getSessionDir, getSessionTimestamp } from '../src/lib/utils/session.js'
 import { trackCheckComplete } from '../src/lib/utils/track.js'
 import { config } from '../src/lib/config.js'
+
+// ── skill 专属模块（图图对比 + Excel + 文案走查）─────────
+
+import { callPixelDiffServer } from '../src/lib/pixelDiff/client.js'
+import { mergeDiffs } from '../src/lib/report/mergeDiffs.js'
+import { generateExcelReport, addTextTabToExcel } from '../src/lib/report/excelReport.js'
 
 // ── 辅助 ────────────────────────────────────────────────
 
@@ -107,40 +113,86 @@ async function cmdCollectDesign(args) {
 /**
  * ui-style-check: UI 一致性检查
  *
- * 校验文件 → FormData → fetch server → extractSummary → generateReport → trackCheckComplete → resetSession
+ * 支持两种模式:
+ *   A. 只传图(无 JSON)→ 局部图对比单轨,输出差异块 + Excel
+ *   B. JSON + 图 → 节点树比对 + 局部图对比双轨,mergeDiffs 合并去重 + md/html/Excel
+ *
+ * 可选 --text-rules <path>:文案走查规则文本文件(自然语言),仅 B 模式 + 用户传了才触发
  */
 async function cmdUiStyleCheck(args) {
   const { 'design-json': designJsonPath, 'dev-json': devJsonPath } = args
-  if (!designJsonPath) fail('缺少必填参数: --design-json')
-  if (!devJsonPath) fail('缺少必填参数: --dev-json')
-
-  const platform = args.platform || 'hmPhone'
   const designImagePath = args['design-image'] || null
   const devImagePath = args['dev-image'] || null
-
+  const platform = args.platform || 'hmPhone'
   const account = args.account || ''
+  const textRulesPath = args['text-rules'] || null
 
+  const hasJson = !!(designJsonPath && devJsonPath)
+  const hasImg = !!(designImagePath && devImagePath)
+
+  // 至少要有图(图图对比最小输入)
+  if (!hasImg) {
+    fail('至少需要 --design-image 和 --dev-image(图图对比最小输入);JSON 可选,传了则双轨比对')
+  }
+
+  // 文案走查仅在 B 模式生效
+  if (textRulesPath && !hasJson) {
+    process.stderr.write('⚠ 纯图场景无文本节点,文案走查已忽略\n')
+  }
+
+  // ── 分支 A: 只传图(局部图对比单轨)─────────────────────
+  if (!hasJson) {
+    const pixelRes = await callPixelDiffServer({
+      designImagePath, devImagePath, platform,
+    })
+
+    // 局部图差异块直接转 unified(无节点信息,模块=位置描述)
+    const unified = mergeDiffs([], pixelRes.diffBlocks, [])
+
+    // Excel 报告(纯局部图场景,局部图块 bbox 已是像素坐标,不换算)
+    let excelPath = ''
+    try {
+      excelPath = await generateExcelReport(unified, {
+        designImagePath, devImagePath,
+        designCanvas: null,
+        devCanvas: null,
+      })
+    } catch (e) {
+      process.stderr.write(`✗ Excel 报告生成失败: ${e.message}\n`)
+    }
+
+    // 纯局部图场景无节点树,不打点(无 stats/diffCount 语义)
+    resetSession()
+
+    output({
+      platform,
+      nodes: unified.slice(0, 10),
+      totalNodes: unified.length,
+      reportPath: null,        // 纯局部图场景无 md 报告
+      htmlReportPath: null,   // 纯局部图场景无 html 报告
+      excelReportPath: excelPath || null,
+    })
+    return
+  }
+
+  // ── 分支 B: JSON + 图(双轨比对 + 合并)─────────────────────
   // 校验文件存在
   for (const [label, path] of [
     ['设计稿 JSON', designJsonPath],
     ['开发侧 JSON', devJsonPath],
-    ...(designImagePath ? [['设计稿截图', designImagePath]] : []),
-    ...(devImagePath ? [['开发侧截图', devImagePath]] : []),
+    ['设计稿截图', designImagePath],
+    ['开发侧截图', devImagePath],
   ]) {
     if (!existsSync(path)) fail(`${label}文件不存在: ${path}`)
   }
 
-  // 构造 FormData 上传
+  // ① 节点树比对(现有 /check/upload)
   const form = new FormData()
   form.append('platform', platform)
   form.append('designJson', fileToBlob(designJsonPath), 'design.json')
   form.append('arkuiJson', fileToBlob(devJsonPath), 'arkui.json')
-  if (designImagePath) {
-    form.append('designImage', fileToBlob(designImagePath), 'design.png')
-  }
-  if (devImagePath) {
-    form.append('arkuiImage', fileToBlob(devImagePath), 'arkui.png')
-  }
+  form.append('designImage', fileToBlob(designImagePath), 'design.png')
+  form.append('arkuiImage', fileToBlob(devImagePath), 'arkui.png')
 
   const res = await fetch(`${config.CHECK_SERVER_URL}/check/upload`, {
     method: 'POST',
@@ -152,21 +204,47 @@ async function cmdUiStyleCheck(args) {
     fail(`检查请求失败 (${res.status}): ${errText}`)
   }
 
-  const result = await res.json()
-  const summary = extractSummary(result)
-  const reportPath = generateReport(result)
+  const nodeResult = await res.json()
 
-  // 生成可视化 HTML 报告（调 server 接口，返回 HTML 字符串后写入本地）
+  // ② 局部图对比(按节点匹配结果逐区域对比,局部图差异天然绑定节点)
+  const designCanvas = nodeResult.canvas?.design || {}
+  const arkuiCanvas = nodeResult.canvas?.arkui || {}
+  const pixelRes = await callPixelDiffServer({
+    designImagePath, devImagePath, platform,
+    pairs: nodeResult.pairs,
+    designCanvas: { w: designCanvas.w || 0, h: designCanvas.h || 0 },
+    arkuiCanvas: { w: arkuiCanvas.w || 0, h: arkuiCanvas.h || 0 },
+  })
+
+  // ③ 提取文案对比用文本对(用户传 --text-rules 时才供 AI agent 语义比对)
+  const textPairs = textRulesPath
+    ? (nodeResult.pairs || [])
+        .filter(p => p.design?.textContent && p.arkui?.textContent)
+        .map(p => ({
+          designId: p.design.id,
+          arkuiId: p.arkui.id,
+          nodeName: p.arkui.name || p.design.name || null,
+          designText: p.design.textContent,
+          arkuiText: p.arkui.textContent,
+          designRect: p.design.rect || null,
+          devRect: p.arkui.rect || null,
+        }))
+    : []
+
+  // ④ 合并去重
+  const ctx = buildMergeContext(nodeResult)
+  const unified = mergeDiffs(nodeResult.diffs || [], pixelRes.diffBlocks, [], ctx)
+
+  // ⑤ md 报告(现有 generateReport,基于节点树结果)
+  const reportPath = generateReport(nodeResult)
+
+  // ⑥ 可视化 HTML 报告(现有 /report/html)
   let htmlReportPath = ''
   try {
     const htmlForm = new FormData()
-    htmlForm.append('result', new Blob([JSON.stringify(result)], { type: 'application/json' }), 'result.json')
-    if (designImagePath) {
-      htmlForm.append('designImage', fileToBlob(designImagePath, 'image/png'), 'design.png')
-    }
-    if (devImagePath) {
-      htmlForm.append('devImage', fileToBlob(devImagePath, 'image/png'), 'arkui.png')
-    }
+    htmlForm.append('result', new Blob([JSON.stringify(nodeResult)], { type: 'application/json' }), 'result.json')
+    htmlForm.append('designImage', fileToBlob(designImagePath, 'image/png'), 'design.png')
+    htmlForm.append('devImage', fileToBlob(devImagePath, 'image/png'), 'arkui.png')
     const htmlRes = await fetch(`${config.CHECK_SERVER_URL}/report/html`, {
       method: 'POST',
       body: htmlForm,
@@ -179,37 +257,118 @@ async function cmdUiStyleCheck(args) {
     }
   } catch {}
 
+  // ⑦ Excel 报告(节点对比 + 局部图对比,文案 tab 由 agent 后续调 add-text-tab 追加)
+  let excelPath = ''
+  try {
+    excelPath = await generateExcelReport(unified, {
+      designImagePath, devImagePath,
+      designCanvas: { w: designCanvas.w || 0, h: designCanvas.h || 0 },
+      devCanvas: { w: arkuiCanvas.w || 0, h: arkuiCanvas.h || 0 },
+    }, [])
+    // 写 context 文件供 add-text-tab 命令读取(图片路径 + 画布尺寸)
+    const ctxPath = join(getSessionDir(), 'excel_context.json')
+    writeFileSync(ctxPath, JSON.stringify({
+      excelPath, designImagePath, devImagePath,
+      designCanvas: { w: designCanvas.w || 0, h: designCanvas.h || 0 },
+      devCanvas: { w: arkuiCanvas.w || 0, h: arkuiCanvas.h || 0 },
+    }), 'utf-8')
+  } catch (e) {
+    process.stderr.write(`✗ Excel 报告生成失败: ${e.message}\n`)
+  }
+
+  // ⑧ 打点
   try {
     trackCheckComplete({
       account: account || getUserInfo()?.account || '',
-      platform: result.platform,
-      stats: result.stats,
-      diffCount: (result.diffs || []).length,
+      platform: nodeResult.platform,
+      stats: nodeResult.stats,
+      diffCount: unified.length,
     })
   } catch {}
 
   resetSession()
 
-  // 返回前 10 个节点（避免上下文过长）
+  // 返回前 10 个节点(避免上下文过长)
   const MAX_PREVIEW = 10
   const preview = {
-    platform: summary.platform,
-    nodes: summary.nodes.slice(0, MAX_PREVIEW),
-    totalNodes: summary.nodes.length,
+    platform: nodeResult.platform,
+    nodes: unified.slice(0, MAX_PREVIEW),
+    totalNodes: unified.length,
     reportPath,
     htmlReportPath,
+    excelReportPath: excelPath || null,
+    textPairs,
   }
 
   output(preview)
 }
 
+/**
+ * 构造 mergeDiffs 上下文(从 nodeResult 提取 componentChain + 两侧 rect 数据)
+ */
+function buildMergeContext(nodeResult) {
+  const arkuiByPath = new Map()
+  for (const n of nodeResult.allArkuiNodes || []) {
+    const key = Array.isArray(n.path) ? n.path.join('.') : ''
+    if (key) arkuiByPath.set(key, n)
+  }
+  const designRectMap = new Map()
+  const arkuiRectMap = new Map()
+  const designToArkuiId = new Map()  // design.id → arkui.id
+  for (const p of nodeResult.pairs || []) {
+    if (p.design?.id) designRectMap.set(p.design.id, p.design.rect)
+    if (p.arkui?.id) arkuiRectMap.set(p.design.id, p.arkui.rect)  // 以 design.id 为键,便于按节点取两侧 rect
+    if (p.design?.id && p.arkui?.id) designToArkuiId.set(p.design.id, p.arkui.id)
+  }
+  return {
+    arkuiByPath,
+    designRectMap,
+    arkuiRectMap,
+    designToArkuiId,
+    allArkuiNodes: nodeResult.allArkuiNodes || [],
+    allDesignNodes: nodeResult.allDesignNodes || [],
+  }
+}
+
 // ── 主调度 ──────────────────────────────────────────────
+
+async function cmdAddTextTab(args) {
+  const excelPath = args.excel
+  const textIssuesPath = args['text-issues']
+  if (!excelPath) fail('缺少必填参数: --excel')
+  if (!textIssuesPath) fail('缺少必填参数: --text-issues')
+  if (!existsSync(excelPath)) fail(`Excel 文件不存在: ${excelPath}`)
+  if (!existsSync(textIssuesPath)) fail(`文案差异文件不存在: ${textIssuesPath}`)
+
+  // 从同目录读 context(excel_context.json)
+  const ctxPath = join(excelPath, '..', 'excel_context.json')
+  let ctx = null
+  if (existsSync(ctxPath)) {
+    try { ctx = JSON.parse(readFileSync(ctxPath, 'utf-8')) } catch {}
+  }
+
+  let textIssues = []
+  try {
+    textIssues = JSON.parse(readFileSync(textIssuesPath, 'utf-8'))
+  } catch (e) {
+    fail(`文案差异 JSON 解析失败: ${e.message}`)
+  }
+
+  if (!Array.isArray(textIssues) || textIssues.length === 0) {
+    output({ added: false, reason: '无文案差异' })
+    return
+  }
+
+  await addTextTabToExcel(excelPath, textIssues, ctx || {})
+  output({ added: true, count: textIssues.length, excelPath })
+}
 
 const COMMANDS = {
   'collect-arkui': cmdCollectArkui,
   'collect-web': cmdCollectWeb,
   'collect-design': cmdCollectDesign,
   'ui-style-check': cmdUiStyleCheck,
+  'add-text-tab': cmdAddTextTab,
 }
 
 async function main() {
@@ -224,7 +383,8 @@ async function main() {
   collect-arkui        采集鸿蒙 ArkUI 开发侧数据（仅 Windows）
   collect-web          采集 Web 页面 DOM 树 + 截图
   collect-design       采集设计稿数据 + 截图
-  ui-style-check       对比设计稿与开发实现，输出差异清单（基于节点树 JSON）
+  ui-style-check       UI 一致性检查（支持图图对比 + JSON+图双轨比对 + Excel 报告）
+  add-text-tab         向已有 Excel 追加文案对比工作表
 
 选项:
   --help, -h           显示帮助

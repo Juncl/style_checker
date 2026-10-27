@@ -5,85 +5,27 @@ description: UI设计页面一致性检查能力。支持采集鸿蒙 ArkUI 开�
 
 ## 🔴 硬性规则：禁止修改 skill 源码
 
-**skill 的所有文件（`bin/`、`src/`、`SKILL.md`、`install.js`、`package.json` 等）均为只读，绝对不允许修改。**
-
-- ❌ 禁止：tool 失败时尝试"修复"skill 源码（改 `bin/ui-param-diff.js`、改 `src/lib/` 下任何文件）
-- ❌ 禁止：新增/删除/重命名 skill 目录下的文件
-- ❌ 禁止：编辑 `SKILL.md` 内容
-- ❌ 禁止：修改 `package.json` 依赖或版本号
-
-**tool 失败时的正确处理**：
-1. 读取 stderr 错误信息，分析失败原因
-2. 向用户说明原因并提供恢复选项（重新采集 / 手动提供文件路径）
-3. 如确认是 skill 本身的 bug，告知用户联系维护者，**不要自己动手改源码**
-
-> ⚠️ 之前出现过 tool 失败后 agent 陷入死循环、擅自修改 skill 源码导致环境损坏的事故。任何失败都只能通过重新调用、调整参数或向用户求助来解决，绝不修改源码。
+skill 所有文件均为只读，tool 失败时只能重新调用、调整参数或向用户求助，绝不修改源码。
 
 ---
 
 ## 能力总览
-
-本 skill 通过 `ui-param-diff` 命令行工具提供 4 个能力，使用 bash 工具调用：
 
 | 命令 | 用途 | 输出 |
 |------|------|------|
 | `collect-arkui` | 采集鸿蒙 ArkUI 开发侧数据（仅 Windows） | devJsonPath, devImagePath |
 | `collect-web` | 采集 Web 页面 DOM 树 + 截图 | devJsonPath, devImagePath |
 | `collect-design` | 采集设计稿数据 + 截图 | designJsonPath, designImagePath, account |
-| `ui-style-check` | 对比设计稿与开发实现，输出差异清单（基于节点树 JSON 算法比对） | 问题节点 JSON + md 报告路径 + 可视化 HTML 报告路径 |
+| `ui-style-check` | UI 一致性检查 | 节点差异 + md + HTML + Excel + textPairs |
+| `add-text-tab` | 向已有 Excel 追加「文案对比」工作表 | added, count |
 
----
-
-## 命令调用方式
-
-本 skill 的可执行入口位于 skill 目录下的 `bin/ui-param-diff.js`。
-
-**调用方式**（按优先级尝试）：
-
-1. 如果 `ui-param-diff` 已注册到 PATH：
-   ```bash
-   ui-param-diff <command> [options]
-   ```
-
-2. 如果 `command not found`，使用 node 直接执行 skill 目录下的入口：
-   ```bash
-   node <skill目录>/bin/ui-param-diff.js <command> [options]
-   ```
-
-**首次使用前**，如果依赖未安装，需先在 skill 目录执行 `npm install --omit=dev`。
+调用方式：`ui-param-diff <command> [options]`，或 `node <skill目录>/bin/ui-param-diff.js <command> [options]`。首次使用前需 `npm install --omit=dev`。
 
 ---
 
 ## 主线：UI 一致性检查
 
-🔴 **硬性规则：采集只能用本 skill 自带的命令**
-
-触发本 skill 后，开发侧和设计侧的数据采集**只能用本 skill 自带的 `collect-arkui` / `collect-web` / `collect-design` 命令**，**禁止调用其他 MCP 工具或 skill 来采集数据**。如果用户已有本地 JSON/图片文件可直接传入 `ui-style-check`，无需采集。
-
-需要**设计侧**和**开发侧**两份数据，两侧就绪后执行 `ui-style-check`。
-
-### 🔵 用户未提供任何数据时的引导
-
-当用户只说"帮我做 UI 检查/一致性检查/找差异"但**没有提供任何数据**时，**不要直接执行任何命令**，先向用户列出需要提供的信息，引导用户逐项补充：
-
-本检查需要两份数据，缺一不可：
-
-**① 开发侧数据**（提供其一即可）：
-- 本地文件路径（`arkui.json` 或 `web.json`，附截图 `png/jpg`）→ 直接作为 `--dev-json` / `--dev-image`
-- 网页 URL 或本地 HTML 文件路径 → 执行 `collect-web` 自动采集（Web 平台）
-- 鸿蒙设备 → 执行 `collect-arkui` 自动采集（仅 Windows，需连接设备）
-
-**② 设计侧数据**（提供其一即可）：
-- 本地文件路径（`design.json`，附截图 `png/jpg`）→ 直接作为 `--design-json` / `--design-image`
-- 传送码（如 `111`）或设计稿 URL → 执行 `collect-design` 自动采集
-
-**③ 平台类型**（可选，默认 `hmPhone`）：`hmPhone`（鸿蒙手机）/ `hmWatch`（鸿蒙手表）/ `web`（Web 网页）
-
-请把上述清单整理成易读的文字发给用户，等用户逐项提供、两侧数据都就绪后再执行采集或检查命令。**如果用户只提供了一侧数据，继续追问缺失的那一侧，不要只拿一侧数据就执行检查。**
-
-> 此时向用户提供使用指南链接：`{{SKILL_GUIDE_URL}}`（其他场景是否给指南见下方「何时附上使用指南」）
-
----
+需要**设计侧**和**开发侧**两份数据，两侧就绪后执行 `ui-style-check`。采集只能用本 skill 自带命令，禁止调用其他 MCP 工具采集。
 
 ```
 用户意图：UI 一致性检查 / 设计稿对比 / 找差异
@@ -109,6 +51,27 @@ description: UI设计页面一致性检查能力。支持采集鸿蒙 ArkUI 开�
 - `/` 或盘符（如 `C:\`）开头且无上述后缀 → 按本地文件路径，根据上下文判断是 JSON 数据还是 HTML 源文件
 
 **两侧采集相互独立**：一侧中断不阻塞另一侧。中断后向用户提供恢复选项（重新采集 / 手动提供文件路径），待两侧都就绪后再执行 `ui-style-check`。
+
+### 🔵 用户未提供任何数据时的引导
+
+当用户只说"帮我做 UI 检查/一致性检查/找差异"但**没有提供任何数据**时，**不要直接执行任何命令**，先向用户列出需要提供的信息，引导用户逐项补充：
+
+本检查需要两份数据，缺一不可：
+
+**① 开发侧数据**（提供其一即可）：
+- 本地文件路径（`arkui.json` 或 `web.json`，附截图 `png/jpg`）→ 直接作为 `--dev-json` / `--dev-image`
+- 网页 URL 或本地 HTML 文件路径 → 执行 `collect-web` 自动采集（Web 平台）
+- 鸿蒙设备 → 执行 `collect-arkui` 自动采集（仅 Windows，需连接设备）
+
+**② 设计侧数据**（提供其一即可）：
+- 本地文件路径（`design.json`，附截图 `png/jpg`）→ 直接作为 `--design-json` / `--design-image`
+- 传送码（如 `111`）或设计稿 URL → 执行 `collect-design` 自动采集
+
+**③ 平台类型**（可选，默认 `hmPhone`）：`hmPhone`（鸿蒙手机）/ `hmWatch`（鸿蒙手表）/ `web`（Web 网页）
+
+请把上述清单整理成易读的文字发给用户，等用户逐项提供、两侧数据都就绪后再执行采集或检查命令。**如果用户只提供了一侧数据，继续追问缺失的那一侧，不要只拿一侧数据就执行检查。**
+
+> 此时向用户提供使用指南链接：`{{SKILL_GUIDE_URL}}`（其他场景是否给指南见下方「tool 失败处理」）
 
 ---
 
@@ -157,22 +120,39 @@ ui-param-diff collect-design [--cwd <项目目录>] --code <传送码> | --url <
 
 ```bash
 ui-param-diff ui-style-check [--cwd <项目目录>] \
-  --design-json <path> \
-  --dev-json <path> \
+  --design-image <path> \
+  --dev-image <path> \
+  [--design-json <path>] \
+  [--dev-json <path>] \
   [--platform hmPhone|hmWatch|web] \
-  [--design-image <path>] \
-  [--dev-image <path>] \
-  [--account <账号>]
+  [--account <账号>] \
+  [--text-rules <文案规则文本文件路径>]
 ```
 
-- `--design-json`: 设计稿 JSON 文件路径（必填）
-- `--dev-json`: 开发侧 JSON 文件路径（必填）
+- `--design-image`: 设计稿截图路径（**必填**，图图对比最小输入）
+- `--dev-image`: 开发侧截图路径（**必填**，图图对比最小输入）
+- `--design-json`: 设计稿 JSON 文件路径（可选，传了则进入双轨比对模式）
+- `--dev-json`: 开发侧 JSON 文件路径（可选，与 `--design-json` 配对使用）
 - `--platform`: 平台类型，默认 hmPhone
-- `--design-image`: 设计稿截图路径（可选）
-- `--dev-image`: 开发侧截图路径（可选）
 - `--account`: 用户账号字符串（可选），来自 collect-design 返回的 account，透传用于打点；未传时自动用本机 IP 兜底
-- 输出：`{"platform":"...","nodes":[...],"totalNodes":N,"reportPath":"...","htmlReportPath":"..."}`
+- `--text-rules`: 文案规则文本文件路径（可选，仅双轨比对模式）。用户传了才触发文案走查，规则始终针对开发侧文案（设计侧文案不报）
+- 模式判断：
+  - 只传 `--design-image` + `--dev-image`（无 JSON）→ **图图对比模式**
+  - 同时传 JSON + 图 → **双轨比对模式**
+- 输出：`{"platform":"...","nodes":[...],"totalNodes":N,"reportPath":"...","htmlReportPath":"...","excelReportPath":"..."}`
+  - 图图对比模式：`reportPath`/`htmlReportPath` 为 null，仅输出 `excelReportPath`
+  - 双轨比对模式：三份报告（md + HTML + Excel）齐全；传了 `--text-rules` 时额外输出 `textPairs`
 - 工具内部读取文件，**文件内容不占用 AI 上下文**
+
+### add-text-tab
+
+```bash
+ui-param-diff add-text-tab --excel <Excel路径> --text-issues <文案差异JSON路径>
+```
+
+- 从 Excel 同目录读 `excel_context.json`（含图片路径+画布尺寸，由 `ui-style-check` 自动生成）
+- 向 Excel 追加「文案对比」工作表（表头：id/页面/模块/严重等级/设计稿文案/开发文案/问题描述/修复建议/设计稿截图/开发截图）
+- 无文案差异时不追加
 
 ---
 
@@ -200,48 +180,65 @@ ui-param-diff ui-style-check [--cwd <项目目录>] \
 
 ---
 
-## 🔴 硬性规则：tool 失败处理策略
+## 两种比对模式
 
-**任何 tool 调用失败时，必须遵守以下原则，禁止自行修复或绕过：**
+### 图图对比模式（只传图）
 
-### 总原则
+当用户只提供两张图（设计稿截图 + 开发侧截图），没有 JSON 数据时，`ui-style-check` 自动进入**图图对比模式**：
 
-1. **失败即止步**：tool 返回错误（非零退出码 / stderr 有 `✗` / `isError: true`）时，**立即停止当前串联流程**，不要假装成功继续往下走
-2. **重试上限 2 次**：同一 tool 同一参数最多重试 2 次（含首次共 3 次调用）。超过后**停止重试**，向用户报告失败
-3. **禁止改源码**：失败原因不在 skill 源码，**绝不修改 `bin/`、`src/` 下任何文件**（参见顶部硬性规则）
-4. **禁止静默吞错**：不要忽略 stderr 错误信息继续执行，必须将错误原因如实告知用户
-5. **向用户求助**：重试耗尽或无法自动恢复时，**停下来让用户决定下一步**，不要自行猜测原因反复尝试
+- 调用 server `/api/check/pixel-diff`，做局部图对比（对齐 → 灰度 diff → 连通域聚类 → 差异块）
+- 输出局部图差异块列表（bbox + 差异率 + 严重等级）
+- 生成 Excel 报告（仅局部图对比工作表）
+  - 无节点信息时，「模块」列填差异块位置描述（坐标 + 尺寸）
+  - 「修复建议」列填"请对照设计稿核对该区域视觉"
+  - 「设计稿截图」「开发截图」列按差异块 bbox 裁切局部图
 
-### 何时附上使用指南
+### 双轨比对模式（JSON + 图）
 
-在以下场景中，向用户提供使用指南链接 `{{SKILL_GUIDE_URL}}`：
+同时传 JSON 和图时，两侧比对并行执行，结果合并去重：
 
-| 场景 | 是否给指南 |
-|---|---|
-| 用户什么都没提供、正在引导补充数据 | ✅ 给指南 |
-| `collect-design` 传送码无效 / 设计稿 URL 无法访问 / 采集超时 | ✅ 给指南 |
-| `collect-web` URL 无法访问 / 采集超时 | ❌ 不给指南 |
-| `collect-arkui` 非 Windows / 采集超时 | ❌ 不给指南 |
-| `ui-style-check` server 不可达 / 文件不存在 / 检查超时 | ❌ 不给指南 |
-| 检查正常完成、有差异结果 | ❌ 不给指南 |
+1. **节点树比对**：调 `/api/check/upload`，得到节点属性差异
+2. **局部图对比**：调 `/api/check/pixel-diff`（附带节点列表，server 按节点 rect 区域逐个对比）
+3. **合并去重**：skill 侧 `mergeDiffs` 按节点归并
+4. 输出 md + HTML + Excel 三份报告
 
-### 各 tool 失败处理
+---
 
-| tool | 失败场景 | 处理方式 |
-|---|---|---|
-| `collect-arkui` | 非 Windows / 启动失败 / 超时 | 继续设计侧采集；向用户提供：① Windows 环境重试 ② 手动提供 arkui.json/arkui.png 路径跳过采集 |
-| `collect-web` | 登录超时 / 导航超时 / 证书拦截 | 继续设计侧采集；向用户提供：① `--headless false` 有头模式重试 ② 手动提供 web.json/web.png 路径跳过采集 |
-| `collect-design` | 传送码无效 / 采集超时 / 网络错误 | 向用户提供：① 检查传送码后重新采集 ② 手动提供 design.json/design.png 路径 ③ 附上使用指南链接 `{{SKILL_GUIDE_URL}}` |
-| `ui-style-check` | server 不可达 / 文件不存在 / 检查超时 | 向用户提供：① 确认检查服务是否正常运行 ② 确认文件路径是否正确 ③ 重试一次 |
+## 文案走查（仅双轨比对模式 + 用户主动提供规则时触发）
 
-### 严格禁止的失败处理方式
+用户传 `--text-rules <path>` 时才触发文案走查，不传则跳过。规则内容不固定，但**始终针对开发侧文案**（设计侧文案不报）:
 
-- ❌ 失败后修改 skill 源码（改 `bin/ui-param-diff.js`、改 `src/lib/` 下文件）
-- ❌ 失败后修改 `SKILL.md` 或 `package.json`
-- ❌ 失败后跳过该 tool，用空数据或假数据继续往下走
-- ❌ 失败后无限重试（同一参数调用超过 3 次）
-- ❌ 失败后不告知用户，自行更换参数反复尝试
-- ❌ 忽略 stderr 错误信息，假装成功
+- 可能只约束开发侧（如「按钮文案不超过 6 个字」）
+- 可能用设计侧文案约束开发侧（如「开发稿文案需与设计稿一致」）
+- 无论哪种，只报开发侧的问题，设计侧文案即使有问题也不报
+
+AI 拿到 `textPairs`（每对含 designText/arkuiText/designRect/devRect）后，**按用户规则语义**判断开发侧文案是否违规：
+
+1. AI 逐对判断开发侧文案是否违反用户规则
+2. 将违规的写成 JSON 数组文件：
+
+```json
+[{"id":"TXT-001","nodeId":"224","nodeName":"Text","severity":"high","designText":"畅享套餐","devText":"会员活动","reason":"违反规则:开发稿文案需与设计稿一致","suggestion":"改为畅享套餐","designRect":{"x":1,"y":2,"w":3,"h":4},"devRect":{"x":1,"y":2,"w":3,"h":4}}]
+```
+
+3. AI 调 `add-text-tab` 追加到 Excel 第三工作表：
+
+```bash
+ui-param-diff add-text-tab --excel <excelReportPath> --text-issues <issues.json>
+```
+
+无违规时不调用。
+
+---
+
+## Excel 报告
+
+- 路径在返回 JSON 的 `excelReportPath` 字段
+- **节点对比**工作表：id/页面/模块/严重等级/问题类型/问题描述/差异/修复建议/设计稿截图/开发截图（问题类型为具体分类如字号/字体颜色/填充/圆角，按节点 y 坐标排序）
+- **局部图对比**工作表：id/页面/模块/严重等级/问题类型/问题描述/设计稿截图/开发截图（差异率 ≥35% 才报，按差异率从高到低排序；35%-60% low，60%-85% mid，>85% high）
+- **文案对比**工作表：id/页面/模块/严重等级/设计稿文案/开发文案/问题描述/修复建议/设计稿截图/开发截图（由 `add-text-tab` 追加）
+- 节点 id 和模块统一用开发侧（arkui）
+- 「设计稿截图」「开发截图」列按 rect 裁切局部图嵌入
 
 ---
 
@@ -260,6 +257,46 @@ ui-param-diff ui-style-check [--cwd <项目目录>] \
 8. 如果没有差异，直接说 **"开发侧与设计稿一致，无需修改"**
 9. 完整问题清单见 **reportPath** 指向的 md 文件，后续修改代码时直接读该文件
 10. 可视化报告见 **htmlReportPath** 指向的 HTML 文件，浏览器打开可查看交互式差异列表（筛选/折叠/精准-模糊切换）
+11. Excel 报告见 **excelReportPath**：节点对比（属性差异）+ 局部图对比（差异率 ≥35%）两个工作表
+12. **双轨比对模式**下传了 `--text-rules` 时，结果含 **textPairs**，需执行文案走查（见「文案走查」小节），完成后调 `add-text-tab` 把文案差异追加到 Excel 第三工作表
+
+---
+
+## 🔴 tool 失败处理策略
+
+### 总原则
+
+1. **失败即止步**：tool 返回错误（非零退出码 / stderr 有 `✗` / `isError: true`）时，**立即停止当前串联流程**，不要假装成功继续往下走
+2. **重试上限 2 次**：同一 tool 同一参数最多重试 2 次（含首次共 3 次调用）。超过后**停止重试**，向用户报告失败
+3. **禁止静默吞错**：不要忽略 stderr 错误信息继续执行，必须将错误原因如实告知用户
+4. **向用户求助**：重试耗尽或无法自动恢复时，**停下来让用户决定下一步**，不要自行猜测原因反复尝试
+
+### 何时附上使用指南
+
+| 场景 | 是否给指南 |
+|---|---|
+| 用户什么都没提供、正在引导补充数据 | ✅ 给指南 `{{SKILL_GUIDE_URL}}` |
+| `collect-design` 传送码无效 / 设计稿 URL 无法访问 / 采集超时 | ✅ 给指南 |
+| `collect-web` URL 无法访问 / 采集超时 | ❌ 不给指南 |
+| `collect-arkui` 非 Windows / 采集超时 | ❌ 不给指南 |
+| `ui-style-check` server 不可达 / 文件不存在 / 检查超时 | ❌ 不给指南 |
+| 检查正常完成、有差异结果 | ❌ 不给指南 |
+
+### 各 tool 失败处理
+
+| tool | 失败场景 | 处理方式 |
+|---|---|---|
+| `collect-arkui` | 非 Windows / 启动失败 / 超时 | 继续设计侧采集；向用户提供：① Windows 环境重试 ② 手动提供 arkui.json/arkui.png 路径跳过采集 |
+| `collect-web` | 登录超时 / 导航超时 / 证书拦截 | 继续设计侧采集；向用户提供：① `--headless false` 有头模式重试 ② 手动提供 web.json/web.png 路径跳过采集 |
+| `collect-design` | 传送码无效 / 采集超时 / 网络错误 | 向用户提供：① 检查传送码后重新采集 ② 手动提供 design.json/design.png 路径 ③ 附上使用指南链接 `{{SKILL_GUIDE_URL}}` |
+| `ui-style-check` | server 不可达 / 文件不存在 / 检查超时 / 局部图对比失败 / Excel 生成失败 | 局部图对比或 Excel 失败时 stderr 提示，不阻塞其他报告生成；向用户提供：① 确认检查服务是否正常运行 ② 确认文件路径是否正确 ③ 重试一次 |
+
+### 严格禁止的失败处理方式
+
+- ❌ 失败后跳过该 tool，用空数据或假数据继续往下走
+- ❌ 失败后无限重试（同一参数调用超过 3 次）
+- ❌ 失败后不告知用户，自行更换参数反复尝试
+- ❌ 忽略 stderr 错误信息，假装成功
 
 ---
 
@@ -278,5 +315,7 @@ ui-param-diff ui-style-check [--cwd <项目目录>] \
 - [ ] 开发侧数据来源是什么？（本地文件 / URL / 鸿蒙设备）
 - [ ] 设计侧数据来源是什么？（本地文件 / 传送码 / URL）
 - [ ] 两侧数据是否都已就绪？（未就绪先采集，采集完自动串联）
+- [ ] 两侧是否至少都有图？（图图对比最小输入；有 JSON 无图无法运行）
 - [ ] platform 设置是否正确？
 - [ ] 采集中断后是否继续了另一侧的采集？
+- [ ] 用户是否传了 `--text-rules`？（传了才做文案走查）

@@ -23,6 +23,7 @@ import { getPlatform, resolvePlatform } from '../config/platforms.js'
 import { buildDumpTree } from '../parsers/arkui/1-buildDumpTree.js'
 import { handleImgCheck, markdownToDiffReport } from '../AIChecker/imgCheck.js'
 import { generateHtmlReport } from '../templates/htmlReport.js'
+import { runPixelDiff } from '../pixelDiff/index.js'
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage() })
@@ -696,6 +697,57 @@ router.post(
 
       res.setHeader('Content-Type', 'text/html; charset=utf-8')
       res.send(html)
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: err.message })
+    }
+  }
+)
+
+
+// ── 局部图对比(图图对比)─────────────────────────────────────────────────────────
+// POST /api/check/pixel-diff
+// multipart: designImage(file, 必填), devImage(file, 必填), platform(form 字段, 默认 hmPhone),
+//            nodes(file, 可选 JSON: { pairs, designCanvas, arkuiCanvas })
+// 适用场景:
+//   1. 只传图(无 JSON) → 全局连通域聚类,返回 diffBlocks(matchedNodeId 全为 null)
+//   2. JSON + 图 → 带 nodes(含 pairs + 两侧 canvas),按节点匹配结果逐区域对比,
+//      局部图差异天然绑定节点,由调用方(skill)合并去重
+router.post(
+  '/check/pixel-diff',
+  upload.fields([
+    { name: 'designImage', maxCount: 1 },
+    { name: 'devImage',    maxCount: 1 },
+    { name: 'nodes',       maxCount: 1 },
+  ]),
+  async (req, res) => {
+    try {
+      const files = req.files
+      if (!files?.designImage || !files?.devImage) {
+        return res.status(400).json({ error: '缺少 designImage 或 devImage 文件' })
+      }
+      const platform = getPlatform(platformFromRequest(req))
+
+      // 可选:节点匹配结果 + 画布尺寸(仅 JSON 场景传入)
+      let nodesPayload = null
+      if (files?.nodes) {
+        try {
+          nodesPayload = JSON.parse(files.nodes[0].buffer.toString('utf-8'))
+        } catch (e) {
+          return res.status(400).json({ error: `nodes JSON 解析失败: ${e.message}` })
+        }
+      }
+
+      const result = await runPixelDiff({
+        designImageBuffer: files.designImage[0].buffer,
+        devImageBuffer:    files.devImage[0].buffer,
+        platform,
+        pairs:         nodesPayload?.pairs,
+        designCanvas:  nodesPayload?.designCanvas,
+        arkuiCanvas:   nodesPayload?.arkuiCanvas,
+      })
+
+      res.json(result)
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: err.message })
