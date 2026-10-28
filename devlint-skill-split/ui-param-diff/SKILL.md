@@ -18,6 +18,8 @@ skill 所有文件均为只读，tool 失败时只能重新调用、调整参数
 | `collect-design` | 采集设计稿数据 + 截图 | designJsonPath, designImagePath, account |
 | `ui-style-check` | UI 一致性检查 | 节点差异 + md + HTML + Excel + textPairs |
 | `add-text-tab` | 向已有 Excel 追加「文案对比」工作表 | added, count |
+| `batch-pair` | 批量配对（N×M 算配对度，输出最优配对） | pairs, unmatchedDev, unmatchedDesign |
+| `batch-summary` | 批量汇总（读多组 result.json → 输出 all.md） | groups, outputPath |
 
 调用方式：`ui-param-diff <command> [options]`，或 `node <skill目录>/bin/ui-param-diff.js <command> [options]`。首次使用前需 `npm install --omit=dev`。
 
@@ -147,11 +149,14 @@ ui-param-diff ui-style-check [--cwd <项目目录>] \
 ### add-text-tab
 
 ```bash
-ui-param-diff add-text-tab --excel <Excel路径> --text-issues <文案差异JSON路径>
+ui-param-diff add-text-tab --excel <Excel路径> --text-issues <文案差异JSON路径> \
+  [--design-image <path>] [--dev-image <path>] \
+  [--design-canvas-w <num>] [--design-canvas-h <num>] \
+  [--dev-canvas-w <num>] [--dev-canvas-h <num>]
 ```
 
-- 从 Excel 同目录读 `excel_context.json`（含图片路径+画布尺寸，由 `ui-style-check` 自动生成）
-- 向 Excel 追加「文案对比」工作表（表头：id/页面/模块/严重等级/设计稿文案/开发文案/问题描述/修复建议/设计稿截图/开发截图）
+- 向 Excel 追加「文案对比」工作表(表头：id/页面/模块/严重等级/设计稿文案/开发文案/问题描述/修复建议/设计稿截图/开发截图)
+- 图片路径+画布尺寸由参数传入(与 ui-style-check 相同的值),用于切图
 - 无文案差异时不追加
 
 ---
@@ -224,7 +229,10 @@ AI 拿到 `textPairs`（每对含 designText/arkuiText/designRect/devRect）后�
 3. AI 调 `add-text-tab` 追加到 Excel 第三工作表：
 
 ```bash
-ui-param-diff add-text-tab --excel <excelReportPath> --text-issues <issues.json>
+ui-param-diff add-text-tab --excel <excelReportPath> --text-issues <issues.json> \
+  --design-image <design.png> --dev-image <arkui.png> \
+  --design-canvas-w <w> --design-canvas-h <h> \
+  --dev-canvas-w <w> --dev-canvas-h <h>
 ```
 
 无违规时不调用。
@@ -308,6 +316,75 @@ ui-param-diff add-text-tab --excel <excelReportPath> --text-issues <issues.json>
 
 ---
 
+## 批量检查（用户提供多组文件时触发）
+
+当用户提供超过 2 个文件路径，**或明确说"批量"/"多组"/"一起检查"** 时，识别为批量模式。AI 负责编组、配对、逐组执行、汇总。
+
+### 1. AI 编组
+
+按文件名区分侧（`design*` → 设计侧，`arkui*`/`web*` → 开发侧），按组聚类（同前缀/同目录的 json+png 为一组）。
+
+### 2. batch-pair（N×M 算配对度）
+
+```bash
+ui-param-diff batch-pair \
+  --dev-groups "dev1.json,dev1.png" "dev2.json,dev2.png" \
+  --design-groups "design1.json,design1.png" "design2.json,design2.png" \
+  --platform hmPhone \
+  --output <batch目录>/pairs.json
+```
+
+- N×M 调 server `/api/check/pair-score`（只做 parse+match，不含比对）
+- 配对度 = 绝对匹配率×0.3 + 覆盖率×0.2 + 高可信占比×0.2 + 文本匹配率×0.3
+- 纯图模式（无 json）用图片相似度（pHash）配对，不调 server
+- 贪心配对（按配对度降序，已配过的跳过）
+- N≠M 时配对 min(N,M) 组，多余标"未配对"
+- 输出 pairs.json（含配对结果 + 未配对清单）
+
+### 3. AI 确认配对
+
+读 pairs.json，展示配对结果给用户。未配对的文件列出，提示用户补充。
+
+### 4. 逐组执行（串行，避免资源爆）
+
+```bash
+ui-param-diff ui-style-check \
+  --design-json <designN.json> --dev-json <devN.json> \
+  --design-image <designN.png> --dev-image <devN.png> \
+  --group-dir <batch目录>/devN_designN \
+  --save-result <batch目录>/devN_designN/result.json \
+  --pair-score <配对度> --group-name devN_designN
+```
+
+每组独立执行，失败不阻塞，继续下一组。每组子文件夹含 md/html/excel + result.json。
+
+### 5. batch-summary 汇总
+
+```bash
+ui-param-diff batch-summary \
+  --results <batch目录>/group1/result.json,<batch目录>/group2/result.json \
+  --output <batch目录>/all.md
+```
+
+输出 `all.md`（总览表格 + 各组详情 + 报告链接），向用户展示。
+
+### 批量目录结构
+
+```
+.octo-uxlint/batch_<时间戳>/       ← 报告根目录下,每次批量一个目录
+├── all.md                         ← 汇总文档
+├── pairs.json                     ← 配对结果
+├── <时间戳>_group1/               ← 每组子文件夹
+│   ├── octo_uxlint_result.md
+│   ├── octo_uxlint_result.html
+│   ├── octo_uxlint_result.xlsx
+│   └── result.json
+├── <时间戳>_group2/
+│   └── ...
+```
+
+---
+
 ## 决策检查清单
 
 执行命令前逐项确认：
@@ -319,3 +396,4 @@ ui-param-diff add-text-tab --excel <excelReportPath> --text-issues <issues.json>
 - [ ] platform 设置是否正确？
 - [ ] 采集中断后是否继续了另一侧的采集？
 - [ ] 用户是否传了 `--text-rules`？（传了才做文案走查）
+- [ ] 是否批量模式？（>2 个文件 → 批量：编组→配对→逐组执行→汇总）

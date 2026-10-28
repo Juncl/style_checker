@@ -138,7 +138,7 @@ async function fillWorksheet(ws, issues, headers, ctx) {
  * @param {{w:number,h:number}} [ctx.devCanvas]    - 开发侧画布尺寸(切 arkui.png 用)
  * @returns {Promise<string>} xlsx 文件路径
  */
-export async function generateExcelReport(unifiedIssues, ctx) {
+export async function generateExcelReport(unifiedIssues, ctx, outDir) {
   const { designImagePath, devImagePath, designCanvas, devCanvas } = ctx
 
   const nodeIssues = unifiedIssues.filter(u => u.issueType !== '局部图')
@@ -165,8 +165,8 @@ export async function generateExcelReport(unifiedIssues, ctx) {
     ws.getCell('A1').value = '开发侧与设计稿一致,无需修改'
   }
 
-  const outDir = getSessionDir()
-  const xlsxPath = join(outDir, `octo_uxlint_result_${getSessionTimestamp()}.xlsx`)
+  const finalOutDir = outDir || getSessionDir()
+  const xlsxPath = join(finalOutDir, `octo_uxlint_result_${getSessionTimestamp()}.xlsx`)
   const buf = await wb.xlsx.writeBuffer()
   writeFileSync(xlsxPath, Buffer.from(buf))
   return xlsxPath

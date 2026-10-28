@@ -14,9 +14,9 @@
  * 输出统一为 JSON 到 stdout，错误信息到 stderr 并以非零退出码退出。
  */
 
-import { existsSync, writeFileSync, readFileSync } from 'fs'
+import { existsSync, writeFileSync, readFileSync, mkdirSync } from 'fs'
 import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
+import { dirname, join, relative } from 'path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -36,6 +36,8 @@ import { config } from '../src/lib/config.js'
 import { callPixelDiffServer } from '../src/lib/pixelDiff/client.js'
 import { mergeDiffs } from '../src/lib/report/mergeDiffs.js'
 import { generateExcelReport, addTextTabToExcel } from '../src/lib/report/excelReport.js'
+import { callPairScore } from '../src/lib/batch/pairScoreClient.js'
+import { imageSimilarity } from '../src/lib/batch/imagePair.js'
 
 // ── 辅助 ────────────────────────────────────────────────
 
@@ -63,6 +65,7 @@ function parseArgs(argv) {
       }
     }
   }
+  args._raw = argv
   return args
 }
 
@@ -126,6 +129,16 @@ async function cmdUiStyleCheck(args) {
   const platform = args.platform || 'hmPhone'
   const account = args.account || ''
   const textRulesPath = args['text-rules'] || null
+  const saveResultPath = args['save-result'] || null
+  const groupDir = args['group-dir'] || null
+  const pairScore = args['pair-score'] ? parseFloat(args['pair-score']) : null
+  const groupName = args['group-name'] || null
+
+  // 批量场景:切换到指定组目录,报告直接写到该目录(不走 session 的 .octo-uxlint 嵌套)
+  if (groupDir) {
+    mkdirSync(groupDir, { recursive: true })
+    process.chdir(groupDir)
+  }
 
   const hasJson = !!(designJsonPath && devJsonPath)
   const hasImg = !!(designImagePath && devImagePath)
@@ -149,14 +162,13 @@ async function cmdUiStyleCheck(args) {
     // 局部图差异块直接转 unified(无节点信息,模块=位置描述)
     const unified = mergeDiffs([], pixelRes.diffBlocks, [])
 
-    // Excel 报告(纯局部图场景,局部图块 bbox 已是像素坐标,不换算)
     let excelPath = ''
     try {
       excelPath = await generateExcelReport(unified, {
         designImagePath, devImagePath,
         designCanvas: null,
         devCanvas: null,
-      })
+      }, groupDir)
     } catch (e) {
       process.stderr.write(`✗ Excel 报告生成失败: ${e.message}\n`)
     }
@@ -164,14 +176,33 @@ async function cmdUiStyleCheck(args) {
     // 纯局部图场景无节点树,不打点(无 stats/diffCount 语义)
     resetSession()
 
-    output({
+    const preview = {
       platform,
       nodes: unified.slice(0, 10),
       totalNodes: unified.length,
-      reportPath: null,        // 纯局部图场景无 md 报告
-      htmlReportPath: null,   // 纯局部图场景无 html 报告
+      reportPath: null,
+      htmlReportPath: null,
       excelReportPath: excelPath || null,
-    })
+      textPairs: [],
+    }
+
+    if (saveResultPath) {
+      const fullResult = {
+        ...preview,
+        nodes: unified,
+        nodeIssueCount: 0,
+        pixelIssueCount: unified.length,
+        textIssueCount: 0,
+        pairScore,
+        groupName,
+        matchedPairs: null,
+        highConfidencePairs: null,
+      }
+      mkdirSync(dirname(saveResultPath), { recursive: true })
+      writeFileSync(saveResultPath, JSON.stringify(fullResult, null, 2), 'utf-8')
+    }
+
+    output(preview)
     return
   }
 
@@ -236,7 +267,7 @@ async function cmdUiStyleCheck(args) {
   const unified = mergeDiffs(nodeResult.diffs || [], pixelRes.diffBlocks, [], ctx)
 
   // ⑤ md 报告(现有 generateReport,基于节点树结果)
-  const reportPath = generateReport(nodeResult)
+  const reportPath = generateReport(nodeResult, groupDir)
 
   // ⑥ 可视化 HTML 报告(现有 /report/html)
   let htmlReportPath = ''
@@ -251,8 +282,8 @@ async function cmdUiStyleCheck(args) {
     })
     if (htmlRes.ok) {
       const html = await htmlRes.text()
-      const outDir = getSessionDir()
-      htmlReportPath = join(outDir, `octo_uxlint_result_${getSessionTimestamp()}.html`)
+      const htmlOutDir = groupDir || getSessionDir()
+      htmlReportPath = join(htmlOutDir, `octo_uxlint_result_${getSessionTimestamp()}.html`)
       writeFileSync(htmlReportPath, html, 'utf-8')
     }
   } catch {}
@@ -264,14 +295,7 @@ async function cmdUiStyleCheck(args) {
       designImagePath, devImagePath,
       designCanvas: { w: designCanvas.w || 0, h: designCanvas.h || 0 },
       devCanvas: { w: arkuiCanvas.w || 0, h: arkuiCanvas.h || 0 },
-    }, [])
-    // 写 context 文件供 add-text-tab 命令读取(图片路径 + 画布尺寸)
-    const ctxPath = join(getSessionDir(), 'excel_context.json')
-    writeFileSync(ctxPath, JSON.stringify({
-      excelPath, designImagePath, devImagePath,
-      designCanvas: { w: designCanvas.w || 0, h: designCanvas.h || 0 },
-      devCanvas: { w: arkuiCanvas.w || 0, h: arkuiCanvas.h || 0 },
-    }), 'utf-8')
+    }, groupDir)
   } catch (e) {
     process.stderr.write(`✗ Excel 报告生成失败: ${e.message}\n`)
   }
@@ -298,6 +322,24 @@ async function cmdUiStyleCheck(args) {
     htmlReportPath,
     excelReportPath: excelPath || null,
     textPairs,
+  }
+
+  // 批量场景:保存完整结果 JSON
+  if (saveResultPath) {
+    const fullResult = {
+      ...preview,
+      nodes: unified,
+      totalNodes: unified.length,
+      nodeIssueCount: unified.filter(u => u.issueType !== '局部图').length,
+      pixelIssueCount: unified.filter(u => u.issueType === '局部图').length,
+      textIssueCount: 0,
+      pairScore,
+      groupName,
+      matchedPairs: null,
+      highConfidencePairs: null,
+    }
+    mkdirSync(dirname(saveResultPath), { recursive: true })
+    writeFileSync(saveResultPath, JSON.stringify(fullResult, null, 2), 'utf-8')
   }
 
   output(preview)
@@ -340,11 +382,12 @@ async function cmdAddTextTab(args) {
   if (!existsSync(excelPath)) fail(`Excel 文件不存在: ${excelPath}`)
   if (!existsSync(textIssuesPath)) fail(`文案差异文件不存在: ${textIssuesPath}`)
 
-  // 从同目录读 context(excel_context.json)
-  const ctxPath = join(excelPath, '..', 'excel_context.json')
-  let ctx = null
-  if (existsSync(ctxPath)) {
-    try { ctx = JSON.parse(readFileSync(ctxPath, 'utf-8')) } catch {}
+  // 图片路径 + 画布尺寸由参数传入
+  const ctx = {
+    designImagePath: args['design-image'] || null,
+    devImagePath: args['dev-image'] || null,
+    designCanvas: args['design-canvas-w'] ? { w: parseFloat(args['design-canvas-w']), h: parseFloat(args['design-canvas-h']) } : null,
+    devCanvas: args['dev-canvas-w'] ? { w: parseFloat(args['dev-canvas-w']), h: parseFloat(args['dev-canvas-h']) } : null,
   }
 
   let textIssues = []
@@ -359,8 +402,201 @@ async function cmdAddTextTab(args) {
     return
   }
 
-  await addTextTabToExcel(excelPath, textIssues, ctx || {})
+  await addTextTabToExcel(excelPath, textIssues, ctx)
   output({ added: true, count: textIssues.length, excelPath })
+}
+
+async function cmdBatchPair(args) {
+  const devGroupsRaw = args['dev-groups'] || ''
+  const designGroupsRaw = args['design-groups'] || ''
+  const platform = args.platform || 'hmPhone'
+  const outputPath = args.output || 'pairs.json'
+
+  if (!devGroupsRaw) fail('缺少必填参数: --dev-groups')
+  if (!designGroupsRaw) fail('缺少必填参数: --design-groups')
+
+  // 解析组参数:每组是 "json路径,png路径" 形式,多组用空格分隔
+  // 但 parseArgs 把空格分隔的值拆开了,这里用 raw argv 重新解析
+  const devGroups = parseGroupArgs(args._raw, '--dev-groups')
+  const designGroups = parseGroupArgs(args._raw, '--design-groups')
+
+  if (devGroups.length === 0) fail('--dev-groups 未解析到有效组')
+  if (designGroups.length === 0) fail('--design-groups 未解析到有效组')
+
+  // 检测纯图模式:所有组都没有 json
+  const allDevImageOnly = devGroups.every(g => !g.json)
+  const allDesignImageOnly = designGroups.every(g => !g.json)
+  const isImageOnly = allDevImageOnly && allDesignImageOnly
+
+  process.stderr.write(`配对计算: 开发 ${devGroups.length} 组 × 设计 ${designGroups.length} 组 = ${devGroups.length * designGroups.length} 次调用${isImageOnly ? ' (纯图模式,用图片相似度)' : ' (JSON模式,用节点匹配)'}\n`)
+
+  const scoreMatrix = []
+  let completed = 0
+  const total = devGroups.length * designGroups.length
+
+  for (let i = 0; i < devGroups.length; i++) {
+    for (let j = 0; j < designGroups.length; j++) {
+      const dev = devGroups[i]
+      const design = designGroups[j]
+      completed++
+      try {
+        if (isImageOnly) {
+          const sim = await imageSimilarity(dev.image, design.image)
+          scoreMatrix.push({ devIndex: i, designIndex: j, pairScore: Number(sim.toFixed(4)), dev, design })
+          process.stderr.write(`  [${completed}/${total}] dev[${i}] × design[${j}] → 相似度=${sim.toFixed(4)}\n`)
+        } else {
+          const score = await callPairScore({
+            designJsonPath: design.json, devJsonPath: dev.json,
+            designImagePath: design.image, devImagePath: dev.image,
+            platform,
+          })
+          scoreMatrix.push({ devIndex: i, designIndex: j, ...score, dev, design })
+          process.stderr.write(`  [${completed}/${total}] dev[${i}] × design[${j}] → pairScore=${score.pairScore} (匹配${score.matchedPairs}对,高可信${score.highConfidencePairs}对)\n`)
+        }
+      } catch (e) {
+        scoreMatrix.push({ devIndex: i, designIndex: j, pairScore: -1, error: e.message, dev, design })
+        process.stderr.write(`  [${completed}/${total}] dev[${i}] × design[${j}] → 失败: ${e.message}\n`)
+      }
+    }
+  }
+
+  // 贪心配对:按 pairScore 降序,已配过的跳过
+  const sorted = scoreMatrix.filter(s => s.pairScore >= 0).sort((a, b) => b.pairScore - a.pairScore)
+  const usedDev = new Set()
+  const usedDesign = new Set()
+  const pairs = []
+  for (const s of sorted) {
+    if (usedDev.has(s.devIndex) || usedDesign.has(s.designIndex)) continue
+    usedDev.add(s.devIndex)
+    usedDesign.add(s.designIndex)
+    pairs.push({
+      devIndex: s.devIndex,
+      devJson: s.dev.json,
+      devImage: s.dev.image,
+      designIndex: s.designIndex,
+      designJson: s.design.json,
+      designImage: s.design.image,
+      pairScore: s.pairScore,
+      matchedPairs: s.matchedPairs || null,
+      highConfidencePairs: s.highConfidencePairs || null,
+    })
+  }
+
+  const unmatchedDev = devGroups.map((g, i) => ({ index: i, ...g })).filter(g => !usedDev.has(g.index))
+  const unmatchedDesign = designGroups.map((g, j) => ({ index: j, ...g })).filter(g => !usedDesign.has(g.index))
+
+  const result = { pairs, unmatchedDev, unmatchedDesign, totalDev: devGroups.length, totalDesign: designGroups.length }
+  mkdirSync(dirname(outputPath), { recursive: true })
+  writeFileSync(outputPath, JSON.stringify(result, null, 2), 'utf-8')
+
+  process.stderr.write(`\n配对完成: ${pairs.length} 组配对成功`)
+  if (unmatchedDev.length) process.stderr.write(`, 开发侧未配对 ${unmatchedDev.length} 组`)
+  if (unmatchedDesign.length) process.stderr.write(`, 设计侧未配对 ${unmatchedDesign.length} 组`)
+  process.stderr.write('\n')
+
+  output({ ...result, outputPath })
+}
+
+async function cmdBatchSummary(args) {
+  const results = (args.results || '').split(',').map(s => s.trim()).filter(Boolean)
+  const outputPath = args.output || 'batch_summary.md'
+
+  if (results.length === 0) fail('缺少必填参数: --results (逗号分隔的 result.json 路径列表)')
+
+  const groups = []
+  for (const rPath of results) {
+    if (!existsSync(rPath)) {
+      process.stderr.write(`✗ 结果文件不存在: ${rPath},跳过\n`)
+      continue
+    }
+    try {
+      const data = JSON.parse(readFileSync(rPath, 'utf-8'))
+      groups.push({ path: rPath, dir: dirname(rPath), ...data })
+    } catch (e) {
+      process.stderr.write(`✗ 结果文件解析失败: ${rPath}: ${e.message}\n`)
+    }
+  }
+
+  if (groups.length === 0) {
+    fail('无有效结果文件')
+  }
+
+  const lines = []
+  lines.push('# 批量 UI 一致性检查汇总')
+  lines.push('')
+  lines.push(`- 批量组数: ${groups.length} 组`)
+  lines.push(`- 生成时间: ${new Date().toLocaleString('zh-CN')}`)
+  lines.push('')
+  lines.push('## 总览')
+  lines.push('')
+  lines.push('| 组名 | 平台 | 节点对比问题数 | 局部图问题数 | 文案问题数 | 总问题数 | 配对度 | 报告目录 |')
+  lines.push('|---|---|---|---|---|---|---|---|')
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i]
+    const groupName = g.groupName || `组${i + 1}`
+    const total = (g.nodeIssueCount || 0) + (g.pixelIssueCount || 0) + (g.textIssueCount || 0)
+    const score = g.pairScore != null ? g.pairScore : '-'
+    lines.push(`| ${groupName} | ${g.platform || '-'} | ${g.nodeIssueCount || 0} | ${g.pixelIssueCount || 0} | ${g.textIssueCount || 0} | ${total} | ${score} | ${g.dir} |`)
+  }
+  lines.push('')
+  lines.push('## 各组详情')
+  lines.push('')
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i]
+    const groupName = g.groupName || `组${i + 1}`
+    lines.push(`### ${groupName}`)
+    lines.push('')
+    if (g.pairScore != null) {
+      lines.push(`- 配对度: ${g.pairScore}${g.matchedPairs ? `(匹配 ${g.matchedPairs} 对,高可信 ${g.highConfidencePairs || 0} 对)` : ''}`)
+    }
+    lines.push(`- 节点对比: ${g.nodeIssueCount || 0} 个属性差异`)
+    lines.push(`- 局部图对比: ${g.pixelIssueCount || 0} 个(差异率 ≥35%)`)
+    lines.push(`- 文案对比: ${g.textIssueCount || 0} 个文案不一致`)
+    if (g.reportPath) lines.push(`- 报告: [md](${relPath(g.dir, g.reportPath)}) | [html](${relPath(g.dir, g.htmlReportPath)}) | [excel](${relPath(g.dir, g.excelReportPath)})`)
+    lines.push('')
+  }
+
+  mkdirSync(dirname(outputPath), { recursive: true })
+  writeFileSync(outputPath, lines.join('\n'), 'utf-8')
+
+  output({ groups: groups.length, outputPath })
+}
+
+// 从 raw argv 解析组参数,每组是 "json,png" 形式
+// --dev-groups "a.json,a.png" "b.json,b.png" --design-groups "c.json,c.png" "d.json,d.png"
+function parseGroupArgs(rawArgv, flag) {
+  const groups = []
+  let capturing = false
+  let currentFlag = ''
+  for (const arg of rawArgv || []) {
+    if (arg.startsWith('--')) {
+      capturing = arg === flag
+      currentFlag = arg
+      continue
+    }
+    if (capturing && currentFlag === flag) {
+      const parts = arg.split(',').map(s => s.trim()).filter(s => s)
+      if (parts.length >= 2) {
+        groups.push({ json: parts[0], image: parts[1] })
+      } else if (parts.length === 1) {
+        groups.push({ json: null, image: parts[0] })
+      }
+    }
+  }
+  return groups
+}
+
+function relPath(from, to) {
+  if (!to) return ''
+  try {
+    return relPathSimple(from, to)
+  } catch {
+    return to
+  }
+}
+
+function relPathSimple(from, to) {
+  return relative(dirname(from), to)
 }
 
 const COMMANDS = {
@@ -369,6 +605,8 @@ const COMMANDS = {
   'collect-design': cmdCollectDesign,
   'ui-style-check': cmdUiStyleCheck,
   'add-text-tab': cmdAddTextTab,
+  'batch-pair': cmdBatchPair,
+  'batch-summary': cmdBatchSummary,
 }
 
 async function main() {
@@ -385,6 +623,8 @@ async function main() {
   collect-design       采集设计稿数据 + 截图
   ui-style-check       UI 一致性检查（支持图图对比 + JSON+图双轨比对 + Excel 报告）
   add-text-tab         向已有 Excel 追加文案对比工作表
+  batch-pair           批量配对（N×M 算配对度,输出最优配对 pairs.json）
+  batch-summary        批量汇总（读多组 result.json → 输出 batch_summary.md）
 
 选项:
   --help, -h           显示帮助

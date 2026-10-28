@@ -756,4 +756,100 @@ router.post(
 )
 
 
+// ── 配对度计算(轻量,只做 parse+match,不含比对)──────────────────────────────
+// POST /api/check/pair-score
+// multipart: designJson(file), arkuiJson(file), platform(form),
+//            designImage(file, 可选), arkuiImage(file, 可选)
+// 用于批量场景:N×M 调本接口算配对度,选最优配对
+router.post(
+  '/check/pair-score',
+  upload.fields([
+    { name: 'designJson', maxCount: 1 },
+    { name: 'arkuiJson',  maxCount: 1 },
+    { name: 'designImage', maxCount: 1 },
+    { name: 'arkuiImage',  maxCount: 1 },
+  ]),
+  async (req, res) => {
+    try {
+      const files = req.files
+      if (!files?.designJson || !files?.arkuiJson) {
+        return res.status(400).json({ error: '缺少 designJson 或 arkuiJson 文件' })
+      }
+      const platform = getPlatform(platformFromRequest(req))
+
+      const designJson = JSON.parse(files.designJson[0].buffer.toString('utf-8'))
+      const devRawText = files.arkuiJson[0].buffer.toString('utf-8')
+      const trimmedDev = devRawText.trimStart()
+      const devJson = trimmedDev.startsWith('{') || trimmedDev.startsWith('[')
+        ? JSON.parse(devRawText)
+        : devRawText
+
+      // 1. 解析
+      const devResult = platform.devType === 'web'
+        ? await parseWeb(devJson, { imageBuffer: files.arkuiImage?.[0]?.buffer })
+        : await parseArkui(devJson, { imageBuffer: files.arkuiImage?.[0]?.buffer })
+
+      const designResult = await parseDesign(designJson, {
+        imageBuffer: files.designImage?.[0]?.buffer,
+        arkuiCanvasWidthVp: devResult.canvasWidthVp,
+        designScale: platform.designScale,
+      })
+
+      // 2. 匹配
+      const { pairs, comparableDesignCount } = matchNodes(
+        designResult.nodes,
+        devResult.nodes,
+        {
+          primarySource: DEFAULT_MATCH_DIRECTION,
+          canvasWidthVp: devResult.canvasWidthVp,
+          canvasHeightVp: devResult.canvasHeightVp,
+          canvasWidth: designResult.canvasWidth,
+          canvasHeight: designResult.canvasHeight,
+          platform: platform.key,
+        }
+      )
+
+      // 3. 配对度计算
+      const matchedPairs = pairs.length
+      const highConfidencePairs = pairs.filter(p => p.confidence === 'high').length
+      const matchCoverage = comparableDesignCount ? matchedPairs / comparableDesignCount : 0
+      const highConfRatio = matchedPairs > 0 ? highConfidencePairs / matchedPairs : 0
+
+      // 文本匹配率:两侧 textContent 完全一致的匹配对数 / 匹配上的文本对数
+      // (用匹配上的文本对数做分母,而非两侧文本节点总数——因为不同页面文本节点数差异大)
+      const matchedTextPairs = pairs.filter(p =>
+        p.design?.textContent && p.arkui?.textContent
+      ).length
+      const textMatchedPairs = pairs.filter(p =>
+        p.design?.textContent && p.arkui?.textContent &&
+        p.design.textContent === p.arkui.textContent
+      ).length
+      const textMatchRatio = matchedTextPairs > 0 ? textMatchedPairs / matchedTextPairs : 0
+
+      // 绝对匹配率:匹配对数 / 两侧节点总数较小值
+      const matchRate = Math.min(designResult.nodes.length, devResult.nodes.length) > 0
+        ? matchedPairs / Math.min(designResult.nodes.length, devResult.nodes.length)
+        : 0
+
+      const pairScore = matchRate * 0.3 + matchCoverage * 0.2 + highConfRatio * 0.2 + textMatchRatio * 0.3
+
+      res.json({
+        pairScore: Number(pairScore.toFixed(4)),
+        matchedPairs,
+        highConfidencePairs,
+        matchCoverage: Number(matchCoverage.toFixed(4)),
+        matchRate: Number(matchRate.toFixed(4)),
+        textMatchedPairs,
+        textMatchRatio: Number(textMatchRatio.toFixed(4)),
+        designNodeCount: designResult.nodes.length,
+        arkuiNodeCount: devResult.nodes.length,
+      })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: err.message })
+    }
+  }
+)
+
+
 export default router
