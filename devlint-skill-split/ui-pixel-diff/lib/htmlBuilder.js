@@ -1,14 +1,14 @@
 /**
  * ai-img-check HTML 报告生成器
  *
- * 当用户提供图片本地路径时，将 AI 输出的 diff JSON 转换为 server 兼容的 result 格式，
- * 调用 server /report/html 接口生成可视化 HTML 报告（与 devlint-mcp 报告一致）。
+ * 当用户提供图片本地路径时，将 AI 输出的 diff JSON 转换为报告格式，
+ * 生成可视化 HTML 报告（与 devlint-mcp 报告一致）。
  *
  * 流程：
  *   buildHtmlReport({ diffFile, designImage, devImage })
- *   → 读 diff JSON → 转换为 server result 格式
+ *   → 读 diff JSON → 转换为报告 result 格式
  *   → 读图片文件 → 组装 multipart
- *   → POST server /report/html → 拿到 HTML 字符串
+ *   → 请求 HTML 报告 → 拿到 HTML 字符串
  *   → 落盘到 .devlint/ → 返回 { reportPath, totalDiffs, overallLevel, score }
  */
 
@@ -32,18 +32,39 @@ function fileToBlob(filePath, fallbackType = 'application/json') {
 }
 
 /**
- * 将 AI 输出的 diff JSON 转换为 server /report/html 兼容的 result 格式
+ * 将 AI 输出的 diff JSON 转换为报告 result 格式
  *
- * AI 输出的 diff 字段：severity, textContent, arkuiName, property, designValue, arkuiValue, confidence
- * server 期望的 diff 字段：同上 + designNodeId, arkuiNodeId（AI 无法提供，留空）
+ * AI 输出的 diff 字段：severity, textContent, arkuiName, property, designValue, arkuiValue, confidence,
+ *                       designRect, arkuiRect（归一化坐标，用于画布节点高亮）
  *
- * server 的 generateHtmlReport 会对 allArkuiNodes/allDesignNodes 做 path 映射，
- * AI 无法提供节点树，所以这些数组留空，HTML 报告中组件层级链/画布节点联动等
- * 功能不可用，但差异清单表格、截图对比、分组筛选等核心功能正常。
+ * severity 映射：AI 有 6 级（error/warning/maybe_high/maybe_low/missing/extra），
+ * 报告模板只有 2 级（error=精准检查 / warning=模糊比对）。
+ * error/maybe_high/missing/extra → error（精准）；warning/maybe_low → warning（模糊）。
+ *
+ * 从 diffs 的 designRect/arkuiRect 去重构建 allDesignNodes/allArkuiNodes/pairs/canvas，
+ * 使 HTML 报告的画布节点高亮、跨侧联动、序号徽标等功能可用。
+ * 组件层级链（path）仍不可用（AI 无法输出节点树），属预期限制。
  */
+
+/** 将归一化坐标序列化为去重 key */
+function rectKey(rect) {
+  if (!rect) return null
+  return `${rect.x},${rect.y},${rect.w},${rect.h}`
+}
+
+/** AI severity → 报告 severity 映射 */
+const SEVERITY_MAP = {
+  error: 'error',
+  maybe_high: 'error',
+  missing: 'error',
+  extra: 'error',
+  warning: 'warning',
+  maybe_low: 'warning',
+}
+
 function wrapAiResult(diffData) {
-  const diffs = (diffData.diffs || []).map((d, i) => ({
-    severity: d.severity || 'error',
+  const diffs = (diffData.diffs || []).map((d) => ({
+    severity: SEVERITY_MAP[d.severity] || 'error',
     property: d.property || 'other',
     description: propertyLabel(d.property),
     textContent: d.textContent || '',
@@ -51,23 +72,62 @@ function wrapAiResult(diffData) {
     designValue: d.designValue ?? null,
     arkuiValue: d.arkuiValue ?? null,
     confidence: d.confidence || 'medium',
-    designNodeId: '',
-    arkuiNodeId: '',
+    designRect: d.designRect || null,
+    arkuiRect: d.arkuiRect || null,
+    // nodeId 基于坐标去重：同一元素多条 diff（坐标相同）共用一个 id
+    designNodeId: d.designRect ? `ai-d-${rectKey(d.designRect)}` : null,
+    arkuiNodeId: d.arkuiRect ? `ai-a-${rectKey(d.arkuiRect)}` : null,
   }))
+
+  // 从 diffs 的坐标去重构建节点列表 + 匹配对映射
+  const allDesignNodes = []
+  const allArkuiNodes = []
+  const pairs = []
+  const seenDesign = new Set()
+  const seenArkui = new Set()
+
+  for (const d of diffs) {
+    if (d.designNodeId && d.designRect && !seenDesign.has(d.designNodeId)) {
+      seenDesign.add(d.designNodeId)
+      allDesignNodes.push({
+        id: d.designNodeId,
+        name: d.textContent || d.arkuiName || '',
+        type: d.textContent ? 'text' : 'container',
+        textContent: d.textContent || null,
+        rect: d.designRect,
+      })
+    }
+    if (d.arkuiNodeId && d.arkuiRect && !seenArkui.has(d.arkuiNodeId)) {
+      seenArkui.add(d.arkuiNodeId)
+      allArkuiNodes.push({
+        id: d.arkuiNodeId,
+        name: d.textContent || d.arkuiName || '',
+        type: d.textContent ? 'text' : 'container',
+        textContent: d.textContent || null,
+        rect: d.arkuiRect,
+      })
+    }
+    if (d.designNodeId && d.arkuiNodeId) {
+      pairs.push({ design: { id: d.designNodeId }, arkui: { id: d.arkuiNodeId } })
+    }
+  }
 
   return {
     platform: 'unknown',
     diffs,
-    allArkuiNodes: [],
-    allDesignNodes: [],
-    pairs: [],
-    canvas: null,
+    allArkuiNodes,
+    allDesignNodes,
+    pairs,
+    canvas: {
+      arkui: { w: 1, h: 1 },
+      design: { w: 1, h: 1 },
+    },
     stats: {},
   }
 }
 
 /**
- * 生成 HTML 报告（调用 server /report/html）
+ * 生成 HTML 报告
  *
  * @param {Object} params
  * @param {string} params.diffFile — agent 输出的 diff JSON 文件
@@ -103,7 +163,7 @@ export async function buildHtmlReport({ diffFile, designImage, devImage }) {
 
   if (!res.ok) {
     const errText = await res.text()
-    throw new Error(`server /report/html 请求失败 (${res.status}): ${errText}`)
+    throw new Error(`HTML 报告生成失败 (${res.status}): ${errText}`)
   }
 
   const html = await res.text()

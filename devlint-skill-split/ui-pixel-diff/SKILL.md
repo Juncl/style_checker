@@ -48,7 +48,7 @@ description: UI图图对比能力。支持对比两张截图（设计稿与开�
 ui-pixel-diff ai-img-check [--cwd <目录>] --mode prompt
 ```
 
-stdout 输出 system prompt 全文，agent 当作 system prompt 使用。不依赖 server 运行。
+stdout 输出 system prompt 全文，agent 当作 system prompt 使用。
 
 **步骤 2：看图 → 输出差异 JSON → 生成报告**
 
@@ -88,13 +88,13 @@ agent 看图 + prompt → 输出简短总结 + 差异 JSON → 写入文件（�
 
 - 按开发侧节点分组，表格列：属性 | 描述 | 设计值 | 开发值 | 修改建议（与 devlint-mcp MD 格式一致）
 - 落盘到 `.devlint/ai_img_check_<时间戳>.md`
-- 不调 server，不占 VLM 额度
+- 纯本地生成，不占 VLM 额度
 
 ### 文件路径模式 → Markdown + HTML 报告
 
 - **MD 报告**：同上下文模式格式
-- **HTML 报告**：skill 将 AI 的 diff JSON 转换为 server 兼容 result 格式，调用 server `/report/html` 接口生成，与 devlint-mcp HTML 报告使用同一接口和模板（截图对比 + 差异清单 + 分组筛选）
-- HTML 生成失败（server 不可达等）不中断，MD 报告仍可用
+- **HTML 报告**：含截图对比 + 画布节点高亮 + 跨侧联动 + 差异清单 + 分组筛选
+- HTML 生成失败不中断，MD 报告仍可用
 - 也可只传一张图，报告只展示传入的那张
 - 落盘到 `.devlint/ai_img_check_<时间戳>.md` 和 `.html`
 
@@ -111,8 +111,10 @@ AI 输出的 diffs 数组字段（英文键名）：
 | `designValue` | 设计稿的值 |
 | `arkuiValue` | 开发侧的值 |
 | `confidence` | `high` / `medium` / `low` |
+| `designRect` | 归一化坐标 `{x,y,w,h}`（图片宽高=1），匹配对/缺失必填，多余为 `null` |
+| `arkuiRect` | 归一化坐标 `{x,y,w,h}`，匹配对/多余必填，缺失为 `null` |
 
-skill 内部自动补充 server 兼容字段：`description`（从 property 派生中文标签）、`designNodeId` / `arkuiNodeId`（留空）。
+skill 内部自动从 `designRect`/`arkuiRect` 去重构建节点列表和匹配对映射，使 HTML 报告的画布节点高亮、跨侧联动、序号徽标等功能可用。
 
 ### stdout 输出
 
@@ -139,7 +141,7 @@ skill 内部自动补充 server 兼容字段：`description`（从 property 派�
 | 失败场景 | 处理 |
 |---|---|
 | prompt 取回失败 / diff JSON 解析失败 | 确认 JSON 格式正确，重试一次 |
-| server `/report/html` 请求失败 | 确认 server 可达，重试一次 |
+| HTML 报告生成失败 | 重试一次 |
 
 ---
 
@@ -147,4 +149,3 @@ skill 内部自动补充 server 兼容字段：`description`（从 property 派�
 
 - [ ] 用户已明确指出哪张是设计稿、哪张是开发实现？未明确→必须问，禁止猜测
 - [ ] 用户提供了图片文件路径？有路径 → build 时传 `--design-image` / `--dev-image` 生成 MD+HTML；无路径 → 只生成 MD
-- [ ] 文件路径模式：确认 server 可达（HTML 依赖 server `/report/html` 接口；不可达时 MD 仍可用）

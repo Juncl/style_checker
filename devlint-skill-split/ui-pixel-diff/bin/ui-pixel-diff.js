@@ -84,7 +84,7 @@ async function cmdAiImgCheck(args) {
           devImage: args['dev-image'],
         })
       } catch (err) {
-        // HTML 生成失败（server 未运行等），MD 已生成，不中断
+        // HTML 生成失败，MD 已生成，不中断
         process.stderr.write(`⚠ HTML 报告生成失败: ${err.message}（Markdown 报告已生成）\n`)
         process.stdout.write(`✓ 报告已生成: ${mdResult.reportPath}\n`)
         process.stdout.write(`还原度: ${mdResult.overallLevel ?? '—'}（${mdResult.score ?? '—'} / 100），共 ${mdResult.totalDiffs} 处差异\n`)

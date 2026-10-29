@@ -1,7 +1,7 @@
 /**
  * ai-img-check 模式 A：VLM agent 自检
  *
- * 图片已在对话上下文中，agent 直接看图，不依赖 server。
+ * 图片已在对话上下文中，agent 直接看图。
  *
  *   getImgCheckPrompt()  取回 system prompt（引导 agent 输出简短总结 + 差异 JSON）
  *   agent 看对话中的两张图 + prompt → 输出简短总结 + diff JSON

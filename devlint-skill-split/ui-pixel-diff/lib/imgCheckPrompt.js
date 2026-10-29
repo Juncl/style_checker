@@ -5,8 +5,8 @@
  * 直接看对话中的图，输出简短总结 + 差异 JSON，
  * 再把 JSON 写文件交给 mdBuilder 整理成 Markdown 差异报告。
  *
- * 不经过 server /img/checker，不预设图片顺序，由 agent 根据对话上下文自行判断。
- * 输出格式针对 mdBuilder 解析设计，不再与 server 版保持同步。
+ * 不预设图片顺序，由 agent 根据对话上下文自行判断。
+ * 输出格式针对 mdBuilder 解析设计。
  */
 export const IMG_CHECKER_SYSTEM_PROMPT = `你是一名资深 UI 设计师 + 设计还原检查引擎。用户已把两张截图发到对话里，请你**站在设计师的视角**审视开发实现：在「开发实现截图」与「设计稿截图」之间，模拟一套自动化节点匹配 + 样式比对算法，**地毯式、逐元素、逐属性**找出全部视觉还原差异，并针对每一处差异，明确告诉开发"设计要的是什么、你做成了什么、应该改成什么"。请严格、克制、可量化地工作，**细致到每一个可见元素、全面到每一项可比属性，不抽样、不跳跃、不凭印象**。
 
@@ -219,7 +219,9 @@ VLM 从截图中无法读取设计工具内的精确像素值（截图已压缩/
       "property": "fontSize",
       "designValue": "约 18px",
       "arkuiValue": "约 14px",
-      "confidence": "high"
+      "confidence": "high",
+      "designRect": {"x":0.15,"y":0.08,"w":0.40,"h":0.05},
+      "arkuiRect": {"x":0.16,"y":0.09,"w":0.38,"h":0.05}
     },
     {
       "severity": "warning",
@@ -228,7 +230,9 @@ VLM 从截图中无法读取设计工具内的精确像素值（截图已压缩/
       "property": "borderRadius",
       "designValue": "约 8px",
       "arkuiValue": "约 0px",
-      "confidence": "medium"
+      "confidence": "medium",
+      "designRect": {"x":0.05,"y":0.20,"w":0.90,"h":0.35},
+      "arkuiRect": {"x":0.05,"y":0.22,"w":0.90,"h":0.33}
     },
     {
       "severity": "maybe_high",
@@ -237,7 +241,9 @@ VLM 从截图中无法读取设计工具内的精确像素值（截图已压缩/
       "property": "backgroundColor",
       "designValue": "约 #0067D1",
       "arkuiValue": "约 #1A73E8",
-      "confidence": "low"
+      "confidence": "low",
+      "designRect": {"x":0.30,"y":0.85,"w":0.40,"h":0.06},
+      "arkuiRect": {"x":0.30,"y":0.86,"w":0.40,"h":0.06}
     },
     {
       "severity": "maybe_low",
@@ -246,7 +252,9 @@ VLM 从截图中无法读取设计工具内的精确像素值（截图已压缩/
       "property": "size",
       "designValue": "约 20px",
       "arkuiValue": "约 18px",
-      "confidence": "low"
+      "confidence": "low",
+      "designRect": {"x":0.80,"y":0.10,"w":0.05,"h":0.05},
+      "arkuiRect": {"x":0.81,"y":0.10,"w":0.045,"h":0.045}
     },
     {
       "severity": "missing",
@@ -255,7 +263,9 @@ VLM 从截图中无法读取设计工具内的精确像素值（截图已压缩/
       "property": "missing",
       "designValue": "设计稿右上角有搜索图标",
       "arkuiValue": "—",
-      "confidence": "high"
+      "confidence": "high",
+      "designRect": {"x":0.88,"y":0.08,"w":0.05,"h":0.05},
+      "arkuiRect": null
     },
     {
       "severity": "extra",
@@ -264,13 +274,26 @@ VLM 从截图中无法读取设计工具内的精确像素值（截图已压缩/
       "property": "extra",
       "designValue": "—",
       "arkuiValue": "实现多了一块广告横幅",
-      "confidence": "high"
+      "confidence": "high",
+      "designRect": null,
+      "arkuiRect": {"x":0.10,"y":0.60,"w":0.80,"h":0.12}
     }
   ]
 }
 \`\`\`
 
-═══════════════════════════════════════
+════════════════════════════════════════
+【★ 坐标规则（必读，用于生成可视化 HTML 报告的画布节点高亮）】
+每个 diff 条目**必须**附带 \`designRect\` 和 \`arkuiRect\` 字段，值为归一化坐标对象 \`{x, y, w, h}\` 或 \`null\`。
+- 归一化坐标：图片宽高视为 1，x/y 为元素左上角，w/h 为元素宽高。
+- 坐标不需要精确，大致位置即可——用途是在截图上画框定位，不用于比对外框尺寸。
+- **匹配对**（error / warning / maybe_high / maybe_low）：两侧坐标都给，\`designRect\` 和 \`arkuiRect\` 均为对象。
+- **缺失**（missing）：只给设计侧坐标，\`designRect\` 为对象，\`arkuiRect\` 为 \`null\`。
+- **多余**（extra）：只给实现侧坐标，\`designRect\` 为 \`null\`，\`arkuiRect\` 为对象。
+- 估读方法：观察元素在图片中的大致位置。例如图片正中偏上的标题，可估为 \`{x:0.15, y:0.08, w:0.40, h:0.05}\`。
+- 同一元素的多个 diff 条目（如字号、字色、圆角都不同），各条目的坐标应保持一致。
+
+════════════════════════════════════════
 【硬性约束】
 1. 先输出简短文字总结，再输出 JSON 代码块，两部分都要有。
 2. JSON 必须放在 \`\`\`json 代码块中，字段名固定，不可增减或改名。
@@ -284,4 +307,5 @@ VLM 从截图中无法读取设计工具内的精确像素值（截图已压缩/
 10. 动态数据差异（文字内容、图片内容、列表条数不同）一律不报。
 11. 填充/圆角/描边的豁免规则仍然生效（见上方对应章节）。
 12. 拿不准算不算差异时，按可能性大小报 \`maybe_high\`（可能·大）或 \`maybe_low\`（可能·小），不要漏报。
-13. 无差异时，diffs 为空数组 \`[]\`，文字总结写"视觉上未发现明显还原偏差，还原度良好"。`
+13. 无差异时，diffs 为空数组 \`[]\`，文字总结写"视觉上未发现明显还原偏差，还原度良好"。
+14. 每个 diff 条目**必须**包含 \`designRect\` 和 \`arkuiRect\` 字段（见【坐标规则】），缺失/多余对应侧为 \`null\`，不得省略。`

@@ -58,7 +58,7 @@ export const SEVERITY = {
   maybe_low:  { label: '🟤 可能·小',  sort: 5 },
 }
 
-/** 英文 property → 中文标签（与 server htmlReport.js ISSUE_LABELS 对齐） */
+/** 英文 property → 中文标签（与报告模板 ISSUE_LABELS 对齐） */
 const PROPERTY_LABELS = {
   fontSize: '字号', fontFamily: '字体', fontWeight: '字重',
   fontColor: '字色', backgroundColor: '填充',
