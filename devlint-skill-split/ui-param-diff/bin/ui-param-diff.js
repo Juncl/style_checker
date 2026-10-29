@@ -16,7 +16,7 @@
 
 import { existsSync, writeFileSync, readFileSync, mkdirSync } from 'fs'
 import { fileURLToPath } from 'url'
-import { dirname, join, relative } from 'path'
+import { dirname, join, relative, resolve, basename } from 'path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -129,15 +129,21 @@ async function cmdUiStyleCheck(args) {
   const platform = args.platform || 'hmPhone'
   const account = args.account || ''
   const textRulesPath = args['text-rules'] || null
-  const saveResultPath = args['save-result'] || null
-  const groupDir = args['group-dir'] || null
+  const saveResultFlag = args['save-result'] !== undefined && args['save-result'] !== null
+  const saveResultPath = saveResultFlag
+    ? (args['save-result'] === true ? null : resolve(args['save-result']))
+    : null
+  const batchDir = args['batch-dir'] ? resolve(args['batch-dir']) : null
+  const groupIndex = args['group-index'] ? parseInt(args['group-index'], 10) : null
   const pairScore = args['pair-score'] ? parseFloat(args['pair-score']) : null
   const groupName = args['group-name'] || null
 
-  // 批量场景:切换到指定组目录,报告直接写到该目录(不走 session 的 .octo-uxlint 嵌套)
-  if (groupDir) {
+  // 批量场景: --batch-dir + --group-index 自动拼路径,格式 <batch-dir>/<batch时间戳>_group<N>/
+  let groupDir = null
+  if (batchDir && groupIndex != null) {
+    const batchTs = basename(batchDir).replace('batch_', '')
+    groupDir = join(batchDir, `${batchTs}_group${groupIndex}`)
     mkdirSync(groupDir, { recursive: true })
-    process.chdir(groupDir)
   }
 
   const hasJson = !!(designJsonPath && devJsonPath)
@@ -186,20 +192,23 @@ async function cmdUiStyleCheck(args) {
       textPairs: [],
     }
 
-    if (saveResultPath) {
-      const fullResult = {
-        ...preview,
-        nodes: unified,
-        nodeIssueCount: 0,
-        pixelIssueCount: unified.length,
-        textIssueCount: 0,
-        pairScore,
-        groupName,
-        matchedPairs: null,
-        highConfidencePairs: null,
+    if (saveResultFlag) {
+      const finalSavePath = saveResultPath || (groupDir ? join(groupDir, 'result.json') : null)
+      if (finalSavePath) {
+        const fullResult = {
+          ...preview,
+          nodes: unified,
+          nodeIssueCount: 0,
+          pixelIssueCount: unified.length,
+          textIssueCount: 0,
+          pairScore,
+          groupName,
+          matchedPairs: null,
+          highConfidencePairs: null,
+        }
+        mkdirSync(dirname(finalSavePath), { recursive: true })
+        writeFileSync(finalSavePath, JSON.stringify(fullResult, null, 2), 'utf-8')
       }
-      mkdirSync(dirname(saveResultPath), { recursive: true })
-      writeFileSync(saveResultPath, JSON.stringify(fullResult, null, 2), 'utf-8')
     }
 
     output(preview)
@@ -325,21 +334,24 @@ async function cmdUiStyleCheck(args) {
   }
 
   // 批量场景:保存完整结果 JSON
-  if (saveResultPath) {
-    const fullResult = {
-      ...preview,
-      nodes: unified,
-      totalNodes: unified.length,
-      nodeIssueCount: unified.filter(u => u.issueType !== '局部图').length,
-      pixelIssueCount: unified.filter(u => u.issueType === '局部图').length,
-      textIssueCount: 0,
-      pairScore,
-      groupName,
-      matchedPairs: null,
-      highConfidencePairs: null,
+  if (saveResultFlag) {
+    const finalSavePath = saveResultPath || (groupDir ? join(groupDir, 'result.json') : null)
+    if (finalSavePath) {
+      const fullResult = {
+        ...preview,
+        nodes: unified,
+        totalNodes: unified.length,
+        nodeIssueCount: unified.filter(u => u.issueType !== '局部图').length,
+        pixelIssueCount: unified.filter(u => u.issueType === '局部图').length,
+        textIssueCount: 0,
+        pairScore,
+        groupName,
+        matchedPairs: null,
+        highConfidencePairs: null,
+      }
+      mkdirSync(dirname(finalSavePath), { recursive: true })
+      writeFileSync(finalSavePath, JSON.stringify(fullResult, null, 2), 'utf-8')
     }
-    mkdirSync(dirname(saveResultPath), { recursive: true })
-    writeFileSync(saveResultPath, JSON.stringify(fullResult, null, 2), 'utf-8')
   }
 
   output(preview)
@@ -410,24 +422,26 @@ async function cmdBatchPair(args) {
   const devGroupsRaw = args['dev-groups'] || ''
   const designGroupsRaw = args['design-groups'] || ''
   const platform = args.platform || 'hmPhone'
-  const outputPath = args.output || 'pairs.json'
 
   if (!devGroupsRaw) fail('缺少必填参数: --dev-groups')
   if (!designGroupsRaw) fail('缺少必填参数: --design-groups')
 
-  // 解析组参数:每组是 "json路径,png路径" 形式,多组用空格分隔
-  // 但 parseArgs 把空格分隔的值拆开了,这里用 raw argv 重新解析
   const devGroups = parseGroupArgs(args._raw, '--dev-groups')
   const designGroups = parseGroupArgs(args._raw, '--design-groups')
 
   if (devGroups.length === 0) fail('--dev-groups 未解析到有效组')
   if (designGroups.length === 0) fail('--design-groups 未解析到有效组')
 
-  // 检测纯图模式:所有组都没有 json
+  // 自动创建批量目录: .octo-uxlint/batch_<时间戳>/
+  const batchTs = getSessionTimestamp()
+  const batchDir = join(process.cwd(), config.DIR_NAME, `batch_${batchTs}`)
+  mkdirSync(batchDir, { recursive: true })
+
   const allDevImageOnly = devGroups.every(g => !g.json)
   const allDesignImageOnly = designGroups.every(g => !g.json)
   const isImageOnly = allDevImageOnly && allDesignImageOnly
 
+  process.stderr.write(`批量目录: ${batchDir}\n`)
   process.stderr.write(`配对计算: 开发 ${devGroups.length} 组 × 设计 ${designGroups.length} 组 = ${devGroups.length * designGroups.length} 次调用${isImageOnly ? ' (纯图模式,用图片相似度)' : ' (JSON模式,用节点匹配)'}\n`)
 
   const scoreMatrix = []
@@ -460,16 +474,19 @@ async function cmdBatchPair(args) {
     }
   }
 
-  // 贪心配对:按 pairScore 降序,已配过的跳过
+  // 贪心配对
   const sorted = scoreMatrix.filter(s => s.pairScore >= 0).sort((a, b) => b.pairScore - a.pairScore)
   const usedDev = new Set()
   const usedDesign = new Set()
   const pairs = []
+  let groupIndex = 0
   for (const s of sorted) {
     if (usedDev.has(s.devIndex) || usedDesign.has(s.designIndex)) continue
     usedDev.add(s.devIndex)
     usedDesign.add(s.designIndex)
+    groupIndex++
     pairs.push({
+      groupIndex,
       devIndex: s.devIndex,
       devJson: s.dev.json,
       devImage: s.dev.image,
@@ -479,36 +496,44 @@ async function cmdBatchPair(args) {
       pairScore: s.pairScore,
       matchedPairs: s.matchedPairs || null,
       highConfidencePairs: s.highConfidencePairs || null,
+      groupName: `dev${s.devIndex}_design${s.designIndex}`,
     })
   }
 
   const unmatchedDev = devGroups.map((g, i) => ({ index: i, ...g })).filter(g => !usedDev.has(g.index))
   const unmatchedDesign = designGroups.map((g, j) => ({ index: j, ...g })).filter(g => !usedDesign.has(g.index))
 
-  const result = { pairs, unmatchedDev, unmatchedDesign, totalDev: devGroups.length, totalDesign: designGroups.length }
-  mkdirSync(dirname(outputPath), { recursive: true })
-  writeFileSync(outputPath, JSON.stringify(result, null, 2), 'utf-8')
+  const result = { batchDir, pairs, unmatchedDev, unmatchedDesign, totalDev: devGroups.length, totalDesign: designGroups.length }
+  const pairsPath = join(batchDir, 'pairs.json')
+  writeFileSync(pairsPath, JSON.stringify(result, null, 2), 'utf-8')
 
   process.stderr.write(`\n配对完成: ${pairs.length} 组配对成功`)
   if (unmatchedDev.length) process.stderr.write(`, 开发侧未配对 ${unmatchedDev.length} 组`)
   if (unmatchedDesign.length) process.stderr.write(`, 设计侧未配对 ${unmatchedDesign.length} 组`)
   process.stderr.write('\n')
 
-  output({ ...result, outputPath })
+  output({ ...result, pairsPath })
 }
 
 async function cmdBatchSummary(args) {
-  const results = (args.results || '').split(',').map(s => s.trim()).filter(Boolean)
-  const outputPath = args.output || 'batch_summary.md'
+  const batchDir = args['batch-dir'] ? resolve(args['batch-dir']) : null
+  if (!batchDir) fail('缺少必填参数: --batch-dir')
+  if (!existsSync(batchDir)) fail(`批量目录不存在: ${batchDir}`)
 
-  if (results.length === 0) fail('缺少必填参数: --results (逗号分隔的 result.json 路径列表)')
+  // 自动扫描 batchDir 下所有子目录的 result.json
+  const { readdirSync, statSync } = await import('fs')
+  const resultFiles = []
+  for (const name of readdirSync(batchDir)) {
+    const subDir = join(batchDir, name)
+    if (!statSync(subDir).isDirectory()) continue
+    const resultPath = join(subDir, 'result.json')
+    if (existsSync(resultPath)) resultFiles.push(resultPath)
+  }
+
+  if (resultFiles.length === 0) fail('批量目录下未找到任何 result.json')
 
   const groups = []
-  for (const rPath of results) {
-    if (!existsSync(rPath)) {
-      process.stderr.write(`✗ 结果文件不存在: ${rPath},跳过\n`)
-      continue
-    }
+  for (const rPath of resultFiles.sort()) {
     try {
       const data = JSON.parse(readFileSync(rPath, 'utf-8'))
       groups.push({ path: rPath, dir: dirname(rPath), ...data })
@@ -517,9 +542,7 @@ async function cmdBatchSummary(args) {
     }
   }
 
-  if (groups.length === 0) {
-    fail('无有效结果文件')
-  }
+  if (groups.length === 0) fail('无有效结果文件')
 
   const lines = []
   lines.push('# 批量 UI 一致性检查汇总')
@@ -556,10 +579,10 @@ async function cmdBatchSummary(args) {
     lines.push('')
   }
 
-  mkdirSync(dirname(outputPath), { recursive: true })
-  writeFileSync(outputPath, lines.join('\n'), 'utf-8')
+  const allMdPath = join(batchDir, 'all.md')
+  writeFileSync(allMdPath, lines.join('\n'), 'utf-8')
 
-  output({ groups: groups.length, outputPath })
+  output({ groups: groups.length, allMdPath, batchDir })
 }
 
 // 从 raw argv 解析组参数,每组是 "json,png" 形式

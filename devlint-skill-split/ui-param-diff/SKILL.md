@@ -18,8 +18,8 @@ skill 所有文件均为只读，tool 失败时只能重新调用、调整参数
 | `collect-design` | 采集设计稿数据 + 截图 | designJsonPath, designImagePath, account |
 | `ui-style-check` | UI 一致性检查 | 节点差异 + md + HTML + Excel + textPairs |
 | `add-text-tab` | 向已有 Excel 追加「文案对比」工作表 | added, count |
-| `batch-pair` | 批量配对（N×M 算配对度，输出最优配对） | pairs, unmatchedDev, unmatchedDesign |
-| `batch-summary` | 批量汇总（读多组 result.json → 输出 all.md） | groups, outputPath |
+| `batch-pair` | 批量配对（自动创建 batch 目录 + N×M 配对 + 输出 pairs.json） | batchDir, pairs, unmatchedDev, unmatchedDesign |
+| `batch-summary` | 批量汇总（自动扫描 result.json → 输出 all.md） | groups, allMdPath, batchDir |
 
 调用方式：`ui-param-diff <command> [options]`，或 `node <skill目录>/bin/ui-param-diff.js <command> [options]`。首次使用前需 `npm install --omit=dev`。
 
@@ -138,6 +138,11 @@ ui-param-diff ui-style-check [--cwd <项目目录>] \
 - `--platform`: 平台类型，默认 hmPhone
 - `--account`: 用户账号字符串（可选），来自 collect-design 返回的 account，透传用于打点；未传时自动用本机 IP 兜底
 - `--text-rules`: 文案规则文本文件路径（可选，仅双轨比对模式）。用户传了才触发文案走查，规则始终针对开发侧文案（设计侧文案不报）
+- `--save-result`：保存完整结果 JSON（可选，无路径值时自动写到组目录下 `result.json`）
+- `--batch-dir`：批量根目录路径（可选，如 `.octo-uxlint/batch_20261028_160000`）
+- `--group-index`：组序号（可选，与 `--batch-dir` 配合自动拼组目录 `<batch时间戳>_group<N>`）
+- `--pair-score`：配对度（可选，来自 pairs.json，写入 result.json 供汇总用）
+- `--group-name`：组名（可选，写入 result.json 供汇总展示）
 - 模式判断：
   - 只传 `--design-image` + `--dev-image`（无 JSON）→ **图图对比模式**
   - 同时传 JSON + 图 → **双轨比对模式**
@@ -297,7 +302,7 @@ ui-param-diff add-text-tab --excel <excelReportPath> --text-issues <issues.json>
 | `collect-arkui` | 非 Windows / 启动失败 / 超时 | 继续设计侧采集；向用户提供：① Windows 环境重试 ② 手动提供 arkui.json/arkui.png 路径跳过采集 |
 | `collect-web` | 登录超时 / 导航超时 / 证书拦截 | 继续设计侧采集；向用户提供：① `--headless false` 有头模式重试 ② 手动提供 web.json/web.png 路径跳过采集 |
 | `collect-design` | 传送码无效 / 采集超时 / 网络错误 | 向用户提供：① 检查传送码后重新采集 ② 手动提供 design.json/design.png 路径 ③ 附上使用指南链接 `{{SKILL_GUIDE_URL}}` |
-| `ui-style-check` | server 不可达 / 文件不存在 / 检查超时 / 局部图对比失败 / Excel 生成失败 | 局部图对比或 Excel 失败时 stderr 提示，不阻塞其他报告生成；向用户提供：① 确认检查服务是否正常运行 ② 确认文件路径是否正确 ③ 重试一次 |
+| `ui-style-check` | server 不可达 / 文件不存在 / 检查超时 / 局部图对比失败 / Excel 生成失败 | 单组：局部图或 Excel 失败时 stderr 提示不阻塞其他报告；批量：某组失败记录组号继续下一组，最终汇总显示失败组 |
 
 ### 严格禁止的失败处理方式
 
@@ -326,20 +331,30 @@ ui-param-diff add-text-tab --excel <excelReportPath> --text-issues <issues.json>
 
 ### 2. batch-pair（N×M 算配对度）
 
+**JSON 模式**（有 json+图）：
 ```bash
 ui-param-diff batch-pair \
   --dev-groups "dev1.json,dev1.png" "dev2.json,dev2.png" \
   --design-groups "design1.json,design1.png" "design2.json,design2.png" \
-  --platform hmPhone \
-  --output <batch目录>/pairs.json
+  --platform hmPhone
 ```
 
+**纯图模式**（只有图，无 json）：
+```bash
+ui-param-diff batch-pair \
+  --dev-groups "dev1.png" "dev2.png" \
+  --design-groups "design1.png" "design2.png" \
+  --platform hmPhone
+```
+
+- 自动创建 `.octo-uxlint/batch_<时间戳>/` 目录，pairs.json 写入其中
+- 返回 `batchDir` 路径，AI 后续直接用
 - N×M 调 server `/api/check/pair-score`（只做 parse+match，不含比对）
 - 配对度 = 绝对匹配率×0.3 + 覆盖率×0.2 + 高可信占比×0.2 + 文本匹配率×0.3
 - 纯图模式（无 json）用图片相似度（pHash）配对，不调 server
 - 贪心配对（按配对度降序，已配过的跳过）
 - N≠M 时配对 min(N,M) 组，多余标"未配对"
-- 输出 pairs.json（含配对结果 + 未配对清单）
+- pairs.json 含每组的 groupIndex/groupName，供后续逐组执行用
 
 ### 3. AI 确认配对
 
@@ -347,26 +362,36 @@ ui-param-diff batch-pair \
 
 ### 4. 逐组执行（串行，避免资源爆）
 
+**JSON 模式**：
 ```bash
 ui-param-diff ui-style-check \
   --design-json <designN.json> --dev-json <devN.json> \
   --design-image <designN.png> --dev-image <devN.png> \
-  --group-dir <batch目录>/devN_designN \
-  --save-result <batch目录>/devN_designN/result.json \
-  --pair-score <配对度> --group-name devN_designN
+  --batch-dir <batchDir> --group-index <N> \
+  --save-result --pair-score <配对度> --group-name <组名>
 ```
 
-每组独立执行，失败不阻塞，继续下一组。每组子文件夹含 md/html/excel + result.json。
+**纯图模式**（无 json）：
+```bash
+ui-param-diff ui-style-check \
+  --design-image <designN.png> --dev-image <devN.png> \
+  --batch-dir <batchDir> --group-index <N> \
+  --save-result --pair-score <配对度> --group-name <组名>
+```
+
+skill 自动拼组目录 `<batchDir>/<batch时间戳>_group<N>/`，报告直接写入，无需 AI 拼路径。
+
+**失败处理**：逐组执行时某组失败（非零退出码），记录组号和错误原因，**继续下一组**，不中断整个批量流程。已成功的组不受影响。最终汇总时失败的组显示为"执行失败"。
+
+**断点续跑**：如果批量中断（如 server 重启），重跑时 `batch-summary` 只汇总已生成 `result.json` 的组。AI 只需补跑缺失的组，不需要从头重跑。判断方法：读 pairs.json 的 groupIndex 列表，对比 batchDir 下已有 `*_groupN/result.json` 的 N，缺失的组补跑。
 
 ### 5. batch-summary 汇总
 
 ```bash
-ui-param-diff batch-summary \
-  --results <batch目录>/group1/result.json,<batch目录>/group2/result.json \
-  --output <batch目录>/all.md
+ui-param-diff batch-summary --batch-dir <batchDir>
 ```
 
-输出 `all.md`（总览表格 + 各组详情 + 报告链接），向用户展示。
+自动扫描 batchDir 下所有子目录的 result.json，输出 `all.md`（总览表格 + 各组详情 + 报告链接），向用户展示。
 
 ### 批量目录结构
 
